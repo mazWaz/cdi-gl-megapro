@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>CDI//MGPRO · Peta Pengapian</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  /* ─────── Map editor specific ─────── */
+  .map-stage {
+    position: relative;
+    background: #050709;
+    border: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;       /* critical: prevent scroll during drag */
+  }
+  .map-stage svg { display: block; width: 100%; height: auto; }
+
+  /* breakpoint dot — large hit area for touch */
+  .bp { cursor: grab; }
+  .bp:active { cursor: grabbing; }
+  .bp .core { fill: var(--amber); stroke: #050709; stroke-width: 1.5; transition: r 0.1s; }
+  .bp .hit  { fill: transparent; }                /* invisible enlarged hit-target */
+  .bp.selected .core { fill: var(--cyan); stroke: var(--amber); stroke-width: 2; }
+  .bp.dragging .core { fill: #fff; }
+
+  /* curve line styles */
+  .curve-active   { fill: none; stroke: var(--amber); stroke-width: 2; }
+  .curve-stock    { fill: none; stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+  .curve-fill     { fill: var(--amber-soft); }
+  .redline-zone   { fill: rgba(230,57,70,0.08); }
+  .idle-zone      { fill: rgba(82,183,136,0.05); }
+  .axis           { stroke: #2a3242; stroke-width: 1; }
+  .grid-major     { stroke: #1f2530; stroke-width: 1; }
+  .grid-minor     { stroke: #15191f; stroke-width: 0.5; }
+  .axis-label     { fill: var(--text-faint); font: 9px ui-monospace, monospace; }
+  .axis-unit      { fill: var(--text-dim); font: 10px ui-monospace, monospace; letter-spacing: 0.1em; }
+  .cursor-line    { stroke: var(--cyan); stroke-width: 1; stroke-dasharray: 4 4; }
+  .cursor-glow    { fill: var(--cyan); }
+  .coord-readout  { fill: var(--amber); font: 10px ui-monospace, monospace; }
+
+  /* hud */
+  .hud {
+    position: absolute; top: 8px; right: 10px;
+    background: rgba(10,13,18,0.85);
+    border: 1px solid var(--border-hi);
+    padding: 4px 9px;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+  .hud b { color: var(--amber); font-weight: 700; }
+  .hud .live { color: var(--cyan); }
+
+  /* fine adjust pad */
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .pad button {
+    background: var(--bg);
+    border: 1px solid var(--border-hi);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 9px 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.1s;
+  }
+  .pad button:hover:not(:disabled) { color: var(--amber); border-color: var(--amber); }
+  .pad button:active:not(:disabled) { transform: translateY(1px); background: var(--amber-soft); }
+  .pad button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .pad button.del { color: var(--red); border-color: var(--red); }
+  .pad button.del:hover { background: rgba(230,57,70,0.12); }
+
+  /* profile slots */
+  .slots {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .slot {
+    padding: 8px 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    text-align: center;
+    cursor: pointer;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    transition: all 0.1s;
+  }
+  .slot .n { color: var(--amber); font-weight: 700; font-size: 12px; display: block; }
+  .slot .nm { display: block; margin-top: 3px; text-transform: uppercase; }
+  .slot.active { border-color: var(--amber); background: var(--amber-soft); color: var(--text); }
+  .slot:hover { border-color: var(--border-hi); color: var(--text); }
+  .slot.disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* json drawer */
+  details.json-drawer { margin-top: 10px; }
+  details.json-drawer summary {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 6px 0;
+    border-top: 1px dashed var(--border);
+    list-style: none;
+  }
+  details.json-drawer summary::before { content: "▸ "; color: var(--amber); }
+  details[open].json-drawer summary::before { content: "▾ "; }
+
+  /* dirty indicator */
+  .dirty-badge {
+    display: inline-block;
+    background: var(--red);
+    color: #fff;
+    padding: 1px 6px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    margin-left: 6px;
+  }
+
+  @media (max-width: 480px) {
+    .pad { grid-template-columns: repeat(3, 1fr); }
+    .slots { grid-template-columns: repeat(5, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">CDI//MGPRO<span class="ver">v0.2.0</span></span>
+  <span class="spacer"></span>
+  <span class="chip" id="topMode"><span class="dot"></span><span class="txt">—</span></span>
+  <span class="chip" id="topLink">LINK <span class="dot"></span><span class="txt">…</span></span>
+</div>
+
+<main class="content">
+  <div class="page-title">
+    <h1>PETA PENGAPIAN</h1>
+    <span class="sub">// rpm → ° btdc · drag titik untuk tuning</span>
+  </div>
+
+  <section class="panel">
+    <span class="label">[ editor kurva ]</span>
+
+    <div class="map-stage" id="stage">
+      <svg id="chart" viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(255,184,77,0.18)"/>
+            <stop offset="100%" stop-color="rgba(255,184,77,0)"/>
+          </linearGradient>
+          <filter id="glow"><feGaussianBlur stdDeviation="3"/></filter>
+        </defs>
+        <g id="zones"></g>
+        <g id="gridMinor"></g>
+        <g id="gridMajor"></g>
+        <g id="axes"></g>
+        <g id="labels"></g>
+        <polyline id="curveStock" class="curve-stock"/>
+        <polygon  id="curveFill"  class="curve-fill"/>
+        <polyline id="curveActive" class="curve-active"/>
+        <line id="cursorLine" class="cursor-line" x1="-10" y1="0" x2="-10" y2="360"/>
+        <circle id="cursorDot" class="cursor-glow" cx="-10" cy="-10" r="5"/>
+        <text id="coordReadout" class="coord-readout" x="0" y="0" text-anchor="middle"></text>
+        <g id="dots"></g>
+      </svg>
+
+      <div class="hud">
+        <span>DIPILIH <b id="hudSel">—</b></span> ·
+        <span>LIVE <span class="live" id="hudLive">0</span></span>
+      </div>
+    </div>
+
+    <!-- toolbar below chart -->
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn ghost" id="addBtn">⊕ Tambah titik</button>
+      <button class="btn ghost" id="cmpBtn">◇ Bandingkan stok</button>
+      <button class="btn ghost" id="reloadBtn">↻ Muat ulang</button>
+      <button class="btn green" id="applyBtn" disabled>✓ Terapkan<span class="dirty-badge" id="dirtyTag" style="display:none">●</span></button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ penyesuaian halus · titik dipilih ]</span>
+    <p class="note" id="adjHint">Tap titik untuk memilih.</p>
+    <p class="note" style="font-size:9px"><span id="ptCount">0</span> / 32 titik terpakai</p>
+    <div class="pad">
+      <button id="advUp">+0.5°</button>
+      <button id="advDn">−0.5°</button>
+      <button id="rpmDn">−100 RPM</button>
+      <button id="rpmUp">+100 RPM</button>
+      <button class="del" id="delBtn">⌫ HAPUS</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ slot profil ]</span>
+    <div class="slots" id="slots">
+      <div class="slot active" data-slot="0">
+        <span class="n">P1</span><span class="nm">live</span>
+      </div>
+      <div class="slot disabled" data-slot="1">
+        <span class="n">P2</span><span class="nm">stok</span>
+      </div>
+      <div class="slot disabled" data-slot="2">
+        <span class="n">P3</span><span class="nm">—</span>
+      </div>
+      <div class="slot disabled" data-slot="3">
+        <span class="n">P4</span><span class="nm">—</span>
+      </div>
+      <div class="slot disabled" data-slot="4">
+        <span class="n">P5</span><span class="nm">—</span>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn ghost" id="loadStockBtn">▼ Muat stok megapro</button>
+    </div>
+    <p class="note">Penyimpanan slot persistent akan ada di T13 (storage/profile_store).</p>
+  </section>
+
+  <details class="json-drawer">
+    <summary>edit json mentah</summary>
+    <textarea id="mapJson" rows="3" spellcheck="false"
+      placeholder='[[800,10],[1500,15],…]'></textarea>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn ghost" id="applyJsonBtn">✓ Terapkan JSON</button>
+      <span class="note" id="mapStatus" style="align-self:center"></span>
+    </div>
+  </details>
+</main>
+
+<nav class="bottom-nav">
+  <a href="/"><span class="ico">▮</span>Dasbor</a>
+  <a href="/map.html"><span class="ico">⌒</span>Peta</a>
+  <a href="/scope.html"><span class="ico">~</span>Scope</a>
+  <a href="/settings.html"><span class="ico">⚙</span>Konfig</a>
+</nav>
+
+<script src="/app.js"></script>
+<script>
+// ─────────────────────────────────────────────────────
+// Professional ignition-map editor
+// SVG-based, supports mouse + touch via Pointer Events.
+// ─────────────────────────────────────────────────────
+
+const RPM_MIN = 0, RPM_MAX = 12000;
+const DEG_MIN = 0, DEG_MAX = 45;
+const REDLINE_RPM = 10500;
+const IDLE_RPM_LO = 0, IDLE_RPM_HI = 1500;
+const MAX_POINTS = 32;                              // matches config.h MAX_ADVANCE_POINTS
+
+// Immutable stock Megapro reference — must mirror
+// core/advance_map.cpp Map::loadDefaultMegapro()
+const STOCK_MEGAPRO = Object.freeze([
+  [800, 10.0], [1500, 15.0], [2500, 20.0], [3500, 25.0],
+  [4500, 29.0], [6000, 32.0], [10000, 32.0]
+]);
+
+// SVG viewport: 720 × 360 (preserveAspectRatio scales to container)
+const V = { w: 720, h: 360, padL: 40, padR: 12, padT: 14, padB: 26 };
+const PLOT_W = V.w - V.padL - V.padR;
+const PLOT_H = V.h - V.padT - V.padB;
+
+const RPM_GRID_MAJOR = 1000, RPM_GRID_MINOR = 250;
+const DEG_GRID_MAJOR = 5,    DEG_GRID_MINOR = 1;
+const RPM_SNAP = 100, DEG_SNAP = 0.5;
+const HIT_R = 16;     // touch hit-target radius
+
+// State
+let points = [];               // [[rpm,deg], …] sorted asc by rpm
+const stockPoints = STOCK_MEGAPRO.map(p => [...p]);  // immutable reference for compare
+let selected = -1;
+let dragging = -1;
+let dirty = false;
+let showCompare = false;
+
+const svg = document.getElementById('chart');
+const stage = document.getElementById('stage');
+
+// ─────── scaling helpers ───────
+const xOf = rpm => V.padL + (Math.max(RPM_MIN, Math.min(RPM_MAX, rpm)) - RPM_MIN) / (RPM_MAX - RPM_MIN) * PLOT_W;
+const yOf = deg => V.padT + (1 - (Math.max(DEG_MIN, Math.min(DEG_MAX, deg)) - DEG_MIN) / (DEG_MAX - DEG_MIN)) * PLOT_H;
+const rpmOf = x => RPM_MIN + ((x - V.padL) / PLOT_W) * (RPM_MAX - RPM_MIN);
+const degOf = y => DEG_MIN + (1 - (y - V.padT) / PLOT_H) * (DEG_MAX - DEG_MIN);
+
+function snap(v, step){ return Math.round(v / step) * step; }
+function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+// ─────── static elements: grid, zones, labels ───────
+function drawStaticChrome(){
+  // Zones
+  let zHtml = '';
+  zHtml += `<rect class="idle-zone" x="${xOf(IDLE_RPM_LO)}" y="${V.padT}" width="${xOf(IDLE_RPM_HI)-xOf(IDLE_RPM_LO)}" height="${PLOT_H}"/>`;
+  zHtml += `<rect class="redline-zone" x="${xOf(REDLINE_RPM)}" y="${V.padT}" width="${xOf(RPM_MAX)-xOf(REDLINE_RPM)}" height="${PLOT_H}"/>`;
+  document.getElementById('zones').innerHTML = zHtml;
+
+  // Minor grid
+  let minor = '';
+  for (let r = RPM_MIN; r <= RPM_MAX; r += RPM_GRID_MINOR){
+    if (r % RPM_GRID_MAJOR === 0) continue;
+    const x = xOf(r);
+    minor += `<line class="grid-minor" x1="${x}" y1="${V.padT}" x2="${x}" y2="${V.padT+PLOT_H}"/>`;
+  }
+  for (let d = DEG_MIN; d <= DEG_MAX; d += DEG_GRID_MINOR){
+    if (d % DEG_GRID_MAJOR === 0) continue;
+    const y = yOf(d);
+    minor += `<line class="grid-minor" x1="${V.padL}" y1="${y}" x2="${V.padL+PLOT_W}" y2="${y}"/>`;
+  }
+  document.getElementById('gridMinor').innerHTML = minor;
+
+  // Major grid
+  let major = '';
+  for (let r = RPM_MIN; r <= RPM_MAX; r += RPM_GRID_MAJOR){
+    const x = xOf(r);
+    major += `<line class="grid-major" x1="${x}" y1="${V.padT}" x2="${x}" y2="${V.padT+PLOT_H}"/>`;
+  }
+  for (let d = DEG_MIN; d <= DEG_MAX; d += DEG_GRID_MAJOR){
+    const y = yOf(d);
+    major += `<line class="grid-major" x1="${V.padL}" y1="${y}" x2="${V.padL+PLOT_W}" y2="${y}"/>`;
+  }
+  document.getElementById('gridMajor').innerHTML = major;
+
+  // Axes & labels
+  const ax = `
+    <line class="axis" x1="${V.padL}" y1="${V.padT}" x2="${V.padL}" y2="${V.padT+PLOT_H}"/>
+    <line class="axis" x1="${V.padL}" y1="${V.padT+PLOT_H}" x2="${V.padL+PLOT_W}" y2="${V.padT+PLOT_H}"/>`;
+  document.getElementById('axes').innerHTML = ax;
+
+  let lbl = '';
+  for (let r = RPM_MIN; r <= RPM_MAX; r += RPM_GRID_MAJOR){
+    lbl += `<text class="axis-label" x="${xOf(r)}" y="${V.h-10}" text-anchor="middle">${r/1000}k</text>`;
+  }
+  for (let d = DEG_MIN; d <= DEG_MAX; d += DEG_GRID_MAJOR){
+    lbl += `<text class="axis-label" x="${V.padL-6}" y="${yOf(d)+3}" text-anchor="end">${d}°</text>`;
+  }
+  lbl += `<text class="axis-unit" x="${V.padL+PLOT_W/2}" y="${V.h-1}" text-anchor="middle">RPM × 1000</text>`;
+  lbl += `<text class="axis-unit" x="${V.padL-30}" y="${V.padT+12}">°BTDC</text>`;
+  document.getElementById('labels').innerHTML = lbl;
+}
+drawStaticChrome();
+
+// ─────── curve render ───────
+function renderCurve(){
+  // sort by rpm to avoid line crossings
+  points.sort((a, b) => a[0] - b[0]);
+
+  const active = document.getElementById('curveActive');
+  const fill   = document.getElementById('curveFill');
+  if (points.length === 0){
+    active.setAttribute('points', '');
+    fill.setAttribute('points', '');
+  } else {
+    const seq = points.map(p => `${xOf(p[0])},${yOf(p[1])}`).join(' ');
+    active.setAttribute('points', seq);
+    // fill polygon underneath
+    const x0 = xOf(points[0][0]);
+    const xN = xOf(points[points.length-1][0]);
+    const yB = V.padT + PLOT_H;
+    fill.setAttribute('points', `${x0},${yB} ${seq} ${xN},${yB}`);
+    fill.setAttribute('fill', 'url(#curveFill)');
+  }
+
+  // stock overlay
+  const stock = document.getElementById('curveStock');
+  if (showCompare && stockPoints){
+    stock.setAttribute('points', stockPoints.map(p => `${xOf(p[0])},${yOf(p[1])}`).join(' '));
+    stock.style.display = '';
+  } else {
+    stock.style.display = 'none';
+  }
+
+  // breakpoints
+  const dots = document.getElementById('dots');
+  let html = '';
+  points.forEach((p, i) => {
+    const x = xOf(p[0]), y = yOf(p[1]);
+    const cls = 'bp' + (i === selected ? ' selected' : '') + (i === dragging ? ' dragging' : '');
+    html += `<g class="${cls}" data-i="${i}">`;
+    html += `<circle class="hit" cx="${x}" cy="${y}" r="${HIT_R}"/>`;
+    html += `<circle class="core" cx="${x}" cy="${y}" r="${i === selected ? 7 : 4.5}"/>`;
+    html += `</g>`;
+  });
+  dots.innerHTML = html;
+
+  // bind drag handlers
+  dots.querySelectorAll('.bp').forEach(g => {
+    const i = parseInt(g.dataset.i, 10);
+    g.addEventListener('pointerdown', e => startDrag(e, i));
+  });
+
+  // update fine-adjust hint
+  if (selected >= 0 && selected < points.length){
+    document.getElementById('adjHint').innerHTML =
+      'P' + String(selected+1).padStart(2,'0') +
+      ' · <b style="color:var(--amber)">' + points[selected][0] + ' rpm</b> · <b style="color:var(--cyan)">' +
+      points[selected][1].toFixed(1) + '°</b>';
+  } else {
+    document.getElementById('adjHint').textContent = 'Tap titik untuk memilih.';
+  }
+
+  // dirty state + counters
+  document.getElementById('applyBtn').disabled = !dirty;
+  document.getElementById('dirtyTag').style.display = dirty ? '' : 'none';
+  document.getElementById('ptCount').textContent = points.length;
+
+  // hud selected
+  document.getElementById('hudSel').textContent =
+    selected >= 0 ? `P${String(selected+1).padStart(2,'0')} · ${points[selected][1].toFixed(1)}°` : '—';
+}
+
+// ─────── pointer-based drag ───────
+function clientToSvg(clientX, clientY){
+  const rect = svg.getBoundingClientRect();
+  return {
+    x: ((clientX - rect.left) / rect.width)  * V.w,
+    y: ((clientY - rect.top)  / rect.height) * V.h
+  };
+}
+
+function startDrag(e, i){
+  e.preventDefault();
+  e.stopPropagation();
+  dragging = i;
+  selected = i;
+  e.target.setPointerCapture(e.pointerId);
+  e.target.addEventListener('pointermove', onMove);
+  e.target.addEventListener('pointerup', onUp);
+  e.target.addEventListener('pointercancel', onUp);
+  renderCurve();
+}
+function onMove(e){
+  if (dragging < 0) return;
+  e.preventDefault();
+  const { x, y } = clientToSvg(e.clientX, e.clientY);
+  const rpm = clamp(snap(rpmOf(x), RPM_SNAP), RPM_MIN, RPM_MAX);
+  const deg = clamp(snap(degOf(y), DEG_SNAP), DEG_MIN, DEG_MAX);
+  points[dragging] = [rpm, deg];
+  markDirty();
+  showCoordReadout(rpm, deg);
+  renderCurve();
+}
+function onUp(e){
+  if (dragging < 0) return;
+  dragging = -1;
+  e.target.removeEventListener('pointermove', onMove);
+  e.target.removeEventListener('pointerup', onUp);
+  e.target.removeEventListener('pointercancel', onUp);
+  hideCoordReadout();
+  renderCurve();
+}
+
+// stage tap to add a point in empty area
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('.bp')) return;   // clicked an existing point
+  // not used to add (require explicit Add button); just deselect
+  selected = -1;
+  renderCurve();
+});
+
+function showCoordReadout(rpm, deg){
+  const t = document.getElementById('coordReadout');
+  t.setAttribute('x', xOf(rpm));
+  t.setAttribute('y', yOf(deg) - 14);
+  t.textContent = rpm + ' / ' + deg.toFixed(1) + '°';
+}
+function hideCoordReadout(){ document.getElementById('coordReadout').textContent = ''; }
+
+// ─────── operations ───────
+function markDirty(){ dirty = true; }
+function clearDirty(){ dirty = false; }
+
+function addPoint(){
+  if (points.length >= MAX_POINTS){ flash('maks ' + MAX_POINTS + ' titik'); return; }
+  // insert between selected and next, or in mid-range
+  let newRpm, newDeg;
+  if (selected >= 0 && selected < points.length - 1){
+    const a = points[selected], b = points[selected+1];
+    newRpm = Math.round((a[0]+b[0])/2 / RPM_SNAP) * RPM_SNAP;
+    newDeg = (a[1]+b[1])/2;
+  } else if (points.length === 0){
+    newRpm = 3000; newDeg = 20;
+  } else {
+    newRpm = clamp(points[points.length-1][0] + 1000, RPM_MIN, RPM_MAX);
+    newDeg = points[points.length-1][1];
+  }
+  points.push([newRpm, +newDeg.toFixed(1)]);
+  points.sort((a,b) => a[0] - b[0]);
+  selected = points.findIndex(p => p[0] === newRpm && p[1] === +newDeg.toFixed(1));
+  markDirty(); renderCurve();
+}
+
+function deleteSelected(){
+  if (selected < 0) return;
+  if (points.length <= 2){ flash('minimal 2 titik'); return; }
+  points.splice(selected, 1);
+  selected = -1;
+  markDirty(); renderCurve();
+}
+
+function adjustSelected(dRpm, dDeg){
+  if (selected < 0) return;
+  const p = points[selected];
+  if (dRpm) p[0] = clamp(p[0] + dRpm, RPM_MIN, RPM_MAX);
+  if (dDeg) p[1] = clamp(+(p[1] + dDeg).toFixed(2), DEG_MIN, DEG_MAX);
+  points.sort((a,b) => a[0] - b[0]);
+  selected = points.indexOf(p);
+  markDirty(); renderCurve();
+}
+
+function applyChanges(){
+  cdi.send({ cmd: 'setMap', points: points });
+  document.getElementById('mapStatus').textContent = '› mengirim…';
+}
+
+function flash(msg){
+  const el = document.getElementById('mapStatus');
+  el.textContent = '› ' + msg;
+  setTimeout(() => { if (el.textContent === '› ' + msg) el.textContent = ''; }, 2200);
+}
+
+// ─────── live RPM cursor + value lookup ───────
+function lookupDeg(rpm){
+  if (points.length === 0) return 0;
+  if (rpm <= points[0][0]) return points[0][1];
+  if (rpm >= points[points.length-1][0]) return points[points.length-1][1];
+  for (let i = 0; i + 1 < points.length; i++){
+    if (rpm >= points[i][0] && rpm <= points[i+1][0]){
+      const t = (rpm - points[i][0]) / (points[i+1][0] - points[i][0]);
+      return points[i][1] + t * (points[i+1][1] - points[i][1]);
+    }
+  }
+  return points[points.length-1][1];
+}
+
+function updateLiveCursor(rpm, deg){
+  document.getElementById('hudLive').textContent = rpm + ' rpm';
+  const line = document.getElementById('cursorLine');
+  const dot  = document.getElementById('cursorDot');
+  if (rpm > 0){
+    const x = xOf(clamp(rpm, RPM_MIN, RPM_MAX));
+    line.setAttribute('x1', x); line.setAttribute('x2', x);
+    line.setAttribute('y1', V.padT); line.setAttribute('y2', V.padT + PLOT_H);
+    dot.setAttribute('cx', x);
+    dot.setAttribute('cy', yOf(clamp(deg, DEG_MIN, DEG_MAX)));
+  } else {
+    line.setAttribute('x1', -10); line.setAttribute('x2', -10);
+    dot.setAttribute('cx', -10); dot.setAttribute('cy', -10);
+  }
+}
+
+// ─────── WS plumbing ───────
+cdi.bus.on('open', () => cdi.send({ cmd: 'getMap' }));
+
+cdi.bus.on('map', pts => {
+  points = pts.map(p => [+p[0], +p[1]]);
+  selected = -1; clearDirty();
+  document.getElementById('mapJson').value = JSON.stringify(points);
+  document.getElementById('mapStatus').textContent = '› ' + points.length + ' titik dimuat';
+  renderCurve();
+});
+
+cdi.bus.on('mapApplied', m => {
+  clearDirty();
+  document.getElementById('mapStatus').textContent = '› diterapkan · ' + m.count + ' titik';
+  renderCurve();
+});
+
+cdi.bus.on('err', msg => { document.getElementById('mapStatus').textContent = '› ERR: ' + msg; });
+
+cdi.bus.on('telemetry', t => {
+  updateLiveCursor(t.rpm, t.advance_x10 / 10);
+});
+
+// ─────── button bindings ───────
+document.getElementById('addBtn').addEventListener('click', addPoint);
+document.getElementById('delBtn').addEventListener('click', deleteSelected);
+document.getElementById('advUp').addEventListener('click', () => adjustSelected(0, +DEG_SNAP));
+document.getElementById('advDn').addEventListener('click', () => adjustSelected(0, -DEG_SNAP));
+document.getElementById('rpmUp').addEventListener('click', () => adjustSelected(+RPM_SNAP, 0));
+document.getElementById('rpmDn').addEventListener('click', () => adjustSelected(-RPM_SNAP, 0));
+document.getElementById('cmpBtn').addEventListener('click', () => {
+  showCompare = !showCompare;
+  const b = document.getElementById('cmpBtn');
+  b.style.borderColor = showCompare ? 'var(--cyan)' : '';
+  b.style.color = showCompare ? 'var(--cyan)' : '';
+  renderCurve();
+});
+document.getElementById('reloadBtn').addEventListener('click', () => {
+  if (dirty && !confirm('Buang perubahan yang belum disimpan?')) return;
+  cdi.send({ cmd: 'getMap' });
+});
+document.getElementById('applyBtn').addEventListener('click', applyChanges);
+document.getElementById('loadStockBtn').addEventListener('click', () => {
+  if (dirty && !confirm('Buang perubahan dan muat stok?')) return;
+  cdi.send({ cmd: 'loadDefaultMap' });
+});
+
+// profile slot taps
+document.querySelectorAll('.slot').forEach(el => {
+  el.addEventListener('click', () => {
+    const slot = +el.dataset.slot;
+    if (slot === 0) return;                          // P1 = live (already active)
+    if (slot === 1){                                 // P2 = stock megapro (preview to editor)
+      if (dirty && !confirm('Buang perubahan dan muat stok ke editor?')) return;
+      points = STOCK_MEGAPRO.map(p => [...p]);
+      selected = -1; markDirty(); renderCurve();
+      flash('stok dimuat ke editor — klik Terapkan untuk kirim');
+      return;
+    }
+    flash('slot ' + (slot+1) + ' kosong · slot persistent akan ada di T13');
+  });
+});
+
+// json drawer apply
+document.getElementById('applyJsonBtn').addEventListener('click', () => {
+  let pts;
+  try { pts = JSON.parse(document.getElementById('mapJson').value); }
+  catch (e) { flash('JSON tidak valid'); return; }
+  if (!Array.isArray(pts) || pts.length < 2){ flash('minimal 2 titik'); return; }
+  cdi.send({ cmd: 'setMap', points: pts });
+  flash('mengirim…');
+});
+
+// initial empty render
+renderCurve();
+updateLiveCursor(0, 0);
+</script>
+</body>
+</html>

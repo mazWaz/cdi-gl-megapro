@@ -1,0 +1,72 @@
+// Spark output scheduler — precise µs-level timing for ignition.
+//
+// Flow:
+//   1) Loop side computes `next_delay_us` after each RPM update from
+//      the advance map (rpm → deg → delay). Cached via setNextDelayUs().
+//   2) Pulser ISR (CH1 falling) calls `onPulseCh1FromIsr(t_lead)`. If
+//      armed + sane RPM seen, schedules HW timer alarm to pulse GPIO25
+//      HIGH at (t_lead + cached_delay), then LOW after dwell_us.
+//   3) Fire-on timer ISR: GPIO25 HIGH + GPIO26 HIGH (visible LED), arms
+//      fire-off timer for now+dwell. Captures jitter = (scheduled − actual).
+//   4) Fire-off timer ISR: GPIO25 LOW + GPIO26 LOW. Increments fire_count.
+//
+// Safety:
+//   - `armed` defaults FALSE. setArmed(true) must be called from UI to
+//     enable any output. `armed` is forced FALSE on mode change OR when
+//     no pulser activity for >NO_SIGNAL_TIMEOUT_MS (handled by safety).
+//   - On disarm, both timers are stopped and GPIOs forced LOW.
+//   - Out-of-range delay (>period) is clamped to safe value.
+//
+// All public functions are non-ISR-safe except `onPulseCh1FromIsr`.
+#pragma once
+
+#include <cstdint>
+#include <esp_attr.h>     // IRAM_ATTR macro
+#include "types.h"
+
+namespace cdi::core::spark {
+
+void begin();
+void end();
+
+// Safety gate. Returns the effective armed state after the call.
+bool setArmed(bool armed);
+bool isArmed();
+
+// Persistent preference — when true, spark::setArmed(true) is called
+// automatically at boot once config is loaded and IGNITION mode is
+// active. Default false. Use case: production deployment where the
+// ESP32 is powered by the ignition key, so user expects spark to
+// "just work" without manual UI step.
+void setAutoArm(bool en);
+bool autoArm();
+
+// Set the next-cycle fire delay (microseconds from CH1 falling edge to
+// spark fire). Updated by live_stats every loop tick from the latest
+// RPM + advance map lookup. Safe to call from any context.
+void setNextDelayUs(uint32_t delay_us);
+
+// Configure spark pulse width sent to the SCR gate driver / coil.
+void setDwellUs(uint32_t dwell_us);
+uint32_t dwellUs();
+
+// Global advance trim — added to every map lookup. Compensates for
+// optocoupler/cable propagation delay. Range typically ±5°.
+void setAdvanceOffsetDeg(float deg);
+float advanceOffsetDeg();
+
+// Fire one test spark 100 µs from now. Bypasses pulser/armed gate —
+// caller is responsible for confirming bench-safe conditions.
+void manualFire();
+
+// ─── ISR entry — called from pulser CH1 falling-edge ISR ───
+void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead);
+
+// ─── Telemetry ───
+uint32_t totalFires();
+int32_t  lastJitterUs();   // scheduled - actual (signed; positive = late)
+
+// ─── Force outputs LOW (failsafe). Called by safety.cpp ───
+void forceLow();
+
+} // namespace cdi::core::spark
