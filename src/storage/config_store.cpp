@@ -213,14 +213,20 @@ void load() {
         Serial.println("[config] NVS open fail (read)");
         return;
     }
-    size_t sz = prefs.getBytesLength(NVS_KEY);
-    if (sz == 0) {
+    // NOTE: do NOT use getBytesLength() here — that API only works for
+    // BLOB entries. We write as STR via putString(), so isKey() is the
+    // correct existence check.
+    if (!prefs.isKey(NVS_KEY)) {
         Serial.println("[config] no saved blob; using compile defaults");
         prefs.end();
         return;
     }
     String json = prefs.getString(NVS_KEY, "");
     prefs.end();
+    if (json.length() == 0) {
+        Serial.println("[config] saved blob empty; using compile defaults");
+        return;
+    }
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
