@@ -1,0 +1,2 @@
+Network layer — WiFi AP, captive portal DNS, HTTP, WebSocket.
+Modules: wifi_ap, http_server, ws_server, ws_protocol (header-only).

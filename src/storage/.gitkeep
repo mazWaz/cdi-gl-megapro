@@ -1,0 +1,2 @@
+Cold-path persistence — LittleFS access only.
+Modules: profile_store (load/save advance maps), config_store (device-level).

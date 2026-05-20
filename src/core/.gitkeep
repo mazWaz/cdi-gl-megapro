@@ -1,0 +1,3 @@
+Hot-path engine logic — IRAM, real-time, no malloc.
+Modules: pulser_input, rpm_calc, advance_map, spark_scheduler, safety,
+         rev_limiter, backfire, launch_control, quickshifter, shift_light, alvp.

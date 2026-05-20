@@ -1,0 +1,2 @@
+Live telemetry + datalog.
+Modules: live_stats (RPM/advance/heap streaming), datalog (60s ring + flash).

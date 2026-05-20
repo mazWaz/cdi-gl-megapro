@@ -1,0 +1,3 @@
+Header-only utilities.
+Files: log.h (LOGD/LOGI/LOGE macros), ring_buffer.h (SPSC template),
+       timing.h (micros64 wrap-safe diff, deadline scheduling).

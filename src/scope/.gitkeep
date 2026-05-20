@@ -1,0 +1,3 @@
+Diagnostic scope mode — ADC sampler + WS frame assembly.
+Modules: adc_sampler, scope_frame.
+Only active in SCOPE_MODE; idle during IGNITION_MODE.

@@ -1,0 +1,3 @@
+Feature composition — orchestrate per-profile feature toggles.
+Module: feature_manager.
+Reads profile, enables/disables individual core/* features, binds parameters.
