@@ -155,6 +155,22 @@ function decodeBinary(buf){
     let o = 5;
     for (let i = 0; i < n; i++){ c1[i] = v.getUint16(o, true); o += 2; c2[i] = v.getUint16(o, true); o += 2; }
     bus.emit('scopeSnap', { rate, c1, c2 });
+  } else if (magic === 0xA7){
+    // Edge-event stream — see edge_capture.cpp for layout.
+    const seq      = v.getUint32(1, true);
+    const firstTs  = v.getUint32(5, true);
+    const n        = v.getUint16(9, true);
+    const events   = new Array(n);
+    let o = 11;
+    for (let i = 0; i < n; i++){
+      events[i] = {
+        ts: firstTs + v.getUint16(o, true),
+        ch: v.getUint8(o + 2),
+        level: v.getUint8(o + 3)
+      };
+      o += 4;
+    }
+    bus.emit('scopeEdge', { seq, firstTs, events });
   }
 }
 

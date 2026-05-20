@@ -9,7 +9,7 @@
 <body>
 
 <div class="topbar">
-  <span class="brand">CDI//MGPRO<span class="ver">v0.2.0</span></span>
+  <span class="brand">CDI//MGPRO<span class="ver">v0.3.0</span></span>
   <span class="spacer"></span>
   <span class="chip" id="topMode"><span class="dot"></span><span class="txt">—</span></span>
   <span class="chip" id="topLink">LINK <span class="dot"></span><span class="txt">…</span></span>
@@ -18,11 +18,11 @@
 <main class="content">
   <div class="page-title">
     <h1>SCOPE</h1>
-    <span class="sub">// diagnostik pulser 2 kanal</span>
+    <span class="sub">// pulser CH1 + CH2 (edge stream — live saat pengapian aktif)</span>
   </div>
 
   <p class="note warn" id="modeWarn" style="display:none">
-    ⚠ mode scope sedang TIDAK AKTIF — pindah dari dasbor untuk mengaktifkan sampling.
+    ⚠ Mode SAFE_HOLD aktif — pulser ISR dimatikan, edge stream tidak tersedia.
   </p>
 
   <section class="panel" style="padding: 8px">
@@ -30,28 +30,36 @@
     <div class="scope-stats">
       <span class="chip ch1">CH1 <b id="f1">— Hz</b> · <b id="d1">—%</b></span>
       <span class="chip ch2">CH2 <b id="f2">— Hz</b> · <b id="d2">—%</b></span>
-      <span class="chip">LAJU <b id="rateNow">—</b></span>
-      <span class="chip">T/DIV <b id="tdiv">—</b></span>
       <span class="chip">WIN <b id="twin">—</b></span>
+      <span class="chip">EVT <b id="evtCount">0</b></span>
     </div>
   </section>
 
   <section class="panel">
-    <span class="label">[ basis waktu ]</span>
+    <span class="label">[ tampilan ]</span>
+    <div class="btn-row" role="tablist" id="viewMode">
+      <button class="seg-btn active" data-v="edge">⎍ Edge stream</button>
+      <button class="seg-btn" data-v="raw">~ Raw ADC (diagnostic)</button>
+    </div>
     <label class="field">
-      Laju <input id="rate" type="range" min="500" max="10000" step="100" value="5000">
-      <span class="val"><span id="rateVal">5000</span> hz</span>
+      Jendela <input id="winMs" type="range" min="50" max="2000" step="50" value="500">
+      <span class="val"><span id="winVal">500</span> ms</span>
     </label>
+    <div class="btn-row" id="rawOnly" style="display:none">
+      <label class="field">
+        Laju <input id="rate" type="range" min="500" max="10000" step="100" value="5000">
+        <span class="val"><span id="rateVal">5000</span> hz</span>
+      </label>
+    </div>
     <div class="btn-row">
       <button class="btn ghost" id="runBtn">⏸ Jeda</button>
-      <label class="chk"><input type="checkbox" id="inv1" checked>balik ch1</label>
-      <label class="chk"><input type="checkbox" id="inv2" checked>balik ch2</label>
-      <label class="chk"><input type="checkbox" id="showSnap" checked>tampil snap</label>
+      <label class="chk"><input type="checkbox" id="inv1">balik ch1</label>
+      <label class="chk"><input type="checkbox" id="inv2">balik ch2</label>
     </div>
   </section>
 
-  <section class="panel">
-    <span class="label">[ snapshot ]</span>
+  <section class="panel" id="snapPanel">
+    <span class="label">[ snapshot (raw ADC only) ]</span>
     <div class="btn-row">
       <input id="snapName" type="text" placeholder="nama (alnum -_)" maxlength="32" style="flex:1;min-width:120px">
       <button class="btn green" id="saveBtn">⊕ Simpan</button>
@@ -81,45 +89,83 @@ function resize(){
 window.addEventListener('resize', resize);
 resize();
 
+// ─────── Mode & state ───────
+let viewMode = 'edge';            // 'edge' | 'raw'
+let windowMs = 500;               // visible time window
+let running  = true;
+
+// Edge mode state — sliding window of recent events, per channel
+// Each entry: { ts, level } (ts in µs)
+const edgeBuf = { 1: [], 2: [] }; // keyed by ch
+const MAX_EVENTS_PER_CH = 4096;
+
+// Raw ADC mode state (legacy)
 let liveCh1 = new Uint16Array(0), liveCh2 = new Uint16Array(0);
 let snapCh1 = null, snapCh2 = null;
 let liveRate = 5000;
 
 function fmtTime(s){
-  if (s >= 1) return s.toFixed(2)+' s';
-  if (s >= 1e-3) return (s*1e3).toFixed(2)+' ms';
-  return (s*1e6).toFixed(1)+' µs';
+  if (s >= 1)    return s.toFixed(2)+' s';
+  if (s >= 1e-3) return (s*1e3).toFixed(0)+' ms';
+  return (s*1e6).toFixed(0)+' µs';
 }
-function updateTime(){
-  const n = liveCh1.length || 2048;
-  const win = n / liveRate;
-  $('rateNow').textContent = liveRate + ' Hz';
-  $('tdiv').textContent = fmtTime(win/10);
-  $('twin').textContent = fmtTime(win);
+function updateTimeLabel(){
+  $('twin').textContent = fmtTime(windowMs / 1000);
 }
 
-function metrics(data, rate, inv){
-  if (!data || data.length < 2) return { f:0, d:0 };
-  let mn = 4095, mx = 0;
-  for (let i = 0; i < data.length; i++){ const v = inv ? 4095 - data[i] : data[i]; if (v<mn)mn=v; if (v>mx)mx=v; }
-  if (mx - mn < 200) return { f:0, d:0 };
-  const mid = (mn+mx)/2;
-  let edges = [], high = 0;
-  let prev = (inv ? 4095 - data[0] : data[0]) > mid;
-  for (let i = 1; i < data.length; i++){
-    const v = inv ? 4095 - data[i] : data[i];
-    const cur = v > mid;
-    if (cur !== prev){ if (cur) edges.push(i); prev = cur; }
-    if (cur) high++;
+// ─────── Edge buffer maintenance ───────
+function pushEdge(ev){
+  const arr = edgeBuf[ev.ch];
+  if (!arr) return;
+  arr.push({ ts: ev.ts, level: ev.level });
+  if (arr.length > MAX_EVENTS_PER_CH) arr.shift();
+}
+function pruneOlderThan(cutoff_us){
+  for (const ch of [1,2]){
+    const arr = edgeBuf[ch];
+    let i = 0;
+    // Keep one event before the window for proper step rendering.
+    while (i+1 < arr.length && arr[i+1].ts < cutoff_us) i++;
+    if (i > 0) arr.splice(0, i);
+  }
+}
+
+// ─────── Edge stats (frequency + duty) ───────
+function computeStats(arr, nowUs, windowUs){
+  if (arr.length < 2) return { f:0, d:0 };
+  const start = nowUs - windowUs;
+  // Frequency: count falling edges in window, divide by window seconds.
+  let falls = 0, lastFallTs = 0, firstFallTs = 0;
+  for (const e of arr){
+    if (e.ts < start) continue;
+    if (e.level === 0){
+      if (falls === 0) firstFallTs = e.ts;
+      lastFallTs = e.ts;
+      falls++;
+    }
   }
   let f = 0;
-  if (edges.length >= 2){
-    let sum = 0; for (let i=1;i<edges.length;i++) sum += edges[i]-edges[i-1];
-    f = rate / (sum/(edges.length-1));
+  if (falls >= 2){
+    const span_us = lastFallTs - firstFallTs;
+    if (span_us > 0) f = (falls - 1) * 1e6 / span_us;
   }
-  return { f, d: 100 * high / data.length };
+  // Duty: portion of time spent LOW (opto conducting = pulser pulse).
+  let lowDur = 0;
+  let prevTs = start;
+  let prevLevel = arr[0].level;
+  for (const e of arr){
+    if (e.ts <= start){ prevLevel = e.level; continue; }
+    if (e.ts > nowUs) break;
+    if (prevLevel === 0) lowDur += (e.ts - prevTs);
+    prevTs    = e.ts;
+    prevLevel = e.level;
+  }
+  if (prevLevel === 0) lowDur += (nowUs - prevTs);
+  const d = 100 * lowDur / windowUs;
+  return { f, d };
 }
 
+// ─────── Rendering ───────
 function grid(w, h){
   ctx.strokeStyle = '#1f2530';
   ctx.lineWidth = 1;
@@ -127,10 +173,34 @@ function grid(w, h){
   for (let i = 1; i < 10; i++){ const x = w*i/10; ctx.moveTo(x,0); ctx.lineTo(x,h); }
   for (let i = 1; i < 8;  i++){ const y = h*i/8;  ctx.moveTo(0,y); ctx.lineTo(w,y); }
   ctx.stroke();
-  ctx.strokeStyle = '#2a3242';
-  ctx.beginPath(); ctx.moveTo(w/2,0); ctx.lineTo(w/2,h); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
 }
-function trace(data, color, inv, w, h){
+
+function drawStep(arr, color, yHi, yLo, w, nowUs, windowUs, inv){
+  if (!arr.length) return;
+  const start = nowUs - windowUs;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2 * DPR;
+  ctx.beginPath();
+  // Find initial level at window start.
+  let level = arr[0].level;
+  for (const e of arr){ if (e.ts <= start) level = e.level; else break; }
+  const effLevel = (l) => inv ? (1 - l) : l;
+  let curY = effLevel(level) ? yHi : yLo;
+  ctx.moveTo(0, curY);
+  for (const e of arr){
+    if (e.ts < start) continue;
+    if (e.ts > nowUs) break;
+    const x = ((e.ts - start) / windowUs) * w;
+    ctx.lineTo(x, curY);
+    const newY = effLevel(e.level) ? yHi : yLo;
+    ctx.lineTo(x, newY);
+    curY = newY;
+  }
+  ctx.lineTo(w, curY);
+  ctx.stroke();
+}
+
+function traceAnalog(data, color, inv, w, h){
   if (!data || !data.length) return;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * DPR;
@@ -145,44 +215,91 @@ function trace(data, color, inv, w, h){
   ctx.stroke();
 }
 
+function nowMicrosLow32(){
+  // Approximate; rendered timestamps are device-side micros() low32.
+  // We use the most recent event's ts as the "now" anchor for the
+  // sliding window — keeps the display steady even if the browser
+  // clock is unrelated to device micros.
+  let latest = 0;
+  for (const ch of [1,2]) for (const e of edgeBuf[ch]) if (e.ts > latest) latest = e.ts;
+  return latest;
+}
+
 function render(){
   const w = cv.width, h = cv.height;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, w, h);
   grid(w, h);
-  const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
-  if ($('showSnap').checked && snapCh1){
-    trace(snapCh1, '#5a4a1a', inv1, w, h);
-    trace(snapCh2, '#1a3a5a', inv2, w, h);
+
+  if (viewMode === 'edge'){
+    const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
+    const nowUs    = nowMicrosLow32();
+    const windowUs = windowMs * 1000;
+    pruneOlderThan(nowUs - windowUs * 2);
+
+    // Stack two channels vertically. CH1 top half, CH2 bottom half.
+    const m = 10 * DPR;
+    const half = h / 2;
+    drawStep(edgeBuf[1], '#ffb84d', m,          half - m, w, nowUs, windowUs, inv1);
+    drawStep(edgeBuf[2], '#5dade2', half + m,   h - m,    w, nowUs, windowUs, inv2);
+
+    const s1 = computeStats(edgeBuf[1], nowUs, windowUs);
+    const s2 = computeStats(edgeBuf[2], nowUs, windowUs);
+    $('f1').textContent = s1.f ? s1.f.toFixed(1)+' Hz' : '— Hz';
+    $('d1').textContent = s1.f ? s1.d.toFixed(0)+'%'   : '—%';
+    $('f2').textContent = s2.f ? s2.f.toFixed(1)+' Hz' : '— Hz';
+    $('d2').textContent = s2.f ? s2.d.toFixed(0)+'%'   : '—%';
+    $('evtCount').textContent = edgeBuf[1].length + edgeBuf[2].length;
+  } else {
+    const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
+    if (snapCh1){ traceAnalog(snapCh1, '#5a4a1a', inv1, w, h); traceAnalog(snapCh2, '#1a3a5a', inv2, w, h); }
+    traceAnalog(liveCh1, '#ffb84d', inv1, w, h);
+    traceAnalog(liveCh2, '#5dade2', inv2, w, h);
+    $('evtCount').textContent = (liveCh1.length || 0) + ' samp';
   }
-  trace(liveCh1, '#ffb84d', inv1, w, h);
-  trace(liveCh2, '#5dade2', inv2, w, h);
-  const m1 = metrics(liveCh1, liveRate, inv1);
-  const m2 = metrics(liveCh2, liveRate, inv2);
-  $('f1').textContent = m1.f ? m1.f.toFixed(1)+' Hz' : '— Hz';
-  $('d1').textContent = m1.d ? m1.d.toFixed(0)+'%'   : '—%';
-  $('f2').textContent = m2.f ? m2.f.toFixed(1)+' Hz' : '— Hz';
-  $('d2').textContent = m2.d ? m2.d.toFixed(0)+'%'   : '—%';
+
   requestAnimationFrame(render);
 }
 
-cdi.bus.on('scopeLive', f => { liveCh1 = f.c1; liveCh2 = f.c2; liveRate = f.rate; updateTime(); });
+// ─────── Bus subscriptions ───────
+cdi.bus.on('scopeEdge', f => {
+  if (!running) return;
+  for (const e of f.events) pushEdge(e);
+});
+cdi.bus.on('scopeLive', f => { if (running){ liveCh1 = f.c1; liveCh2 = f.c2; liveRate = f.rate; } });
 cdi.bus.on('scopeSnap', f => { snapCh1 = f.c1; snapCh2 = f.c2; });
 cdi.bus.on('telemetry', t => {
-  // Visual hint: dim canvas when scope mode is OFF
-  const active = (t.mode === 1);
-  $('modeWarn').style.display = active ? 'none' : '';
-  cv.style.opacity = active ? '1' : '0.45';
+  const safeHold = (t.mode === 3);
+  $('modeWarn').style.display = safeHold ? '' : 'none';
+  cv.style.opacity = safeHold ? '0.45' : '1';
 });
-cdi.bus.on('rate', hz => { liveRate = hz; updateTime(); });
 
-let running = true;
+// ─────── View mode toggle ───────
+$('viewMode').addEventListener('click', e => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  document.querySelectorAll('#viewMode .seg-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  viewMode = b.dataset.v;
+  $('rawOnly').style.display    = (viewMode === 'raw') ? '' : 'none';
+  $('snapPanel').style.display  = (viewMode === 'raw') ? '' : 'none';
+  if (viewMode === 'raw') cdi.send({cmd:'setMode', mode:'scope'});
+  else                    cdi.send({cmd:'setMode', mode:'ignition'});
+});
+
+$('winMs').addEventListener('input', e => {
+  windowMs = +e.target.value;
+  $('winVal').textContent = windowMs;
+  updateTimeLabel();
+});
+
 $('rate').addEventListener('input', e => $('rateVal').textContent = e.target.value);
 $('rate').addEventListener('change', e => cdi.send({cmd:'setRate', hz: +e.target.value}));
+
 $('runBtn').addEventListener('click', () => {
   running = !running;
   $('runBtn').textContent = running ? '⏸ Jeda' : '▶ Jalan';
-  cdi.send({cmd:'pause', value: !running});
+  if (viewMode === 'raw') cdi.send({cmd:'pause', value: !running});
 });
 $('clearOverlay').addEventListener('click', () => { snapCh1 = null; snapCh2 = null; });
 $('saveBtn').addEventListener('click', () => {
@@ -215,8 +332,8 @@ cdi.bus.on('open', () => cdi.send({cmd:'listSnapshots'}));
 cdi.bus.on('snapList', renderSnaps);
 cdi.bus.on('snapSaved', () => cdi.send({cmd:'listSnapshots'}));
 
+updateTimeLabel();
 requestAnimationFrame(render);
-updateTime();
 </script>
 </body>
 </html>
