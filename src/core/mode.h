@@ -1,25 +1,22 @@
 // Operating-mode state machine.
 //
-// Owns the active `OperatingMode` and arbitrates which subsystems run:
-//
-//   SCOPE       — ADC sampler ON, pulser interrupts OFF, no spark.
-//   IGNITION    — ADC sampler OFF, pulser interrupts ON, spark scheduling
-//                 enabled (spark output stays HIGH-impedance until a
-//                 valid pulser train + armed flag is observed by safety).
-//   SAFE_HOLD   — both OFF, spark output forced LOW. Set automatically
-//                 by safety on no-signal timeout or fault.
+//   IGNITION    — pulser interrupts ON (drives both spark scheduling
+//                 and live edge-stream broadcast). Spark output gated
+//                 by a separate `spark::isArmed()` flag — arming is
+//                 an explicit user action from the dashboard UI.
+//   SAFE_HOLD   — pulser ISR detached, spark forced disarmed. Set by
+//                 safety on no-signal timeout or fault. Recovered by
+//                 explicit user action.
 //   BOOT        — transient before `begin()`.
 //
 // All transitions happen from loop()/WS-callback context (never ISR).
-// Transitioning into IGNITION is a one-way arm — code intentionally
-// requires explicit confirmation from the UI to enter it.
 #pragma once
 
 #include "types.h"
 
 namespace cdi::core::mode {
 
-void           begin();                  // enter SCOPE
+void           begin();                  // enter IGNITION
 OperatingMode  current();
 bool           set(OperatingMode m);     // transition with side effects
 const char*    name(OperatingMode m);

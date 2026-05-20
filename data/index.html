@@ -42,7 +42,6 @@
     <span class="label">[ kontrol mode ]</span>
     <div class="btn-row">
       <button class="btn" id="ignBtn">▶ Pengapian</button>
-      <button class="btn ghost" id="scopeBtn">⏚ Diagnostik scope</button>
       <button class="btn crit" id="safeBtn">⏻ Mode aman</button>
     </div>
   </section>
@@ -120,7 +119,7 @@ function fmtTime(ms){
   return (h>0 ? h+'j ' : '') + String(m).padStart(2,'0') + 'm ' + String(ss).padStart(2,'0') + 'd';
 }
 
-const MODE_ID = { 0:'BOOT', 1:'SCOPE', 2:'PENGAPIAN', 3:'MODE AMAN' };
+const MODE_ID = { 0:'BOOT', 2:'PENGAPIAN', 3:'MODE AMAN' };
 
 cdi.bus.on('telemetry', t => {
   $('rpmBig').textContent = t.rpm;
@@ -194,10 +193,6 @@ cdi.bus.on('connection', () => {
 });
 
 $('ignBtn').addEventListener('click',   () => cdi.send({cmd:'setMode', mode:'ignition'}));
-$('scopeBtn').addEventListener('click', () => {
-  if (!confirm('Pindah ke mode SCOPE diagnostik? Monitoring mesin akan berhenti.')) return;
-  cdi.send({cmd:'setMode', mode:'scope'});
-});
 $('safeBtn').addEventListener('click',  () => {
   if (!confirm('Masuk MODE AMAN? Semua output dimatikan.')) return;
   cdi.send({cmd:'setMode', mode:'safehold'});

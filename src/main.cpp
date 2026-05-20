@@ -19,12 +19,10 @@
 #include "core/alvp.h"
 #include "core/engine_preset.h"
 #include "core/rpm_calc.h"
-#include "scope/adc_sampler.h"
 #include "net/wifi_ap.h"
 #include "net/http_server.h"
 #include "net/ws_server.h"
 #include "net/ota.h"
-#include "storage/snapshot_store.h"
 #include "storage/config_store.h"
 #include "telemetry/live_stats.h"
 #include "telemetry/datalog.h"
@@ -47,13 +45,11 @@ void setup() {
     pinMode(pin::STATUS_LED, OUTPUT);
     digitalWrite(pin::STATUS_LED, LOW);
 
-    cdi::storage::snap::init();
     cdi::core::advance::active().loadDefaultMegapro();
     cdi::net::wifi_ap::begin();
     cdi::net::http_server::begin();
     cdi::net::ws_server::begin();
     cdi::net::ota::registerRoutes(cdi::net::http_server::server());
-    cdi::scope::begin(cfg::SCOPE_RATE_DEFAULT);   // init timer once, mode pauses it
     cdi::core::spark::begin();                     // claim GPIO + hw timers (disarmed)
     cdi::core::safety::begin();                    // register WDT, init rev limits
     cdi::core::shift_light::begin();               // GPIO27 output

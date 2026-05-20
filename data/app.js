@@ -7,7 +7,7 @@
 
 const $ = (id) => document.getElementById(id);
 
-const MODE = { 0:'BOOT', 1:'SCOPE', 2:'PENGAPIAN', 3:'MODE AMAN' };
+const MODE = { 0:'BOOT', 2:'PENGAPIAN', 3:'MODE AMAN' };
 
 // Highlight active nav tab from URL path
 function highlightNav(){
@@ -83,9 +83,6 @@ function connect(){
         else if (m.type === 'datalog'){ bus.emit('datalog', m); }
         else if (m.type === 'presetList'){ bus.emit('presetList', m); }
         else if (m.type === 'preset'){ bus.emit('preset', m); }
-        else if (m.type === 'list'){ bus.emit('snapList', m.snaps); }
-        else if (m.type === 'saved'){ bus.emit('snapSaved', m); }
-        else if (m.type === 'rate'){ bus.emit('rate', m.hz); }
         else if (m.type === 'mode'){ bus.emit('modeChanged', m.mode); }
         else if (m.type === 'err'){ bus.emit('err', m.msg); }
       } catch (e) { console.warn('bad json', e); }
@@ -141,20 +138,6 @@ function decodeBinary(buf){
     };
     state.telemetry = t;
     bus.emit('telemetry', t);
-  } else if (magic === 0xA5){
-    const rate = v.getUint32(1, true);
-    const n = (buf.byteLength - 5) / 4;
-    const c1 = new Uint16Array(n), c2 = new Uint16Array(n);
-    let o = 5;
-    for (let i = 0; i < n; i++){ c1[i] = v.getUint16(o, true); o += 2; c2[i] = v.getUint16(o, true); o += 2; }
-    bus.emit('scopeLive', { rate, c1, c2 });
-  } else if (magic === 0xA6){
-    const rate = v.getUint32(1, true);
-    const n = (buf.byteLength - 5) / 4;
-    const c1 = new Uint16Array(n), c2 = new Uint16Array(n);
-    let o = 5;
-    for (let i = 0; i < n; i++){ c1[i] = v.getUint16(o, true); o += 2; c2[i] = v.getUint16(o, true); o += 2; }
-    bus.emit('scopeSnap', { rate, c1, c2 });
   } else if (magic === 0xA7){
     // Edge-event stream — see edge_capture.cpp for layout.
     const seq      = v.getUint32(1, true);

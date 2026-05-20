@@ -5,13 +5,10 @@
 #include <LittleFS.h>
 
 #include "config.h"
-#include "storage/snapshot_store.h"
 #include "telemetry/datalog.h"
 
 namespace cdi::net::http_server {
 namespace {
-
-namespace snap = cdi::storage::snap;
 
 AsyncWebServer s_server(cdi::config::AP_HTTP_PORT);
 
@@ -64,26 +61,6 @@ void handleDatalogCsv(AsyncWebServerRequest* req) {
     req->send(resp);
 }
 
-void handleDownload(AsyncWebServerRequest* req) {
-    if (!req->hasParam("name")) {
-        req->send(400, "text/plain", "missing name");
-        return;
-    }
-    String name = snap::sanitize(req->getParam("name")->value().c_str());
-    if (name.length() == 0) {
-        req->send(400, "text/plain", "invalid name");
-        return;
-    }
-    String csv;
-    if (!snap::toCsv(name, csv)) {
-        req->send(404, "text/plain", "not found");
-        return;
-    }
-    AsyncWebServerResponse* resp = req->beginResponse(200, "text/csv", csv);
-    resp->addHeader("Content-Disposition", "attachment; filename=\"" + name + ".csv\"");
-    req->send(resp);
-}
-
 } // anonymous
 
 void begin() {
@@ -99,7 +76,6 @@ void begin() {
     s_server.on("/app.js",         HTTP_GET, sendApp);
 
     // Dynamic endpoints.
-    s_server.on("/download",       HTTP_GET, handleDownload);
     s_server.on("/datalog.csv",    HTTP_GET, handleDatalogCsv);
 
     // OS captive-portal probes — return index.html so HP auto-opens UI.

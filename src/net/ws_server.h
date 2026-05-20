@@ -1,14 +1,13 @@
 // WebSocket server (single endpoint /ws).
 //
-// Hosts the live binary frame stream (scope waveform) and a JSON
-// text-command protocol for control (setRate, pause, snapshot
-// save/load/list/delete).
+// Hosts two binary streams + a JSON command protocol:
+//   * scope edge events  (opcode 0xA7) — drives live scope UI
+//   * telemetry          (opcode 0xB0) — 5 Hz state snapshot
 //
 // Must be initialized AFTER http_server::begin() because it attaches
 // the AsyncWebSocket handler to the HTTP server instance.
 //
-// `tickBroadcast()` is called from loop() at a fixed cadence; it
-// builds & sends the live scope frame (skipping if backpressure says
+// `tickBroadcast()` emits an edge frame (skipped if backpressure says
 // any client is still draining its previous frame).
 //
 // `cleanup()` calls AsyncWebSocket::cleanupClients() — required to

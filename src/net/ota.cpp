@@ -4,7 +4,7 @@
 #include <ESPAsyncWebServer.h>
 #include <Update.h>
 
-#include "core/mode.h"
+#include "core/spark_scheduler.h"
 #include "storage/config_store.h"
 
 namespace cdi::net::ota {
@@ -16,9 +16,9 @@ void uploadHandler(AsyncWebServerRequest* req,
                    String filename, size_t index,
                    uint8_t* data, size_t len, bool final) {
     if (index == 0) {
-        // Refuse if not in SCOPE mode (engine monitoring active).
-        if (cdi::core::mode::current() != cdi::OperatingMode::SCOPE) {
-            req->send(409, "text/plain", "switch to SCOPE mode first");
+        // Refuse OTA while ignition is armed — safety guard.
+        if (cdi::core::spark::isArmed()) {
+            req->send(409, "text/plain", "disarm ignition first");
             s_inProgress = false;
             return;
         }

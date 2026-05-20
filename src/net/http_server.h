@@ -1,9 +1,9 @@
 // HTTP server (AsyncWebServer wrapper).
 //
 // Owns the global AsyncWebServer instance on port AP_HTTP_PORT.
-// Registers static routes for index.html, snapshot CSV download, and
-// the OS-specific captive portal probe URLs (all return index.html so
-// the HP browser auto-opens the UI).
+// Registers static routes for the SPA pages, the datalog CSV
+// download, and the OS-specific captive portal probe URLs (all
+// return index.html so the HP browser auto-opens the UI).
 //
 // Other modules (ws_server) attach their own handlers via `server()`.
 #pragma once

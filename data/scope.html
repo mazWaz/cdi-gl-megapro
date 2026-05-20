@@ -18,7 +18,7 @@
 <main class="content">
   <div class="page-title">
     <h1>SCOPE</h1>
-    <span class="sub">// pulser CH1 + CH2 (edge stream — live saat pengapian aktif)</span>
+    <span class="sub">// edge stream CH1 + CH2 — live saat pengapian aktif, tidak mengganggu</span>
   </div>
 
   <p class="note warn" id="modeWarn" style="display:none">
@@ -36,36 +36,16 @@
   </section>
 
   <section class="panel">
-    <span class="label">[ tampilan ]</span>
-    <div class="btn-row" role="tablist" id="viewMode">
-      <button class="seg-btn active" data-v="edge">⎍ Edge stream</button>
-      <button class="seg-btn" data-v="raw">~ Raw ADC (diagnostic)</button>
-    </div>
+    <span class="label">[ basis waktu ]</span>
     <label class="field">
       Jendela <input id="winMs" type="range" min="50" max="2000" step="50" value="500">
       <span class="val"><span id="winVal">500</span> ms</span>
     </label>
-    <div class="btn-row" id="rawOnly" style="display:none">
-      <label class="field">
-        Laju <input id="rate" type="range" min="500" max="10000" step="100" value="5000">
-        <span class="val"><span id="rateVal">5000</span> hz</span>
-      </label>
-    </div>
     <div class="btn-row">
       <button class="btn ghost" id="runBtn">⏸ Jeda</button>
       <label class="chk"><input type="checkbox" id="inv1">balik ch1</label>
       <label class="chk"><input type="checkbox" id="inv2">balik ch2</label>
     </div>
-  </section>
-
-  <section class="panel" id="snapPanel">
-    <span class="label">[ snapshot (raw ADC only) ]</span>
-    <div class="btn-row">
-      <input id="snapName" type="text" placeholder="nama (alnum -_)" maxlength="32" style="flex:1;min-width:120px">
-      <button class="btn green" id="saveBtn">⊕ Simpan</button>
-      <button class="btn ghost" id="clearOverlay">⊘ Bersihkan overlay</button>
-    </div>
-    <div id="snapHost" class="snap-list" style="margin-top:8px"></div>
   </section>
 </main>
 
@@ -89,20 +69,13 @@ function resize(){
 window.addEventListener('resize', resize);
 resize();
 
-// ─────── Mode & state ───────
-let viewMode = 'edge';            // 'edge' | 'raw'
-let windowMs = 500;               // visible time window
+let windowMs = 500;
 let running  = true;
 
-// Edge mode state — sliding window of recent events, per channel
-// Each entry: { ts, level } (ts in µs)
-const edgeBuf = { 1: [], 2: [] }; // keyed by ch
+// Sliding window of recent events, per channel
+// Each entry: { ts, level } (ts in µs, device-side micros low32)
+const edgeBuf = { 1: [], 2: [] };
 const MAX_EVENTS_PER_CH = 4096;
-
-// Raw ADC mode state (legacy)
-let liveCh1 = new Uint16Array(0), liveCh2 = new Uint16Array(0);
-let snapCh1 = null, snapCh2 = null;
-let liveRate = 5000;
 
 function fmtTime(s){
   if (s >= 1)    return s.toFixed(2)+' s';
@@ -113,7 +86,6 @@ function updateTimeLabel(){
   $('twin').textContent = fmtTime(windowMs / 1000);
 }
 
-// ─────── Edge buffer maintenance ───────
 function pushEdge(ev){
   const arr = edgeBuf[ev.ch];
   if (!arr) return;
@@ -124,17 +96,14 @@ function pruneOlderThan(cutoff_us){
   for (const ch of [1,2]){
     const arr = edgeBuf[ch];
     let i = 0;
-    // Keep one event before the window for proper step rendering.
     while (i+1 < arr.length && arr[i+1].ts < cutoff_us) i++;
     if (i > 0) arr.splice(0, i);
   }
 }
 
-// ─────── Edge stats (frequency + duty) ───────
 function computeStats(arr, nowUs, windowUs){
   if (arr.length < 2) return { f:0, d:0 };
   const start = nowUs - windowUs;
-  // Frequency: count falling edges in window, divide by window seconds.
   let falls = 0, lastFallTs = 0, firstFallTs = 0;
   for (const e of arr){
     if (e.ts < start) continue;
@@ -149,7 +118,6 @@ function computeStats(arr, nowUs, windowUs){
     const span_us = lastFallTs - firstFallTs;
     if (span_us > 0) f = (falls - 1) * 1e6 / span_us;
   }
-  // Duty: portion of time spent LOW (opto conducting = pulser pulse).
   let lowDur = 0;
   let prevTs = start;
   let prevLevel = arr[0].level;
@@ -165,7 +133,6 @@ function computeStats(arr, nowUs, windowUs){
   return { f, d };
 }
 
-// ─────── Rendering ───────
 function grid(w, h){
   ctx.strokeStyle = '#1f2530';
   ctx.lineWidth = 1;
@@ -181,7 +148,6 @@ function drawStep(arr, color, yHi, yLo, w, nowUs, windowUs, inv){
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * DPR;
   ctx.beginPath();
-  // Find initial level at window start.
   let level = arr[0].level;
   for (const e of arr){ if (e.ts <= start) level = e.level; else break; }
   const effLevel = (l) => inv ? (1 - l) : l;
@@ -200,26 +166,7 @@ function drawStep(arr, color, yHi, yLo, w, nowUs, windowUs, inv){
   ctx.stroke();
 }
 
-function traceAnalog(data, color, inv, w, h){
-  if (!data || !data.length) return;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2 * DPR;
-  ctx.beginPath();
-  const n = data.length;
-  for (let i = 0; i < n; i++){
-    const v = inv ? 4095 - data[i] : data[i];
-    const x = (i / (n - 1)) * w;
-    const y = h - (v / 4095) * h;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-}
-
 function nowMicrosLow32(){
-  // Approximate; rendered timestamps are device-side micros() low32.
-  // We use the most recent event's ts as the "now" anchor for the
-  // sliding window — keeps the display steady even if the browser
-  // clock is unrelated to device micros.
   let latest = 0;
   for (const ch of [1,2]) for (const e of edgeBuf[ch]) if (e.ts > latest) latest = e.ts;
   return latest;
@@ -231,60 +178,35 @@ function render(){
   ctx.fillRect(0, 0, w, h);
   grid(w, h);
 
-  if (viewMode === 'edge'){
-    const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
-    const nowUs    = nowMicrosLow32();
-    const windowUs = windowMs * 1000;
-    pruneOlderThan(nowUs - windowUs * 2);
+  const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
+  const nowUs    = nowMicrosLow32();
+  const windowUs = windowMs * 1000;
+  pruneOlderThan(nowUs - windowUs * 2);
 
-    // Stack two channels vertically. CH1 top half, CH2 bottom half.
-    const m = 10 * DPR;
-    const half = h / 2;
-    drawStep(edgeBuf[1], '#ffb84d', m,          half - m, w, nowUs, windowUs, inv1);
-    drawStep(edgeBuf[2], '#5dade2', half + m,   h - m,    w, nowUs, windowUs, inv2);
+  const m = 10 * DPR;
+  const half = h / 2;
+  drawStep(edgeBuf[1], '#ffb84d', m,        half - m, w, nowUs, windowUs, inv1);
+  drawStep(edgeBuf[2], '#5dade2', half + m, h - m,    w, nowUs, windowUs, inv2);
 
-    const s1 = computeStats(edgeBuf[1], nowUs, windowUs);
-    const s2 = computeStats(edgeBuf[2], nowUs, windowUs);
-    $('f1').textContent = s1.f ? s1.f.toFixed(1)+' Hz' : '— Hz';
-    $('d1').textContent = s1.f ? s1.d.toFixed(0)+'%'   : '—%';
-    $('f2').textContent = s2.f ? s2.f.toFixed(1)+' Hz' : '— Hz';
-    $('d2').textContent = s2.f ? s2.d.toFixed(0)+'%'   : '—%';
-    $('evtCount').textContent = edgeBuf[1].length + edgeBuf[2].length;
-  } else {
-    const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
-    if (snapCh1){ traceAnalog(snapCh1, '#5a4a1a', inv1, w, h); traceAnalog(snapCh2, '#1a3a5a', inv2, w, h); }
-    traceAnalog(liveCh1, '#ffb84d', inv1, w, h);
-    traceAnalog(liveCh2, '#5dade2', inv2, w, h);
-    $('evtCount').textContent = (liveCh1.length || 0) + ' samp';
-  }
+  const s1 = computeStats(edgeBuf[1], nowUs, windowUs);
+  const s2 = computeStats(edgeBuf[2], nowUs, windowUs);
+  $('f1').textContent = s1.f ? s1.f.toFixed(1)+' Hz' : '— Hz';
+  $('d1').textContent = s1.f ? s1.d.toFixed(0)+'%'   : '—%';
+  $('f2').textContent = s2.f ? s2.f.toFixed(1)+' Hz' : '— Hz';
+  $('d2').textContent = s2.f ? s2.d.toFixed(0)+'%'   : '—%';
+  $('evtCount').textContent = edgeBuf[1].length + edgeBuf[2].length;
 
   requestAnimationFrame(render);
 }
 
-// ─────── Bus subscriptions ───────
 cdi.bus.on('scopeEdge', f => {
   if (!running) return;
   for (const e of f.events) pushEdge(e);
 });
-cdi.bus.on('scopeLive', f => { if (running){ liveCh1 = f.c1; liveCh2 = f.c2; liveRate = f.rate; } });
-cdi.bus.on('scopeSnap', f => { snapCh1 = f.c1; snapCh2 = f.c2; });
 cdi.bus.on('telemetry', t => {
   const safeHold = (t.mode === 3);
   $('modeWarn').style.display = safeHold ? '' : 'none';
   cv.style.opacity = safeHold ? '0.45' : '1';
-});
-
-// ─────── View mode toggle ───────
-$('viewMode').addEventListener('click', e => {
-  const b = e.target.closest('.seg-btn');
-  if (!b) return;
-  document.querySelectorAll('#viewMode .seg-btn').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  viewMode = b.dataset.v;
-  $('rawOnly').style.display    = (viewMode === 'raw') ? '' : 'none';
-  $('snapPanel').style.display  = (viewMode === 'raw') ? '' : 'none';
-  if (viewMode === 'raw') cdi.send({cmd:'setMode', mode:'scope'});
-  else                    cdi.send({cmd:'setMode', mode:'ignition'});
 });
 
 $('winMs').addEventListener('input', e => {
@@ -293,44 +215,10 @@ $('winMs').addEventListener('input', e => {
   updateTimeLabel();
 });
 
-$('rate').addEventListener('input', e => $('rateVal').textContent = e.target.value);
-$('rate').addEventListener('change', e => cdi.send({cmd:'setRate', hz: +e.target.value}));
-
 $('runBtn').addEventListener('click', () => {
   running = !running;
   $('runBtn').textContent = running ? '⏸ Jeda' : '▶ Jalan';
-  if (viewMode === 'raw') cdi.send({cmd:'pause', value: !running});
 });
-$('clearOverlay').addEventListener('click', () => { snapCh1 = null; snapCh2 = null; });
-$('saveBtn').addEventListener('click', () => {
-  const name = $('snapName').value.trim();
-  if (!name){ alert('isi nama snapshot dulu'); return; }
-  cdi.send({cmd:'saveSnapshot', name});
-});
-
-function renderSnaps(list){
-  const host = $('snapHost');
-  if (!list || !list.length){ host.innerHTML = '<div class="note">— belum ada snapshot tersimpan —</div>'; return; }
-  host.innerHTML = list.map(s => `
-    <div class="snap-item">
-      <span class="name">${s.name}</span>
-      <span class="meta">${s.rate} Hz</span>
-      <button data-act="load" data-n="${s.name}">muat</button>
-      <button data-act="dl" data-n="${s.name}">csv</button>
-      <button class="del" data-act="del" data-n="${s.name}">×</button>
-    </div>`).join('');
-  host.querySelectorAll('button').forEach(b => {
-    b.onclick = () => {
-      const n = b.dataset.n, a = b.dataset.act;
-      if (a === 'load') cdi.send({cmd:'loadSnapshot', name:n});
-      else if (a === 'del') cdi.send({cmd:'deleteSnapshot', name:n});
-      else if (a === 'dl')  location.href = '/download?name=' + encodeURIComponent(n);
-    };
-  });
-}
-cdi.bus.on('open', () => cdi.send({cmd:'listSnapshots'}));
-cdi.bus.on('snapList', renderSnaps);
-cdi.bus.on('snapSaved', () => cdi.send({cmd:'listSnapshots'}));
 
 updateTimeLabel();
 requestAnimationFrame(render);

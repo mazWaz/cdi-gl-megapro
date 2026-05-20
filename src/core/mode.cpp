@@ -3,7 +3,6 @@
 #include <Arduino.h>
 
 #include "config.h"
-#include "scope/adc_sampler.h"
 #include "core/pulser_input.h"
 #include "core/spark_scheduler.h"
 
@@ -12,31 +11,13 @@ namespace {
 
 OperatingMode s_mode = OperatingMode::BOOT;
 
-// Mode transitions use scope::setPaused rather than end/begin to
-// avoid the v2.x Arduino-ESP32 timer driver bug where re-attaching
-// the ISR after timerEnd() fails with "timer_isr_callback_add register
-// failed". The timer stays initialized for the device's lifetime;
-// pausing simply gates the ADC reads inside the ISR.
-//
-// Post edge-stream refactor: pulser ISR stays attached in SCOPE too
-// — the edge stream is the primary scope source, and ignition logic
-// gates `spark::isArmed()` separately. Raw ADC sampler only runs in
-// SCOPE mode as a legacy diagnostic for VRS analog signals.
-void enterScope() {
-    cdi::core::spark::setArmed(false);   // safety: no spark in scope mode
-    cdi::core::pulser::begin();          // keep edge stream live
-    cdi::scope::setPaused(false);
-}
-
 void enterIgnition() {
-    cdi::scope::setPaused(true);
     cdi::core::pulser::begin();
-    // armed stays whatever it was — UI must explicitly arm after IGNITION
+    // armed stays whatever it was — UI must explicitly arm
 }
 
 void enterSafeHold() {
     cdi::core::spark::setArmed(false);
-    cdi::scope::setPaused(true);
     cdi::core::pulser::end();
 }
 
@@ -53,7 +34,6 @@ OperatingMode current() { return s_mode; }
 bool set(OperatingMode m) {
     if (m == s_mode) return true;
     switch (m) {
-        case OperatingMode::SCOPE:     enterScope();     break;
         case OperatingMode::IGNITION:  enterIgnition();  break;
         case OperatingMode::SAFE_HOLD: enterSafeHold();  break;
         default:                       return false;
@@ -66,7 +46,6 @@ bool set(OperatingMode m) {
 const char* name(OperatingMode m) {
     switch (m) {
         case OperatingMode::BOOT:      return "BOOT";
-        case OperatingMode::SCOPE:     return "SCOPE";
         case OperatingMode::IGNITION:  return "IGNITION";
         case OperatingMode::SAFE_HOLD: return "SAFE_HOLD";
     }

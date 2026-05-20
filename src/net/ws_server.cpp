@@ -7,9 +7,7 @@
 #include "config.h"
 #include "pinmap.h"
 #include "net/http_server.h"
-#include "scope/adc_sampler.h"
 #include "scope/edge_capture.h"
-#include "storage/snapshot_store.h"
 #include "core/mode.h"
 #include "core/advance_map.h"
 #include "core/spark_scheduler.h"
@@ -28,23 +26,7 @@
 namespace cdi::net::ws_server {
 namespace {
 
-namespace snap = cdi::storage::snap;
-
 AsyncWebSocket s_ws("/ws");
-
-// Pre-allocated live frame buffer (static BSS, no malloc in hot path).
-uint8_t s_liveFrame[1 + 4 + cdi::config::BUF_SIZE_SCOPE * 4];
-
-void sendSnapshotList(AsyncWebSocketClient* client) {
-    JsonDocument doc;
-    doc["type"] = "list";
-    JsonArray arr = doc["snaps"].to<JsonArray>();
-    snap::list(arr);
-    String out;
-    serializeJson(doc, out);
-    if (client) client->text(out);
-    else        s_ws.textAll(out);
-}
 
 void handleText(AsyncWebSocketClient* client, const String& msg) {
     JsonDocument doc;
@@ -52,23 +34,10 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
     const char* cmd = doc["cmd"] | "";
     if (!*cmd) return;
 
-    if (!strcmp(cmd, "setRate")) {
-        uint32_t hz = doc["hz"] | cdi::config::SCOPE_RATE_DEFAULT;
-        uint32_t applied = cdi::scope::setRate(hz);
-        JsonDocument r;
-        r["type"] = "rate";
-        r["hz"]   = applied;
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
-    else if (!strcmp(cmd, "pause")) {
-        cdi::scope::setPaused(doc["value"] | false);
-    }
-    else if (!strcmp(cmd, "setMode")) {
+    if (!strcmp(cmd, "setMode")) {
         const char* m = doc["mode"] | "";
-        cdi::OperatingMode target = cdi::OperatingMode::SCOPE;
+        cdi::OperatingMode target = cdi::OperatingMode::IGNITION;
         if (!strcmp(m, "ignition"))      target = cdi::OperatingMode::IGNITION;
-        else if (!strcmp(m, "scope"))    target = cdi::OperatingMode::SCOPE;
         else if (!strcmp(m, "safehold")) target = cdi::OperatingMode::SAFE_HOLD;
         else {
             client->text("{\"type\":\"err\",\"msg\":\"unknown mode\"}");
@@ -80,47 +49,6 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         r["mode"] = cdi::core::mode::name(cdi::core::mode::current());
         String out; serializeJson(r, out);
         client->text(out);
-    }
-    else if (!strcmp(cmd, "saveSnapshot")) {
-        String name = snap::sanitize(doc["name"] | "snap");
-        if (name.length() == 0) {
-            client->text("{\"type\":\"err\",\"msg\":\"invalid name\"}");
-            return;
-        }
-        auto s = cdi::scope::snapshot();
-        if (!snap::save(name, cdi::scope::getRate(), s)) {
-            client->text("{\"type\":\"err\",\"msg\":\"save fail\"}");
-            return;
-        }
-        JsonDocument r;
-        r["type"] = "saved";
-        r["name"] = name;
-        String out; serializeJson(r, out);
-        client->text(out);
-        sendSnapshotList(nullptr);
-    }
-    else if (!strcmp(cmd, "listSnapshots")) {
-        sendSnapshotList(client);
-    }
-    else if (!strcmp(cmd, "loadSnapshot")) {
-        String name = snap::sanitize(doc["name"] | "");
-        int fsize = snap::fileSize(name);
-        if (fsize < 0) {
-            client->text("{\"type\":\"err\",\"msg\":\"not found\"}");
-            return;
-        }
-        // 1B magic prefix + file contents.
-        uint8_t* buf = (uint8_t*)malloc((size_t)fsize + 1);
-        if (!buf) return;
-        buf[0] = cdi::config::WS_MAGIC_SCOPE_SNAP;
-        int n = snap::load(name, buf + 1, (size_t)fsize);
-        if (n > 0) client->binary(buf, (size_t)n + 1);
-        free(buf);
-    }
-    else if (!strcmp(cmd, "deleteSnapshot")) {
-        String name = snap::sanitize(doc["name"] | "");
-        snap::remove(name);
-        sendSnapshotList(client);
     }
     else if (!strcmp(cmd, "getMap")) {
         JsonDocument r;
@@ -456,14 +384,11 @@ void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
     if (type == WS_EVT_CONNECT) {
         digitalWrite(cdi::pins::STATUS_LED, HIGH);
         JsonDocument doc;
-        doc["type"]   = "hello";
-        doc["fw"]     = cdi::config::FW_VERSION;
-        doc["rate"]   = cdi::scope::getRate();
-        doc["bufLen"] = cdi::config::BUF_SIZE_SCOPE;
-        doc["mode"]   = cdi::core::mode::name(cdi::core::mode::current());
+        doc["type"] = "hello";
+        doc["fw"]   = cdi::config::FW_VERSION;
+        doc["mode"] = cdi::core::mode::name(cdi::core::mode::current());
         String out; serializeJson(doc, out);
         client->text(out);
-        sendSnapshotList(client);
     }
     else if (type == WS_EVT_DISCONNECT) {
         if (server->count() == 0) digitalWrite(cdi::pins::STATUS_LED, LOW);
@@ -491,52 +416,20 @@ void begin() {
 void tickBroadcast() {
     if (s_ws.count() == 0) return;
 
-    const cdi::OperatingMode m = cdi::core::mode::current();
-
-    // ── Edge-event stream (opcode 0xA7) — always-on except in SAFE_HOLD.
-    // Drives the live scope visualization. Pulser ISR feeds the ring
-    // continuously, so the frame is meaningful in IGNITION mode too.
-    if (m != cdi::OperatingMode::SAFE_HOLD &&
-        cdi::scope::edge::dueNow(millis()))
-    {
-        // Backpressure check shared with raw ADC path below.
-        bool backpressured = false;
-        for (auto& c : s_ws.getClients()) {
-            if (c.queueIsFull() ||
-                c.queueLen() > cdi::config::WS_QUEUE_BACKPRESSURE_LIMIT) {
-                backpressured = true; break;
-            }
-        }
-        if (!backpressured) {
-            size_t len = 0;
-            const uint8_t* f = cdi::scope::edge::buildFrame(len);
-            if (f && len > 0) s_ws.binaryAll((uint8_t*)f, len);
-        }
-    }
-
-    // ── Legacy raw-ADC scope frame (opcode 0xA5) — only when in SCOPE
-    // mode (diagnostic / pre-opto analog inspection).
-    if (m != cdi::OperatingMode::SCOPE) return;
+    // Edge-event stream (opcode 0xA7) — live whenever pulser ISR is
+    // attached (i.e. not in SAFE_HOLD). Drives the scope visualization
+    // concurrently with ignition; no mode change required.
+    if (cdi::core::mode::current() == cdi::OperatingMode::SAFE_HOLD) return;
+    if (!cdi::scope::edge::dueNow(millis())) return;
 
     for (auto& c : s_ws.getClients()) {
         if (c.queueIsFull() ||
             c.queueLen() > cdi::config::WS_QUEUE_BACKPRESSURE_LIMIT) return;
     }
 
-    s_liveFrame[0] = cdi::config::WS_MAGIC_SCOPE_LIVE;
-    uint32_t rate = cdi::scope::getRate();
-    memcpy(&s_liveFrame[1], &rate, 4);
-
-    auto s = cdi::scope::snapshot();
-    uint8_t* p = &s_liveFrame[5];
-    for (uint32_t i = 0; i < s.buf_size; i++) {
-        uint32_t idx = (s.start_idx + i) % s.buf_size;
-        uint16_t c1 = s.ch1[idx];
-        uint16_t c2 = s.ch2[idx];
-        memcpy(p, &c1, 2); p += 2;
-        memcpy(p, &c2, 2); p += 2;
-    }
-    s_ws.binaryAll(s_liveFrame, sizeof(s_liveFrame));
+    size_t len = 0;
+    const uint8_t* f = cdi::scope::edge::buildFrame(len);
+    if (f && len > 0) s_ws.binaryAll((uint8_t*)f, len);
 }
 
 void tickTelemetry() {

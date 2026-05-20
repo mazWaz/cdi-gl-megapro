@@ -1,8 +1,9 @@
 // Persistent device configuration.
 //
 // All tunable parameters live in their owning module's RAM at runtime.
-// This store snapshots the lot to `/config.json` on LittleFS so that
-// they survive reboots, brown-outs, and OTA updates.
+// This store snapshots the lot as a JSON blob into NVS (Preferences),
+// so they survive reboots, brown-outs, OTA, AND `uploadfs` (which
+// wipes LittleFS but leaves the NVS partition intact).
 //
 // Flow:
 //   1. main.cpp setup() calls load() AFTER each module's begin()

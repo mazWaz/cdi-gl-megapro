@@ -17,11 +17,12 @@ using rpm_t = uint16_t;
 using deg_x10_t = int16_t;
 
 // ---------- Operating mode ----------
+// SCOPE mode removed — edge stream is always on (driven by pulser ISR),
+// no separate sampling pipeline needed.
 enum class OperatingMode : uint8_t {
     BOOT        = 0,   // initial state before setup completes
-    SCOPE       = 1,   // ADC sampler running, no spark output
     IGNITION    = 2,   // pulser interrupts armed, spark scheduled
-    SAFE_HOLD   = 3,   // failsafe: no spark, no sampling, waiting for recovery
+    SAFE_HOLD   = 3,   // failsafe: no spark, ISR detached, waiting recovery
 };
 
 // ---------- Pulser event ----------
