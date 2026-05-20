@@ -4,6 +4,7 @@
 // the cdi::* modules under src/.
 
 #include <Arduino.h>
+#include <LittleFS.h>
 
 #include "config.h"
 #include "pinmap.h"
@@ -44,6 +45,10 @@ void setup() {
 
     pinMode(pin::STATUS_LED, OUTPUT);
     digitalWrite(pin::STATUS_LED, LOW);
+
+    if (!LittleFS.begin(false)) {
+        Serial.println("[fs] LittleFS mount failed — UI assets will 404");
+    }
 
     cdi::core::advance::active().loadDefaultMegapro();
     cdi::net::wifi_ap::begin();
