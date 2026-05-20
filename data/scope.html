@@ -72,9 +72,10 @@ resize();
 let windowMs = 500;
 let running  = true;
 
-// Sliding window of recent events, per channel
-// Each entry: { ts, level } (ts in µs, device-side micros low32)
-const edgeBuf = { 1: [], 2: [] };
+// Sliding window of recent events, per channel.
+// Key 0 = CH1, 1 = CH2 (matches firmware PulserChannel enum on the wire).
+// Each entry: { ts, level } (ts in µs, device-side micros low32).
+const edgeBuf = { 0: [], 1: [] };
 const MAX_EVENTS_PER_CH = 4096;
 
 function fmtTime(s){
@@ -93,7 +94,7 @@ function pushEdge(ev){
   if (arr.length > MAX_EVENTS_PER_CH) arr.shift();
 }
 function pruneOlderThan(cutoff_us){
-  for (const ch of [1,2]){
+  for (const ch of [0,1]){
     const arr = edgeBuf[ch];
     let i = 0;
     while (i+1 < arr.length && arr[i+1].ts < cutoff_us) i++;
@@ -168,7 +169,7 @@ function drawStep(arr, color, yHi, yLo, w, nowUs, windowUs, inv){
 
 function nowMicrosLow32(){
   let latest = 0;
-  for (const ch of [1,2]) for (const e of edgeBuf[ch]) if (e.ts > latest) latest = e.ts;
+  for (const ch of [0,1]) for (const e of edgeBuf[ch]) if (e.ts > latest) latest = e.ts;
   return latest;
 }
 
@@ -185,16 +186,16 @@ function render(){
 
   const m = 10 * DPR;
   const half = h / 2;
-  drawStep(edgeBuf[1], '#ffb84d', m,        half - m, w, nowUs, windowUs, inv1);
-  drawStep(edgeBuf[2], '#5dade2', half + m, h - m,    w, nowUs, windowUs, inv2);
+  drawStep(edgeBuf[0], '#ffb84d', m,        half - m, w, nowUs, windowUs, inv1);  // CH1
+  drawStep(edgeBuf[1], '#5dade2', half + m, h - m,    w, nowUs, windowUs, inv2);  // CH2
 
-  const s1 = computeStats(edgeBuf[1], nowUs, windowUs);
-  const s2 = computeStats(edgeBuf[2], nowUs, windowUs);
+  const s1 = computeStats(edgeBuf[0], nowUs, windowUs);
+  const s2 = computeStats(edgeBuf[1], nowUs, windowUs);
   $('f1').textContent = s1.f ? s1.f.toFixed(1)+' Hz' : '— Hz';
   $('d1').textContent = s1.f ? s1.d.toFixed(0)+'%'   : '—%';
   $('f2').textContent = s2.f ? s2.f.toFixed(1)+' Hz' : '— Hz';
   $('d2').textContent = s2.f ? s2.d.toFixed(0)+'%'   : '—%';
-  $('evtCount').textContent = edgeBuf[1].length + edgeBuf[2].length;
+  $('evtCount').textContent = edgeBuf[0].length + edgeBuf[1].length;
 
   requestAnimationFrame(render);
 }
