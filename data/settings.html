@@ -35,13 +35,52 @@
     <div class="btn-row">
       <button class="btn" id="presetChooseBtn">↺ Pilih motor lain</button>
       <button class="btn ghost" id="presetResetBtn" style="display:none">⤺ Reset ke default preset</button>
+      <button class="btn ghost" id="detectBtn">⌕ Auto-detect pickup</button>
     </div>
     <p class="note" style="margin-top:6px">
       Preset memuat: trigger channel · magnet width · advance map · rev limit · dwell.
       Setelah ganti motor, semua setting disesuaikan otomatis. Bisa edit individual nanti
-      (badge MODIFIED akan muncul).
+      (badge MODIFIED akan muncul).<br>
+      <b>Auto-detect</b> mengukur lebar magnet pickup langsung dari motor (kick engine,
+      pengapian dimatikan) — berguna kalau motor tidak ada di daftar preset atau
+      pickup sudah dimodifikasi.
     </p>
   </section>
+
+  <!-- modal pickup auto-detect -->
+  <div id="detectModal" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,0.95);z-index:1000;overflow-y:auto;padding:20px">
+    <div style="max-width:520px;margin:0 auto">
+      <div class="page-title" style="margin-bottom:10px">
+        <h1>AUTO-DETECT</h1>
+        <span class="sub">// ukur lebar magnet pickup</span>
+      </div>
+      <p class="note warn">
+        ⚠ Pengapian akan <b>dimatikan</b> selama deteksi (safety). Kick engine pelan
+        20 putaran untuk hasil stabil. Tidak butuh strobe — hanya geometri pickup.
+      </p>
+      <div class="panel" style="margin-top:10px;padding:12px">
+        <div class="readout-row" style="grid-template-columns:1fr 1fr 1fr;background:transparent;border:0;padding:0">
+          <div class="readout"><span class="num" id="detState" style="font-size:20px">IDLE</span><span class="unit">status</span></div>
+          <div class="readout"><span class="num cyan" id="detRevs" style="font-size:20px">0/20</span><span class="unit">revolusi</span></div>
+          <div class="readout"><span class="num green" id="detStability" style="font-size:20px">—</span><span class="unit">stabilitas</span></div>
+        </div>
+        <div class="readout-row" style="grid-template-columns:1fr 1fr;background:transparent;border:0;padding:0;margin-top:6px">
+          <div class="readout"><span class="num amber" id="detWidth" style="font-size:24px">—</span><span class="unit">magnet width (°)</span></div>
+          <div class="readout"><span class="num" id="detRpm" style="font-size:24px">—</span><span class="unit">RPM (kick)</span></div>
+        </div>
+        <p class="note" id="detRange" style="margin-top:6px;color:var(--text-dim)">Range: —</p>
+      </div>
+      <div id="detSuggestBox" style="display:none;margin-top:10px">
+        <span class="label">[ preset cocok ]</span>
+        <div id="detSuggestList" style="margin-top:6px"></div>
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn green" id="detStartBtn">▶ Mulai deteksi</button>
+        <button class="btn crit"  id="detStopBtn" style="display:none">■ Hentikan</button>
+        <button class="btn ghost" id="detCloseBtn">✕ Tutup</button>
+      </div>
+    </div>
+  </div>
 
   <!-- modal preset picker -->
   <div id="presetModal" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,0.95);z-index:1000;overflow-y:auto;padding:20px">
@@ -544,6 +583,112 @@ cdi.bus.on('preset', m => {
   if (presetData){ presetData.current = m.current; presetData.modified = m.modified; renderCurrent(); }
   else cdi.send({cmd:'getPresetList'});
 });
+
+// ── Pickup auto-detect wizard ──
+let detPoll = null;
+function openDetectModal(){
+  $('detectModal').style.display = '';
+  $('detState').textContent = 'IDLE';
+  $('detRevs').textContent  = '0/20';
+  $('detWidth').textContent = '—';
+  $('detRpm').textContent   = '—';
+  $('detStability').textContent = '—';
+  $('detRange').textContent = 'Range: —';
+  $('detSuggestBox').style.display = 'none';
+  $('detStartBtn').style.display = '';
+  $('detStopBtn').style.display  = 'none';
+}
+function closeDetectModal(){
+  if (detPoll){ clearInterval(detPoll); detPoll = null; }
+  cdi.send({cmd:'stopDetect'});
+  $('detectModal').style.display = 'none';
+}
+$('detectBtn').addEventListener('click', openDetectModal);
+$('detCloseBtn').addEventListener('click', closeDetectModal);
+$('detStartBtn').addEventListener('click', () => {
+  cdi.send({cmd:'startDetect', revs:20, timeoutMs:30000});
+  $('detStartBtn').style.display = 'none';
+  $('detStopBtn').style.display  = '';
+  $('detSuggestBox').style.display = 'none';
+  if (detPoll) clearInterval(detPoll);
+  detPoll = setInterval(() => cdi.send({cmd:'getDetectStatus'}), 250);
+});
+$('detStopBtn').addEventListener('click', () => {
+  cdi.send({cmd:'stopDetect'});
+  if (detPoll){ clearInterval(detPoll); detPoll = null; }
+  $('detStartBtn').style.display = '';
+  $('detStopBtn').style.display  = 'none';
+});
+
+cdi.bus.on('open', () => { /* detect status pulled on demand only */ });
+
+bus_addListener_detect();
+function bus_addListener_detect(){
+  cdi.bus.on('hello', () => {});  // placeholder, hello handled elsewhere
+}
+
+// Detect status frames (type:"detect")
+cdi.send.__detect_listener_installed || (cdi.send.__detect_listener_installed = true);
+// Use plain bus.on for detect updates
+window.__cdi_detect_handler = m => {
+  // m is { state, revs, target, width_deg, width_min, width_max, stability, period_us, suggest? }
+  if (typeof m.state !== 'string') return;
+  $('detState').textContent = m.state;
+  if (typeof m.revs === 'number')   $('detRevs').textContent = m.revs + '/' + m.target;
+  if (typeof m.width_deg === 'number' && m.width_deg > 0)
+                                    $('detWidth').textContent = m.width_deg.toFixed(2);
+  if (typeof m.stability === 'number' && m.stability > 0)
+                                    $('detStability').textContent = m.stability.toFixed(1) + '%';
+  if (typeof m.period_us === 'number' && m.period_us > 0){
+    const rpm = Math.round(60000000 / m.period_us);
+    $('detRpm').textContent = rpm.toString();
+  }
+  if (typeof m.width_min === 'number' && m.width_min > 0 && m.width_max > 0)
+    $('detRange').textContent = `Range: ${m.width_min.toFixed(2)}° – ${m.width_max.toFixed(2)}° (spread ${(m.width_max - m.width_min).toFixed(2)}°)`;
+
+  if (m.state === 'DONE'){
+    if (detPoll){ clearInterval(detPoll); detPoll = null; }
+    $('detStartBtn').style.display = '';
+    $('detStopBtn').style.display  = 'none';
+    if (Array.isArray(m.suggest) && m.suggest.length){
+      $('detSuggestBox').style.display = '';
+      const html = m.suggest.map(id => {
+        const p = presetData && presetData.list.find(x => x.id === id);
+        const name = p ? p.name : id;
+        const dev = p ? Math.abs(p.magnet - m.width_deg).toFixed(2) : '?';
+        return `<div class="panel" data-sugg="${id}" style="cursor:pointer;padding:8px;margin-bottom:5px">
+          <b style="color:var(--amber)">${name}</b>
+          <span style="font-size:10px;color:var(--text-faint);margin-left:8px">Δ ${dev}°</span>
+        </div>`;
+      }).join('');
+      $('detSuggestList').innerHTML = html;
+      $('detSuggestList').querySelectorAll('[data-sugg]').forEach(el => {
+        el.onclick = () => {
+          const pid = el.dataset.sugg;
+          if (!confirm('Apply preset "' + pid + '"?\n\nSemua setting akan diganti.')) return;
+          cdi.send({cmd:'setPreset', id:pid});
+          closeDetectModal();
+        };
+      });
+    } else {
+      $('detSuggestBox').style.display = '';
+      $('detSuggestList').innerHTML = '<p class="note warn">Tidak ada preset yang cocok (±2°). Gunakan preset "Custom" lalu set magnet width manual di config.</p>';
+    }
+  } else if (m.state === 'ERR_TIMEOUT'){
+    if (detPoll){ clearInterval(detPoll); detPoll = null; }
+    $('detStartBtn').style.display = '';
+    $('detStopBtn').style.display  = 'none';
+    alert('Timeout — kick lebih lama / lebih banyak putaran. Tekan Mulai lagi.');
+  } else if (m.state === 'ERR_MULTI_TOOTH'){
+    if (detPoll){ clearInterval(detPoll); detPoll = null; }
+    $('detStartBtn').style.display = '';
+    $('detStopBtn').style.display  = 'none';
+    alert('Multi-tooth pickup terdeteksi (motor FI dengan toothed wheel). CDI ini tidak kompatibel.');
+  }
+};
+// Hook into raw WS dispatcher: app.js routes JSON by m.type to bus event
+// named after type, so 'detect' messages emit on bus event 'detect'.
+cdi.bus.on('detect', m => window.__cdi_detect_handler(m));
 
 // ── Cut mode UI (segmented buttons) ──
 const CUT_DESC = {
