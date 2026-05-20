@@ -9,7 +9,6 @@
 #include "net/http_server.h"
 #include "scope/edge_capture.h"
 #include "core/mode.h"
-#include "core/pickup_detect.h"
 #include "core/advance_map.h"
 #include "core/spark_scheduler.h"
 #include "core/safety.h"
@@ -209,61 +208,6 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         r["type"]     = "preset";
         r["current"]  = cdi::core::preset::currentId();
         r["modified"] = cdi::core::preset::isModified();
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
-    else if (!strcmp(cmd, "startDetect")) {
-        uint8_t  revs = doc["revs"]      | cdi::core::detect::DEFAULT_REVS_TARGET;
-        uint32_t to   = doc["timeoutMs"] | cdi::core::detect::DEFAULT_TIMEOUT_MS;
-        cdi::core::detect::setTargetRevs(revs);
-        cdi::core::detect::setTimeoutMs(to);
-        bool ok = cdi::core::detect::start();
-        JsonDocument r;
-        r["type"]  = "detect";
-        r["state"] = ok ? "COLLECTING" : "ERR";
-        r["msg"]   = ok ? "kick the engine" : "pulser ISR not attached";
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
-    else if (!strcmp(cmd, "stopDetect")) {
-        cdi::core::detect::stop();
-        JsonDocument r;
-        r["type"]  = "detect";
-        r["state"] = "IDLE";
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
-    else if (!strcmp(cmd, "getDetectStatus")) {
-        const auto s = cdi::core::detect::status();
-        JsonDocument r;
-        r["type"]      = "detect";
-        const char* sn = "IDLE";
-        switch (s.state) {
-            case cdi::core::detect::State::IDLE:            sn = "IDLE"; break;
-            case cdi::core::detect::State::COLLECTING:      sn = "COLLECTING"; break;
-            case cdi::core::detect::State::DONE:            sn = "DONE"; break;
-            case cdi::core::detect::State::ERR_TIMEOUT:     sn = "ERR_TIMEOUT"; break;
-            case cdi::core::detect::State::ERR_MULTI_TOOTH: sn = "ERR_MULTI_TOOTH"; break;
-        }
-        r["state"]         = sn;
-        r["revs"]          = s.revs_collected;
-        r["target"]        = s.revs_target;
-        r["total_events"]  = s.total_events;
-        r["total_falls"]   = s.total_falls;
-        r["width_deg"]     = s.width_mean_deg;
-        r["width_min"]     = s.width_min_deg;
-        r["width_max"]     = s.width_max_deg;
-        r["stability"]     = s.stability_pct;
-        r["period_us"]     = s.period_us_mean;
-        r["elapsed_ms"]    = s.elapsed_ms;
-        if (s.state == cdi::core::detect::State::DONE) {
-            // Suggest matching presets (up to 5 within ±2°).
-            const char* sug[5];
-            size_t n = cdi::core::preset::suggestByMagnetWidth(
-                s.width_mean_deg, 2.0f, sug, 5);
-            JsonArray a = r["suggest"].to<JsonArray>();
-            for (size_t i = 0; i < n; i++) a.add(sug[i]);
-        }
         String out; serializeJson(r, out);
         client->text(out);
     }
@@ -475,11 +419,7 @@ void tickBroadcast() {
     // Edge-event stream (opcode 0xA7) — live whenever pulser ISR is
     // attached (i.e. not in SAFE_HOLD). Drives the scope visualization
     // concurrently with ignition; no mode change required.
-    //
-    // Detection mode owns the scope ring exclusively while COLLECTING:
-    // edge broadcast pauses to let detect::tick drain every event.
     if (cdi::core::mode::current() == cdi::OperatingMode::SAFE_HOLD) return;
-    if (cdi::core::detect::status().state == cdi::core::detect::State::COLLECTING) return;
     if (!cdi::scope::edge::dueNow(millis())) return;
 
     for (auto& c : s_ws.getClients()) {
