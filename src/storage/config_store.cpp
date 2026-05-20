@@ -14,6 +14,7 @@
 #include "core/backfire.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
+#include "core/pickup.h"
 
 namespace cdi::storage::config {
 namespace {
@@ -32,6 +33,13 @@ void buildJson(JsonDocument& doc) {
     doc["v"] = SCHEMA_VERSION;
     doc["preset_id"] = cdi::core::preset::currentId();
     doc["preset_modified"] = cdi::core::preset::isModified();
+
+    // pickup override (set by auto-cal or manual entry)
+    JsonObject pu = doc["pickup"].to<JsonObject>();
+    pu["override"]    = cdi::core::pickup::hasOverride();
+    pu["max_ref"]     = cdi::core::pickup::maxAdvanceRef();
+    pu["magnet"]      = cdi::core::pickup::magnetWidth();
+    pu["source"]      = cdi::core::pickup::source();
 
     // advance map
     JsonArray map = doc["advance_map"].to<JsonArray>();
@@ -98,7 +106,23 @@ void buildJson(JsonDocument& doc) {
 }
 
 void applyJson(const JsonDocument& doc) {
-    // ── Apply preset first (sets defaults), then user overrides
+    // ── Restore pickup override BEFORE preset::apply, so that apply
+    // respects the user's calibrated geometry instead of clobbering
+    // it with factory defaults.
+    {
+        JsonObjectConst pu = doc["pickup"];
+        if (!pu.isNull()) {
+            const bool ov = pu["override"] | false;
+            if (ov) {
+                cdi::core::pickup::setMaxAdvanceRef(pu["max_ref"] | cdi::core::pickup::maxAdvanceRef());
+                cdi::core::pickup::setMagnetWidth(pu["magnet"]     | cdi::core::pickup::magnetWidth());
+                cdi::core::pickup::setSource(pu["source"]          | "preset");
+                cdi::core::pickup::setOverride(true);
+            }
+        }
+    }
+
+    // ── Apply preset (sets defaults except pickup if overridden), then user overrides
     const char* pid = doc["preset_id"] | (const char*)nullptr;
     if (pid && *pid) {
         cdi::core::preset::apply(pid);   // base config from preset
