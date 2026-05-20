@@ -36,12 +36,73 @@
       <button class="btn" id="presetChooseBtn">↺ Pilih motor lain</button>
       <button class="btn ghost" id="presetResetBtn" style="display:none">⤺ Reset ke default preset</button>
     </div>
+
+    <!-- pickup geometry sub-panel -->
+    <div style="margin-top:10px;padding:8px;border:1px solid var(--border);background:rgba(255,255,255,0.02)">
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <span style="color:var(--amber);font-size:11px;letter-spacing:0.15em">PICKUP</span>
+        <span class="chip" id="pickupSrcChip" style="font-size:10px">preset</span>
+        <span style="font-size:11px;color:var(--text-dim)">
+          magnet <b id="pickupMagnet" style="color:var(--amber)">—</b>° ·
+          max ref <b id="pickupMax" style="color:var(--amber)">—</b>° BTDC ·
+          base <b id="pickupBase" style="color:var(--text-dim)">—</b>° BTDC
+        </span>
+      </div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn ghost" id="calBtn">⌕ Kalibrasi sekarang</button>
+        <button class="btn ghost" id="pickupResetBtn" style="display:none">⤺ Reset ke preset</button>
+      </div>
+      <p class="note" style="font-size:10px;margin-top:4px;color:var(--text-dim)">
+        Kalibrasi mengukur lebar magnet langsung dari motor saat idle (engine menyala
+        stabil 1500-2500 RPM, pengapian dimatikan otomatis selama proses). Hasilnya
+        override nilai preset — berguna untuk motor yang pulsernya sudah dimodifikasi.
+      </p>
+    </div>
+
     <p class="note" style="margin-top:6px">
       Preset memuat: trigger channel · magnet width · advance map · rev limit · dwell.
       Setelah ganti motor, semua setting disesuaikan otomatis. Bisa edit individual nanti
       (badge MODIFIED akan muncul).
     </p>
   </section>
+
+  <!-- modal kalibrasi pickup -->
+  <div id="calModal" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,0.95);z-index:1000;overflow-y:auto;padding:20px">
+    <div style="max-width:520px;margin:0 auto">
+      <div class="page-title" style="margin-bottom:10px">
+        <h1>KALIBRASI PICKUP</h1>
+        <span class="sub">// ukur lebar magnet saat engine idle</span>
+      </div>
+      <p class="note warn">
+        ⚠ Pengapian akan <b>dimatikan</b> selama kalibrasi (safety).<br>
+        Engine harus sudah <b>idle stabil 1500-2500 RPM</b> sebelum mulai.
+        Algoritma butuh ~50 putaran tanpa akselerasi / decelerasi (filter ±5% jitter).
+      </p>
+      <div class="panel" style="margin-top:10px;padding:12px">
+        <div class="readout-row" style="grid-template-columns:1fr 1fr 1fr;background:transparent;border:0;padding:0">
+          <div class="readout"><span class="num" id="calState" style="font-size:18px">IDLE</span><span class="unit">status</span></div>
+          <div class="readout"><span class="num cyan" id="calGood" style="font-size:18px">0/50</span><span class="unit">good revs</span></div>
+          <div class="readout"><span class="num" id="calRpm" style="font-size:18px">—</span><span class="unit">RPM</span></div>
+        </div>
+        <div class="readout-row" style="grid-template-columns:1fr 1fr;background:transparent;border:0;padding:0;margin-top:6px">
+          <div class="readout"><span class="num amber" id="calWidth" style="font-size:24px">—</span><span class="unit">magnet width (°)</span></div>
+          <div class="readout"><span class="num green" id="calConfidence" style="font-size:24px">—</span><span class="unit">confidence</span></div>
+        </div>
+        <p class="note" id="calDetail" style="margin-top:6px;color:var(--text-dim);font-size:10px">Range: — · skip jitter: 0 · skip RPM: 0</p>
+      </div>
+      <div id="calResultBox" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--amber)">
+        <span class="label">[ hasil ]</span>
+        <p style="margin:6px 0" id="calResultText"></p>
+        <p style="margin:6px 0;font-size:10px;color:var(--text-dim)" id="calSuggestion"></p>
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn green" id="calStartBtn">▶ Mulai kalibrasi</button>
+        <button class="btn crit"  id="calStopBtn"  style="display:none">■ Hentikan</button>
+        <button class="btn green" id="calApplyBtn" style="display:none">✓ Terapkan hasil</button>
+        <button class="btn ghost" id="calCloseBtn">✕ Tutup</button>
+      </div>
+    </div>
+  </div>
 
   <!-- modal preset picker -->
   <div id="presetModal" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,0.95);z-index:1000;overflow-y:auto;padding:20px">
@@ -538,11 +599,121 @@ $('presetResetBtn').addEventListener('click', () => {
   cdi.send({cmd:'setPreset', id: presetData.current});
 });
 
-cdi.bus.on('open', () => cdi.send({cmd:'getPresetList'}));
+cdi.bus.on('open', () => { cdi.send({cmd:'getPresetList'}); cdi.send({cmd:'getPickup'}); });
 cdi.bus.on('presetList', m => { presetData = m; renderCurrent(); });
 cdi.bus.on('preset', m => {
   if (presetData){ presetData.current = m.current; presetData.modified = m.modified; renderCurrent(); }
   else cdi.send({cmd:'getPresetList'});
+});
+
+// ── Pickup geometry display + reset ──
+function renderPickup(m){
+  $('pickupMagnet').textContent = (typeof m.magnet === 'number') ? m.magnet.toFixed(2) : '—';
+  $('pickupMax').textContent    = (typeof m.max_ref === 'number') ? m.max_ref.toFixed(1) : '—';
+  $('pickupBase').textContent   = (typeof m.base === 'number') ? m.base.toFixed(1) : '—';
+  $('pickupSrcChip').textContent = m.source || (m.override ? 'override' : 'preset');
+  const isOverride = !!m.override;
+  $('pickupSrcChip').style.background  = isOverride ? 'rgba(244,160,0,0.18)' : '';
+  $('pickupSrcChip').style.borderColor = isOverride ? 'var(--warn)' : '';
+  $('pickupSrcChip').style.color       = isOverride ? 'var(--warn)' : 'var(--text-dim)';
+  $('pickupResetBtn').style.display = isOverride ? '' : 'none';
+}
+cdi.bus.on('pickup', renderPickup);
+$('pickupResetBtn').addEventListener('click', () => {
+  if (!confirm('Reset geometri pickup ke nilai preset?\n\nNilai kalibrasi custom akan hilang.')) return;
+  cdi.send({cmd:'resetPickup'});
+});
+
+// ── Kalibrasi pickup wizard ──
+let calPoll = null;
+function openCalModal(){
+  $('calModal').style.display = '';
+  $('calState').textContent = 'IDLE';
+  $('calGood').textContent  = '0/50';
+  $('calRpm').textContent   = '—';
+  $('calWidth').textContent = '—';
+  $('calConfidence').textContent = '—';
+  $('calDetail').textContent = 'Range: — · skip jitter: 0 · skip RPM: 0';
+  $('calResultBox').style.display = 'none';
+  $('calStartBtn').style.display  = '';
+  $('calStopBtn').style.display   = 'none';
+  $('calApplyBtn').style.display  = 'none';
+}
+function closeCalModal(){
+  if (calPoll){ clearInterval(calPoll); calPoll = null; }
+  cdi.send({cmd:'stopCal'});
+  $('calModal').style.display = 'none';
+}
+$('calBtn').addEventListener('click', openCalModal);
+$('calCloseBtn').addEventListener('click', closeCalModal);
+$('calStartBtn').addEventListener('click', () => {
+  if (!confirm('Mulai kalibrasi?\n\nPengapian akan dimatikan. Pastikan engine sudah idle stabil 1500-2500 RPM.')) return;
+  cdi.send({cmd:'startCal', revs:50, rpmMin:800, rpmMax:3000, jitterPct:5});
+  $('calStartBtn').style.display = 'none';
+  $('calStopBtn').style.display  = '';
+  $('calResultBox').style.display = 'none';
+  if (calPoll) clearInterval(calPoll);
+  calPoll = setInterval(() => cdi.send({cmd:'getCalStatus'}), 250);
+});
+$('calStopBtn').addEventListener('click', () => {
+  cdi.send({cmd:'stopCal'});
+  if (calPoll){ clearInterval(calPoll); calPoll = null; }
+  $('calStartBtn').style.display = '';
+  $('calStopBtn').style.display  = 'none';
+});
+$('calApplyBtn').addEventListener('click', () => {
+  cdi.send({cmd:'applyCal'});
+  setTimeout(closeCalModal, 200);
+});
+
+cdi.bus.on('cal', m => {
+  if (typeof m.state !== 'string') return;
+  $('calState').textContent = m.state;
+  if (typeof m.good === 'number')         $('calGood').textContent = m.good + '/' + m.target;
+  if (typeof m.rpm === 'number' && m.rpm > 0) $('calRpm').textContent = m.rpm;
+  if (typeof m.width_median === 'number' && m.width_median > 0)
+    $('calWidth').textContent = m.width_median.toFixed(2);
+  if (typeof m.confidence === 'number' && m.confidence > 0)
+    $('calConfidence').textContent = m.confidence.toFixed(1) + '%';
+  if (typeof m.width_min === 'number' && m.width_min > 0)
+    $('calDetail').textContent =
+      `Range: ${m.width_min.toFixed(2)}°–${m.width_max.toFixed(2)}° (σ ${m.width_stddev.toFixed(2)}°) · skip jitter: ${m.skipped_jitter||0} · skip RPM: ${m.skipped_rpm||0}`;
+
+  if (m.state === 'DONE'){
+    if (calPoll){ clearInterval(calPoll); calPoll = null; }
+    $('calStopBtn').style.display  = 'none';
+    $('calStartBtn').style.display = '';
+    $('calApplyBtn').style.display = '';
+    $('calResultBox').style.display = '';
+    const delta = m.delta_deg || 0;
+    const preset_w = m.preset_width || 0;
+    $('calResultText').innerHTML =
+      `Magnet width terukur: <b style="color:var(--amber)">${m.width_median.toFixed(2)}°</b> (σ ${m.width_stddev.toFixed(2)}°, confidence ${m.confidence.toFixed(1)}%)<br>` +
+      `Preset menyimpan: <b>${preset_w.toFixed(2)}°</b>, selisih <b>${delta >= 0 ? '+' : ''}${delta.toFixed(2)}°</b>`;
+    if (Math.abs(delta) < 1.0){
+      $('calSuggestion').textContent = '✓ Match dengan preset (selisih <1°). Apply optional — preset sudah akurat.';
+    } else if (delta < -1.0){
+      const off = (-delta).toFixed(1);
+      $('calSuggestion').textContent =
+        `⚠ Magnet lebih sempit dari preset → kemungkinan leading edge sudah digerinda. ` +
+        `Saran: setelah apply, tambahkan +${off}° ke advance offset (Konfig → Offset pengapian) untuk kompensasi.`;
+    } else {
+      const off = delta.toFixed(1);
+      $('calSuggestion').textContent =
+        `⚠ Magnet lebih lebar dari preset → kemungkinan ada material ditambah. ` +
+        `Saran: setelah apply, kurangi -${off}° dari advance offset.`;
+    }
+  } else if (m.state === 'ERR_TIMEOUT'){
+    if (calPoll){ clearInterval(calPoll); calPoll = null; }
+    $('calStopBtn').style.display  = 'none';
+    $('calStartBtn').style.display = '';
+    alert('Timeout — RPM idle tidak stabil cukup, atau di luar window 800-3000 RPM. Coba lagi setelah engine warm-up.');
+  } else if (m.state === 'ERR_MULTI_TOOTH'){
+    if (calPoll){ clearInterval(calPoll); calPoll = null; }
+    $('calStopBtn').style.display  = 'none';
+    $('calStartBtn').style.display = '';
+    alert('Multi-tooth pickup terdeteksi (motor FI dengan toothed crank wheel). CDI ini tidak kompatibel.');
+  }
 });
 
 // ── Cut mode UI (segmented buttons) ──

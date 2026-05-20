@@ -83,6 +83,8 @@ function connect(){
         else if (m.type === 'datalog'){ bus.emit('datalog', m); }
         else if (m.type === 'presetList'){ bus.emit('presetList', m); }
         else if (m.type === 'preset'){ bus.emit('preset', m); }
+        else if (m.type === 'pickup'){ bus.emit('pickup', m); }
+        else if (m.type === 'cal'){ bus.emit('cal', m); }
         else if (m.type === 'mode'){ bus.emit('modeChanged', m.mode); }
         else if (m.type === 'err'){ bus.emit('err', m.msg); }
       } catch (e) { console.warn('bad json', e); }
