@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>CDI//MGPRO · Scope</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">CDI//MGPRO<span class="ver">v0.2.0</span></span>
+  <span class="spacer"></span>
+  <span class="chip" id="topMode"><span class="dot"></span><span class="txt">—</span></span>
+  <span class="chip" id="topLink">LINK <span class="dot"></span><span class="txt">…</span></span>
+</div>
+
+<main class="content">
+  <div class="page-title">
+    <h1>SCOPE</h1>
+    <span class="sub">// diagnostik pulser 2 kanal</span>
+  </div>
+
+  <p class="note warn" id="modeWarn" style="display:none">
+    ⚠ mode scope sedang TIDAK AKTIF — pindah dari dasbor untuk mengaktifkan sampling.
+  </p>
+
+  <section class="panel" style="padding: 8px">
+    <canvas id="scope" class="scope"></canvas>
+    <div class="scope-stats">
+      <span class="chip ch1">CH1 <b id="f1">— Hz</b> · <b id="d1">—%</b></span>
+      <span class="chip ch2">CH2 <b id="f2">— Hz</b> · <b id="d2">—%</b></span>
+      <span class="chip">LAJU <b id="rateNow">—</b></span>
+      <span class="chip">T/DIV <b id="tdiv">—</b></span>
+      <span class="chip">WIN <b id="twin">—</b></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ basis waktu ]</span>
+    <label class="field">
+      Laju <input id="rate" type="range" min="500" max="10000" step="100" value="5000">
+      <span class="val"><span id="rateVal">5000</span> hz</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn ghost" id="runBtn">⏸ Jeda</button>
+      <label class="chk"><input type="checkbox" id="inv1" checked>balik ch1</label>
+      <label class="chk"><input type="checkbox" id="inv2" checked>balik ch2</label>
+      <label class="chk"><input type="checkbox" id="showSnap" checked>tampil snap</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ snapshot ]</span>
+    <div class="btn-row">
+      <input id="snapName" type="text" placeholder="nama (alnum -_)" maxlength="32" style="flex:1;min-width:120px">
+      <button class="btn green" id="saveBtn">⊕ Simpan</button>
+      <button class="btn ghost" id="clearOverlay">⊘ Bersihkan overlay</button>
+    </div>
+    <div id="snapHost" class="snap-list" style="margin-top:8px"></div>
+  </section>
+</main>
+
+<nav class="bottom-nav">
+  <a href="/"><span class="ico">▮</span>Dasbor</a>
+  <a href="/map.html"><span class="ico">⌒</span>Peta</a>
+  <a href="/scope.html"><span class="ico">~</span>Scope</a>
+  <a href="/settings.html"><span class="ico">⚙</span>Konfig</a>
+</nav>
+
+<script src="/app.js"></script>
+<script>
+const cv = $('scope');
+const ctx = cv.getContext('2d');
+let DPR = window.devicePixelRatio || 1;
+function resize(){
+  const r = cv.getBoundingClientRect();
+  cv.width = r.width * DPR;
+  cv.height = r.height * DPR;
+}
+window.addEventListener('resize', resize);
+resize();
+
+let liveCh1 = new Uint16Array(0), liveCh2 = new Uint16Array(0);
+let snapCh1 = null, snapCh2 = null;
+let liveRate = 5000;
+
+function fmtTime(s){
+  if (s >= 1) return s.toFixed(2)+' s';
+  if (s >= 1e-3) return (s*1e3).toFixed(2)+' ms';
+  return (s*1e6).toFixed(1)+' µs';
+}
+function updateTime(){
+  const n = liveCh1.length || 2048;
+  const win = n / liveRate;
+  $('rateNow').textContent = liveRate + ' Hz';
+  $('tdiv').textContent = fmtTime(win/10);
+  $('twin').textContent = fmtTime(win);
+}
+
+function metrics(data, rate, inv){
+  if (!data || data.length < 2) return { f:0, d:0 };
+  let mn = 4095, mx = 0;
+  for (let i = 0; i < data.length; i++){ const v = inv ? 4095 - data[i] : data[i]; if (v<mn)mn=v; if (v>mx)mx=v; }
+  if (mx - mn < 200) return { f:0, d:0 };
+  const mid = (mn+mx)/2;
+  let edges = [], high = 0;
+  let prev = (inv ? 4095 - data[0] : data[0]) > mid;
+  for (let i = 1; i < data.length; i++){
+    const v = inv ? 4095 - data[i] : data[i];
+    const cur = v > mid;
+    if (cur !== prev){ if (cur) edges.push(i); prev = cur; }
+    if (cur) high++;
+  }
+  let f = 0;
+  if (edges.length >= 2){
+    let sum = 0; for (let i=1;i<edges.length;i++) sum += edges[i]-edges[i-1];
+    f = rate / (sum/(edges.length-1));
+  }
+  return { f, d: 100 * high / data.length };
+}
+
+function grid(w, h){
+  ctx.strokeStyle = '#1f2530';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < 10; i++){ const x = w*i/10; ctx.moveTo(x,0); ctx.lineTo(x,h); }
+  for (let i = 1; i < 8;  i++){ const y = h*i/8;  ctx.moveTo(0,y); ctx.lineTo(w,y); }
+  ctx.stroke();
+  ctx.strokeStyle = '#2a3242';
+  ctx.beginPath(); ctx.moveTo(w/2,0); ctx.lineTo(w/2,h); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
+}
+function trace(data, color, inv, w, h){
+  if (!data || !data.length) return;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2 * DPR;
+  ctx.beginPath();
+  const n = data.length;
+  for (let i = 0; i < n; i++){
+    const v = inv ? 4095 - data[i] : data[i];
+    const x = (i / (n - 1)) * w;
+    const y = h - (v / 4095) * h;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function render(){
+  const w = cv.width, h = cv.height;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  grid(w, h);
+  const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
+  if ($('showSnap').checked && snapCh1){
+    trace(snapCh1, '#5a4a1a', inv1, w, h);
+    trace(snapCh2, '#1a3a5a', inv2, w, h);
+  }
+  trace(liveCh1, '#ffb84d', inv1, w, h);
+  trace(liveCh2, '#5dade2', inv2, w, h);
+  const m1 = metrics(liveCh1, liveRate, inv1);
+  const m2 = metrics(liveCh2, liveRate, inv2);
+  $('f1').textContent = m1.f ? m1.f.toFixed(1)+' Hz' : '— Hz';
+  $('d1').textContent = m1.d ? m1.d.toFixed(0)+'%'   : '—%';
+  $('f2').textContent = m2.f ? m2.f.toFixed(1)+' Hz' : '— Hz';
+  $('d2').textContent = m2.d ? m2.d.toFixed(0)+'%'   : '—%';
+  requestAnimationFrame(render);
+}
+
+cdi.bus.on('scopeLive', f => { liveCh1 = f.c1; liveCh2 = f.c2; liveRate = f.rate; updateTime(); });
+cdi.bus.on('scopeSnap', f => { snapCh1 = f.c1; snapCh2 = f.c2; });
+cdi.bus.on('telemetry', t => {
+  // Visual hint: dim canvas when scope mode is OFF
+  const active = (t.mode === 1);
+  $('modeWarn').style.display = active ? 'none' : '';
+  cv.style.opacity = active ? '1' : '0.45';
+});
+cdi.bus.on('rate', hz => { liveRate = hz; updateTime(); });
+
+let running = true;
+$('rate').addEventListener('input', e => $('rateVal').textContent = e.target.value);
+$('rate').addEventListener('change', e => cdi.send({cmd:'setRate', hz: +e.target.value}));
+$('runBtn').addEventListener('click', () => {
+  running = !running;
+  $('runBtn').textContent = running ? '⏸ Jeda' : '▶ Jalan';
+  cdi.send({cmd:'pause', value: !running});
+});
+$('clearOverlay').addEventListener('click', () => { snapCh1 = null; snapCh2 = null; });
+$('saveBtn').addEventListener('click', () => {
+  const name = $('snapName').value.trim();
+  if (!name){ alert('isi nama snapshot dulu'); return; }
+  cdi.send({cmd:'saveSnapshot', name});
+});
+
+function renderSnaps(list){
+  const host = $('snapHost');
+  if (!list || !list.length){ host.innerHTML = '<div class="note">— belum ada snapshot tersimpan —</div>'; return; }
+  host.innerHTML = list.map(s => `
+    <div class="snap-item">
+      <span class="name">${s.name}</span>
+      <span class="meta">${s.rate} Hz</span>
+      <button data-act="load" data-n="${s.name}">muat</button>
+      <button data-act="dl" data-n="${s.name}">csv</button>
+      <button class="del" data-act="del" data-n="${s.name}">×</button>
+    </div>`).join('');
+  host.querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      const n = b.dataset.n, a = b.dataset.act;
+      if (a === 'load') cdi.send({cmd:'loadSnapshot', name:n});
+      else if (a === 'del') cdi.send({cmd:'deleteSnapshot', name:n});
+      else if (a === 'dl')  location.href = '/download?name=' + encodeURIComponent(n);
+    };
+  });
+}
+cdi.bus.on('open', () => cdi.send({cmd:'listSnapshots'}));
+cdi.bus.on('snapList', renderSnaps);
+cdi.bus.on('snapSaved', () => cdi.send({cmd:'listSnapshots'}));
+
+requestAnimationFrame(render);
+updateTime();
+</script>
+</body>
+</html>
