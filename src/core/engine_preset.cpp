@@ -1,6 +1,7 @@
 #include "core/engine_preset.h"
 
 #include <Arduino.h>
+#include <cmath>
 #include <cstring>
 
 #include "core/advance_map.h"
@@ -16,14 +17,17 @@ namespace {
 const Preset PRESETS[] = {
 
 // ─── Honda 4-stroke ───
-{ "honda_megapro", "Honda 4T", "Honda Megapro / Tiger", 1, 18.0f, 32.0f,
+// Magnet width 22° confirmed dari spec Honda Tiger 110mm rotor:
+// arc 22mm @ 0.95mm/° = 22°. Base advance (CH2 trailing) = 32-22 = 10° BTDC.
+// Sumber: hondatigerefi.blogspot, rivaldoharyoprakoso 2017
+{ "honda_megapro", "Honda 4T", "Honda Megapro / Tiger", 1, 22.0f, 32.0f,
   { {500,8}, {800,10}, {1200,13}, {1500,15}, {2000,18}, {2500,20},
     {3000,23}, {3500,25}, {4000,27}, {4500,29}, {5000,30}, {6000,32},
     {7500,32}, {10000,32} }, 14,
   10500, 11500, 2500,
-  "Stok megapro 160cc, ignition single-coil dual-edge via 2 opto" },
+  "Stok megapro/tiger 160cc/200cc GL series, magnet 22° (PL 32° → F 10° BTDC)" },
 
-{ "honda_gl_pro", "Honda 4T", "Honda GL Pro / GL Max / Win", 1, 18.0f, 32.0f,
+{ "honda_gl_pro", "Honda 4T", "Honda GL Pro / GL Max / Win", 1, 22.0f, 32.0f,
   { {500,8}, {800,10}, {1200,12}, {1500,14}, {2000,17}, {2500,20},
     {3000,22}, {3500,25}, {4000,27}, {4500,29}, {5000,30}, {6000,32},
     {8000,32}, {10000,30} }, 14,
@@ -293,5 +297,35 @@ const char* currentId()      { return s_currentId; }
 bool        isModified()     { return s_modified; }
 void        markModifiedFlag()  { s_modified = true; }
 void        resetModifiedFlag() { s_modified = false; }
+
+size_t suggestByMagnetWidth(float measured_deg, float tolerance_deg,
+                            const char** out_ids, size_t max_results) {
+    if (!out_ids || max_results == 0) return 0;
+    // Simple insertion sort by absolute deviation. With ~30 presets and
+    // max_results ~5 this is trivial.
+    struct Cand { float dev; const char* id; };
+    Cand best[8] = {};
+    size_t cap = (max_results > 8) ? 8 : max_results;
+    for (size_t k = 0; k < cap; k++) best[k] = {1e9f, nullptr};
+
+    for (size_t i = 0; i < N; i++) {
+        const float dev = fabsf(PRESETS[i].magnet_width_deg - measured_deg);
+        if (dev > tolerance_deg) continue;
+        // Insert into best[] sorted by dev ascending.
+        for (size_t k = 0; k < cap; k++) {
+            if (dev < best[k].dev) {
+                for (size_t j = cap - 1; j > k; j--) best[j] = best[j-1];
+                best[k] = { dev, PRESETS[i].id };
+                break;
+            }
+        }
+    }
+    size_t out = 0;
+    for (size_t k = 0; k < cap; k++) {
+        if (!best[k].id) break;
+        out_ids[out++] = best[k].id;
+    }
+    return out;
+}
 
 } // namespace cdi::core::preset

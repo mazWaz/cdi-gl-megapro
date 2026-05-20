@@ -60,4 +60,11 @@ bool isModified();
 void markModifiedFlag();  // call after any user-driven setter
 void resetModifiedFlag(); // call after applying preset cleanly
 
+// Find up to `max_results` presets whose magnet_width_deg is within
+// `tolerance_deg` of the measured value. Returns count actually filled.
+// `out_ids` is an array of (max_results) pointers to internal const char*
+// strings — must have storage for max_results entries.
+size_t suggestByMagnetWidth(float measured_deg, float tolerance_deg,
+                            const char** out_ids, size_t max_results);
+
 } // namespace cdi::core::preset

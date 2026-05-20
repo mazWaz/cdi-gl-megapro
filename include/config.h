@@ -24,10 +24,13 @@ constexpr uint32_t TELEMETRY_RING_SIZE  = 32;
 constexpr uint32_t MAX_ADVANCE_POINTS   = 32;     // per profile
 constexpr uint32_t MAX_PROFILE_SLOTS    = 8;      // /profiles/profile_1..8.json
 
-// Megapro pulser geometry (verified from manual_crank.csv analysis)
-constexpr float    MAGNET_ANGULAR_WIDTH_DEG = 18.0f;
-constexpr float    MAX_ADVANCE_FROM_CH1_DEG = 32.0f;
-constexpr float    BASE_ADVANCE_FROM_CH2_DEG = 14.0f;
+// Megapro pulser geometry — factory spec from Honda Tiger service manual:
+// Mark PL (leading) = 32° BTDC, Mark F (trailing) = 10° BTDC.
+// Magnet width = 32° - 10° = 22° (matches measured arc 22mm @ 0.95mm/°).
+// Earlier 18° figure came from a hand-cranked sample; replaced with factory data.
+constexpr float    MAGNET_ANGULAR_WIDTH_DEG  = 22.0f;
+constexpr float    MAX_ADVANCE_FROM_CH1_DEG  = 32.0f;
+constexpr float    BASE_ADVANCE_FROM_CH2_DEG = 10.0f;
 
 // Defaults — overridden by active profile after load
 constexpr uint32_t DEFAULT_REV_LIMIT_MAIN_RPM    = 10500;
