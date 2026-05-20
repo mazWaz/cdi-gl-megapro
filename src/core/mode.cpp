@@ -17,9 +17,14 @@ OperatingMode s_mode = OperatingMode::BOOT;
 // the ISR after timerEnd() fails with "timer_isr_callback_add register
 // failed". The timer stays initialized for the device's lifetime;
 // pausing simply gates the ADC reads inside the ISR.
+//
+// Post edge-stream refactor: pulser ISR stays attached in SCOPE too
+// — the edge stream is the primary scope source, and ignition logic
+// gates `spark::isArmed()` separately. Raw ADC sampler only runs in
+// SCOPE mode as a legacy diagnostic for VRS analog signals.
 void enterScope() {
     cdi::core::spark::setArmed(false);   // safety: no spark in scope mode
-    cdi::core::pulser::end();
+    cdi::core::pulser::begin();          // keep edge stream live
     cdi::scope::setPaused(false);
 }
 

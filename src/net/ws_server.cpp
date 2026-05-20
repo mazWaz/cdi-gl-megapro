@@ -8,6 +8,7 @@
 #include "pinmap.h"
 #include "net/http_server.h"
 #include "scope/adc_sampler.h"
+#include "scope/edge_capture.h"
 #include "storage/snapshot_store.h"
 #include "core/mode.h"
 #include "core/advance_map.h"
@@ -483,16 +484,40 @@ void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 void begin() {
     s_ws.onEvent(onEvent);
     cdi::net::http_server::server().addHandler(&s_ws);
-    Serial.println("[WS] handler attached at /ws");
+    cdi::scope::edge::begin();
+    Serial.println("[WS] handler attached at /ws (edge stream on)");
 }
 
 void tickBroadcast() {
     if (s_ws.count() == 0) return;
-    // Scope frame only when sampler is actually running.
-    if (cdi::core::mode::current() != cdi::OperatingMode::SCOPE) return;
 
-    // Backpressure: skip frame if any connected client still has queued
-    // messages, otherwise AsyncWebSocket internal queue overflows.
+    const cdi::OperatingMode m = cdi::core::mode::current();
+
+    // ── Edge-event stream (opcode 0xA7) — always-on except in SAFE_HOLD.
+    // Drives the live scope visualization. Pulser ISR feeds the ring
+    // continuously, so the frame is meaningful in IGNITION mode too.
+    if (m != cdi::OperatingMode::SAFE_HOLD &&
+        cdi::scope::edge::dueNow(millis()))
+    {
+        // Backpressure check shared with raw ADC path below.
+        bool backpressured = false;
+        for (auto& c : s_ws.getClients()) {
+            if (c.queueIsFull() ||
+                c.queueLen() > cdi::config::WS_QUEUE_BACKPRESSURE_LIMIT) {
+                backpressured = true; break;
+            }
+        }
+        if (!backpressured) {
+            size_t len = 0;
+            const uint8_t* f = cdi::scope::edge::buildFrame(len);
+            if (f && len > 0) s_ws.binaryAll((uint8_t*)f, len);
+        }
+    }
+
+    // ── Legacy raw-ADC scope frame (opcode 0xA5) — only when in SCOPE
+    // mode (diagnostic / pre-opto analog inspection).
+    if (m != cdi::OperatingMode::SCOPE) return;
+
     for (auto& c : s_ws.getClients()) {
         if (c.queueIsFull() ||
             c.queueLen() > cdi::config::WS_QUEUE_BACKPRESSURE_LIMIT) return;

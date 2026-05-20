@@ -31,7 +31,8 @@ enum class PulserChannel : uint8_t { CH1 = 0, CH2 = 1 };
 struct PulserEvent {
     micros_t      ts_us;     // 8 B
     PulserChannel channel;   // 1 B
-    uint8_t       _pad[7];   // align to 16 B for cache line friendliness
+    uint8_t       level;     // 1 B — 0 (just went LOW) or 1 (just went HIGH)
+    uint8_t       _pad[6];   // align to 16 B for cache line friendliness
 } __attribute__((packed));
 static_assert(sizeof(PulserEvent) == 16, "PulserEvent must be 16 bytes");
 

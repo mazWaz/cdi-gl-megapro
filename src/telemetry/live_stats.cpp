@@ -23,7 +23,11 @@ namespace cdi::telemetry {
 void tick() {
     PulserEvent ev;
     while (cdi::core::pulser::tryPop(ev)) {
-        if (ev.channel == cdi::PulserChannel::CH1) {
+        // Pulser ISR now reports both edges (CHANGE). RPM/spark only
+        // care about the FALLING edge (level==0) to stay consistent
+        // with the pre-refactor behaviour and the optocoupler conduct
+        // semantics.
+        if (ev.channel == cdi::PulserChannel::CH1 && ev.level == 0) {
             cdi::core::rpm::onPulseCh1(ev.ts_us);
         }
     }

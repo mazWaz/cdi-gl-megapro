@@ -60,11 +60,17 @@ constexpr uint16_t    AP_DNS_PORT = 53;
 constexpr uint16_t    AP_HTTP_PORT = 80;
 
 // ---------- WebSocket protocol ----------
-constexpr uint8_t WS_MAGIC_SCOPE_LIVE = 0xA5;
-constexpr uint8_t WS_MAGIC_SCOPE_SNAP = 0xA6;
+constexpr uint8_t WS_MAGIC_SCOPE_LIVE = 0xA5;   // raw ADC samples (legacy)
+constexpr uint8_t WS_MAGIC_SCOPE_SNAP = 0xA6;   // saved raw ADC snapshot
+constexpr uint8_t WS_MAGIC_SCOPE_EDGE = 0xA7;   // edge-event stream
 constexpr uint8_t WS_MAGIC_TELEMETRY  = 0xB0;
 constexpr uint8_t WS_MAGIC_FIRE_EVENT = 0xB1;
 constexpr uint8_t WS_QUEUE_BACKPRESSURE_LIMIT = 2;
+
+// Edge-stream frame: 30 ms cadence, capacity sized for headroom
+// (~24 edges/frame at 10000 RPM single-cyl 4T).
+constexpr uint32_t SCOPE_EDGE_FRAME_INTERVAL_MS = 30;
+constexpr uint32_t SCOPE_EDGE_FRAME_MAX_EVENTS  = 64;
 
 // ---------- Datalog ----------
 constexpr uint32_t DATALOG_SAMPLE_HZ      = 50;
