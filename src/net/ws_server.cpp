@@ -19,6 +19,8 @@
 #include "core/backfire.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
+#include "core/pickup.h"
+#include "core/pickup_cal.h"
 #include "storage/config_store.h"
 #include "telemetry/live_stats.h"
 #include "telemetry/datalog.h"
@@ -208,6 +210,119 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         r["type"]     = "preset";
         r["current"]  = cdi::core::preset::currentId();
         r["modified"] = cdi::core::preset::isModified();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getPickup")) {
+        JsonDocument r;
+        r["type"]    = "pickup";
+        r["max_ref"] = cdi::core::pickup::maxAdvanceRef();
+        r["magnet"]  = cdi::core::pickup::magnetWidth();
+        r["base"]    = cdi::core::pickup::baseAdvanceRef();
+        r["override"]= cdi::core::pickup::hasOverride();
+        r["source"]  = cdi::core::pickup::source();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "resetPickup")) {
+        // Drop override and re-apply current preset's geometry
+        cdi::core::pickup::setOverride(false);
+        cdi::core::pickup::setSource("preset");
+        cdi::core::preset::apply(cdi::core::preset::currentId());
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]    = "pickup";
+        r["max_ref"] = cdi::core::pickup::maxAdvanceRef();
+        r["magnet"]  = cdi::core::pickup::magnetWidth();
+        r["base"]    = cdi::core::pickup::baseAdvanceRef();
+        r["override"]= false;
+        r["source"]  = "preset";
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "startCal")) {
+        uint8_t  revs  = doc["revs"]      | cdi::core::pickup_cal::DEFAULT_TARGET_REVS;
+        uint32_t to    = doc["timeoutMs"] | cdi::core::pickup_cal::DEFAULT_TIMEOUT_MS;
+        uint16_t rpmLo = doc["rpmMin"]    | cdi::core::pickup_cal::DEFAULT_MIN_RPM;
+        uint16_t rpmHi = doc["rpmMax"]    | cdi::core::pickup_cal::DEFAULT_MAX_RPM;
+        float    jit   = doc["jitterPct"] | cdi::core::pickup_cal::DEFAULT_JITTER_PCT;
+        cdi::core::pickup_cal::setTarget(revs);
+        cdi::core::pickup_cal::setTimeoutMs(to);
+        cdi::core::pickup_cal::setRpmWindow(rpmLo, rpmHi);
+        cdi::core::pickup_cal::setMaxJitterPct(jit);
+        bool ok = cdi::core::pickup_cal::start();
+        JsonDocument r;
+        r["type"]  = "cal";
+        r["state"] = ok ? "COLLECTING" : "ERR";
+        r["msg"]   = ok ? "engine idle, hold RPM steady" : "pulser ISR not attached";
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "stopCal")) {
+        cdi::core::pickup_cal::stop();
+        JsonDocument r;
+        r["type"]  = "cal";
+        r["state"] = "IDLE";
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getCalStatus")) {
+        const auto s = cdi::core::pickup_cal::status();
+        JsonDocument r;
+        r["type"] = "cal";
+        const char* sn = "IDLE";
+        switch (s.state) {
+            case cdi::core::pickup_cal::State::IDLE:            sn = "IDLE"; break;
+            case cdi::core::pickup_cal::State::COLLECTING:      sn = "COLLECTING"; break;
+            case cdi::core::pickup_cal::State::DONE:            sn = "DONE"; break;
+            case cdi::core::pickup_cal::State::ERR_TIMEOUT:     sn = "ERR_TIMEOUT"; break;
+            case cdi::core::pickup_cal::State::ERR_MULTI_TOOTH: sn = "ERR_MULTI_TOOTH"; break;
+        }
+        r["state"]           = sn;
+        r["good"]            = s.good_revs;
+        r["target"]          = s.target_revs;
+        r["total_events"]    = s.total_events;
+        r["total_falls"]     = s.total_falls;
+        r["skipped_jitter"]  = s.skipped_jitter;
+        r["skipped_rpm"]     = s.skipped_rpm;
+        r["width_mean"]      = s.width_mean_deg;
+        r["width_median"]    = s.width_median_deg;
+        r["width_min"]       = s.width_min_deg;
+        r["width_max"]       = s.width_max_deg;
+        r["width_stddev"]    = s.width_stddev_deg;
+        r["confidence"]      = s.confidence_pct;
+        r["rpm"]             = s.rpm_mean;
+        r["elapsed_ms"]      = s.elapsed_ms;
+        if (s.state == cdi::core::pickup_cal::State::DONE) {
+            // Comparison vs preset geometry
+            const float preset_w = cdi::core::pickup::magnetWidth();
+            r["preset_width"]   = preset_w;
+            r["delta_deg"]      = s.width_median_deg - preset_w;
+        }
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "applyCal")) {
+        // Take measured magnet width as the new pickup override.
+        // max_advance_ref CANNOT be inferred from auto-cal; preserve
+        // the preset value but flag override so subsequent preset
+        // re-applies don't clobber the measured width.
+        const auto s = cdi::core::pickup_cal::status();
+        if (s.state != cdi::core::pickup_cal::State::DONE) {
+            client->text("{\"type\":\"err\",\"msg\":\"calibration not complete\"}");
+            return;
+        }
+        cdi::core::pickup::setMagnetWidth(s.width_median_deg);
+        cdi::core::pickup::setOverride(true);
+        cdi::core::pickup::setSource("auto_cal");
+        cdi::storage::config::saveNow();    // immediate persist
+        JsonDocument r;
+        r["type"]    = "pickup";
+        r["max_ref"] = cdi::core::pickup::maxAdvanceRef();
+        r["magnet"]  = cdi::core::pickup::magnetWidth();
+        r["base"]    = cdi::core::pickup::baseAdvanceRef();
+        r["override"]= true;
+        r["source"]  = "auto_cal";
         String out; serializeJson(r, out);
         client->text(out);
     }
@@ -419,7 +534,12 @@ void tickBroadcast() {
     // Edge-event stream (opcode 0xA7) — live whenever pulser ISR is
     // attached (i.e. not in SAFE_HOLD). Drives the scope visualization
     // concurrently with ignition; no mode change required.
+    //
+    // Auto-cal owns the scope ring exclusively while COLLECTING: edge
+    // broadcast pauses so the calibrator drains every event.
     if (cdi::core::mode::current() == cdi::OperatingMode::SAFE_HOLD) return;
+    if (cdi::core::pickup_cal::status().state ==
+            cdi::core::pickup_cal::State::COLLECTING) return;
     if (!cdi::scope::edge::dueNow(millis())) return;
 
     for (auto& c : s_ws.getClients()) {

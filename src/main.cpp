@@ -19,6 +19,8 @@
 #include "core/backfire.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
+#include "core/pickup.h"
+#include "core/pickup_cal.h"
 #include "core/rpm_calc.h"
 #include "net/wifi_ap.h"
 #include "net/http_server.h"
@@ -97,6 +99,7 @@ void loop() {
     cdi::core::backfire::tick(cdi::core::rpm::current());
     cdi::core::alvp::tick();                   // sampled every 500ms internally
     cdi::telemetry::datalog::tick();           // sampled every 20ms internally
+    cdi::core::pickup_cal::tick();             // auto-cal (drains scope ring when active)
     cdi::storage::config::tick();              // debounced auto-save
 
     cdi::net::ws_server::cleanup();
