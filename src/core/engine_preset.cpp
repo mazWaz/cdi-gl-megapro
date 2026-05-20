@@ -6,6 +6,7 @@
 #include "core/advance_map.h"
 #include "core/safety.h"
 #include "core/spark_scheduler.h"
+#include "core/pickup.h"
 
 namespace cdi::core::preset {
 namespace {
@@ -265,6 +266,16 @@ bool apply(const char* id) {
         fresh.addPoint(p->points[i].rpm, p->points[i].deg);
     }
     cdi::core::advance::active() = fresh;
+
+    // Apply pickup geometry — but ONLY if the user hasn't already
+    // calibrated their own values on top. A measured magnet width
+    // for the actual physical motor must take priority over factory
+    // spec carried by the preset.
+    if (!cdi::core::pickup::hasOverride()) {
+        cdi::core::pickup::setMaxAdvanceRef(p->max_advance_deg);
+        cdi::core::pickup::setMagnetWidth(p->magnet_width_deg);
+        cdi::core::pickup::setSource("preset");
+    }
 
     // Apply rev limits
     cdi::core::safety::setRevLimits(p->rev_main_rpm, p->rev_overrev_rpm);

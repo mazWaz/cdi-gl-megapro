@@ -7,6 +7,7 @@
 #include "core/rpm_calc.h"
 #include "core/advance_map.h"
 #include "core/spark_scheduler.h"
+#include "core/pickup.h"
 #include "core/safety.h"
 #include "core/dwell_curve.h"
 #include "core/shift_light.h"
@@ -48,7 +49,10 @@ void tick() {
         if (adv < cdi::config::ADVANCE_MIN_DEG) adv = cdi::config::ADVANCE_MIN_DEG;
         if (adv > cdi::config::ADVANCE_MAX_DEG) adv = cdi::config::ADVANCE_MAX_DEG;
 
-        float delayDeg = cdi::config::MAX_ADVANCE_FROM_CH1_DEG - adv;
+        // Pickup's max_advance_ref is per-motor (set by preset::apply
+        // or by an auto-cal override). Falls back to the compile-time
+        // constant if neither has run yet.
+        float delayDeg = cdi::core::pickup::maxAdvanceRef() - adv;
         if (delayDeg < 0)   delayDeg = 0;
         if (delayDeg > 360) delayDeg = 360;
         uint32_t delay_us = (uint32_t)((delayDeg / 360.0f) * (float)periodU);
