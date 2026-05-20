@@ -1,0 +1,573 @@
+#include "net/ws_server.h"
+
+#include <Arduino.h>
+#include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
+
+#include "config.h"
+#include "pinmap.h"
+#include "net/http_server.h"
+#include "scope/adc_sampler.h"
+#include "storage/snapshot_store.h"
+#include "core/mode.h"
+#include "core/advance_map.h"
+#include "core/spark_scheduler.h"
+#include "core/safety.h"
+#include "core/shift_light.h"
+#include "core/dwell_curve.h"
+#include "core/launch_control.h"
+#include "core/quickshifter.h"
+#include "core/backfire.h"
+#include "core/alvp.h"
+#include "core/engine_preset.h"
+#include "storage/config_store.h"
+#include "telemetry/live_stats.h"
+#include "telemetry/datalog.h"
+
+namespace cdi::net::ws_server {
+namespace {
+
+namespace snap = cdi::storage::snap;
+
+AsyncWebSocket s_ws("/ws");
+
+// Pre-allocated live frame buffer (static BSS, no malloc in hot path).
+uint8_t s_liveFrame[1 + 4 + cdi::config::BUF_SIZE_SCOPE * 4];
+
+void sendSnapshotList(AsyncWebSocketClient* client) {
+    JsonDocument doc;
+    doc["type"] = "list";
+    JsonArray arr = doc["snaps"].to<JsonArray>();
+    snap::list(arr);
+    String out;
+    serializeJson(doc, out);
+    if (client) client->text(out);
+    else        s_ws.textAll(out);
+}
+
+void handleText(AsyncWebSocketClient* client, const String& msg) {
+    JsonDocument doc;
+    if (deserializeJson(doc, msg)) return;
+    const char* cmd = doc["cmd"] | "";
+    if (!*cmd) return;
+
+    if (!strcmp(cmd, "setRate")) {
+        uint32_t hz = doc["hz"] | cdi::config::SCOPE_RATE_DEFAULT;
+        uint32_t applied = cdi::scope::setRate(hz);
+        JsonDocument r;
+        r["type"] = "rate";
+        r["hz"]   = applied;
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "pause")) {
+        cdi::scope::setPaused(doc["value"] | false);
+    }
+    else if (!strcmp(cmd, "setMode")) {
+        const char* m = doc["mode"] | "";
+        cdi::OperatingMode target = cdi::OperatingMode::SCOPE;
+        if (!strcmp(m, "ignition"))      target = cdi::OperatingMode::IGNITION;
+        else if (!strcmp(m, "scope"))    target = cdi::OperatingMode::SCOPE;
+        else if (!strcmp(m, "safehold")) target = cdi::OperatingMode::SAFE_HOLD;
+        else {
+            client->text("{\"type\":\"err\",\"msg\":\"unknown mode\"}");
+            return;
+        }
+        cdi::core::mode::set(target);
+        JsonDocument r;
+        r["type"] = "mode";
+        r["mode"] = cdi::core::mode::name(cdi::core::mode::current());
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "saveSnapshot")) {
+        String name = snap::sanitize(doc["name"] | "snap");
+        if (name.length() == 0) {
+            client->text("{\"type\":\"err\",\"msg\":\"invalid name\"}");
+            return;
+        }
+        auto s = cdi::scope::snapshot();
+        if (!snap::save(name, cdi::scope::getRate(), s)) {
+            client->text("{\"type\":\"err\",\"msg\":\"save fail\"}");
+            return;
+        }
+        JsonDocument r;
+        r["type"] = "saved";
+        r["name"] = name;
+        String out; serializeJson(r, out);
+        client->text(out);
+        sendSnapshotList(nullptr);
+    }
+    else if (!strcmp(cmd, "listSnapshots")) {
+        sendSnapshotList(client);
+    }
+    else if (!strcmp(cmd, "loadSnapshot")) {
+        String name = snap::sanitize(doc["name"] | "");
+        int fsize = snap::fileSize(name);
+        if (fsize < 0) {
+            client->text("{\"type\":\"err\",\"msg\":\"not found\"}");
+            return;
+        }
+        // 1B magic prefix + file contents.
+        uint8_t* buf = (uint8_t*)malloc((size_t)fsize + 1);
+        if (!buf) return;
+        buf[0] = cdi::config::WS_MAGIC_SCOPE_SNAP;
+        int n = snap::load(name, buf + 1, (size_t)fsize);
+        if (n > 0) client->binary(buf, (size_t)n + 1);
+        free(buf);
+    }
+    else if (!strcmp(cmd, "deleteSnapshot")) {
+        String name = snap::sanitize(doc["name"] | "");
+        snap::remove(name);
+        sendSnapshotList(client);
+    }
+    else if (!strcmp(cmd, "getMap")) {
+        JsonDocument r;
+        r["type"] = "map";
+        JsonArray arr = r["points"].to<JsonArray>();
+        cdi::core::advance::active().serialize(arr);
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setMap")) {
+        JsonArrayConst arr = doc["points"].as<JsonArrayConst>();
+        if (arr.isNull()) {
+            client->text("{\"type\":\"err\",\"msg\":\"missing points\"}");
+            return;
+        }
+        cdi::core::advance::Map fresh;
+        if (!fresh.loadFromJson(arr)) {
+            client->text("{\"type\":\"err\",\"msg\":\"invalid map (range or format)\"}");
+            return;
+        }
+        cdi::core::advance::active() = fresh;
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"] = "mapApplied";
+        r["count"] = (int)cdi::core::advance::active().count();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "loadDefaultMap")) {
+        cdi::core::advance::active().loadDefaultMegapro();
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"] = "map";
+        JsonArray arr = r["points"].to<JsonArray>();
+        cdi::core::advance::active().serialize(arr);
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "reboot")) {
+        client->text("{\"type\":\"ack\",\"msg\":\"rebooting\"}");
+        cdi::storage::config::saveNow();   // flush pending changes
+        delay(200);
+        ESP.restart();
+    }
+    else if (!strcmp(cmd, "setArmed")) {
+        bool a = doc["armed"] | false;
+        auto m = cdi::core::mode::current();
+        Serial.printf("[ws] setArmed req: armed=%d mode=%d\n", a ? 1 : 0, (int)m);
+        if (a && m != cdi::OperatingMode::IGNITION) {
+            client->text("{\"type\":\"err\",\"msg\":\"arm requires IGNITION mode\"}");
+            Serial.println("[ws] setArmed REJECTED: not in IGNITION");
+            return;
+        }
+        if (a) cdi::core::safety::clearFlags();   // fresh start on arm
+        cdi::core::spark::setArmed(a);
+        JsonDocument r;
+        r["type"]  = "armed";
+        r["armed"] = cdi::core::spark::isArmed();
+        String out; serializeJson(r, out);
+        client->text(out);
+        Serial.printf("[ws] setArmed ack: now=%d\n", cdi::core::spark::isArmed() ? 1 : 0);
+    }
+    else if (!strcmp(cmd, "setDwell")) {
+        uint32_t us = doc["us"] | cdi::config::DEFAULT_DWELL_US;
+        cdi::core::spark::setDwellUs(us);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"] = "dwell";
+        r["us"]   = cdi::core::spark::dwellUs();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setAdvanceOffset")) {
+        float deg = doc["deg"] | 0.0f;
+        cdi::core::spark::setAdvanceOffsetDeg(deg);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"] = "offset";
+        r["deg"]  = cdi::core::spark::advanceOffsetDeg();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setAutoArm")) {
+        bool en = doc["enabled"] | false;
+        cdi::core::spark::setAutoArm(en);
+        // Immediate save — user expects this to survive even an instant
+        // physical reset, not waiting for the 1.5s debounce.
+        cdi::storage::config::saveNow();
+        JsonDocument r;
+        r["type"]    = "autoArm";
+        r["enabled"] = cdi::core::spark::autoArm();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "testFire")) {
+        Serial.println("[ws] test fire requested");
+        cdi::core::spark::manualFire();
+        client->text("{\"type\":\"ack\",\"msg\":\"fired\"}");
+    }
+    else if (!strcmp(cmd, "setRevLimit")) {
+        uint32_t main = doc["main"]    | cdi::core::safety::mainLimitRpm();
+        uint32_t over = doc["overrev"] | cdi::core::safety::overrevLimitRpm();
+        cdi::core::safety::setRevLimits(main, over);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"] = "revLimit";
+        r["main"] = cdi::core::safety::mainLimitRpm();
+        r["overrev"] = cdi::core::safety::overrevLimitRpm();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "clearFailsafe")) {
+        cdi::core::safety::clearFlags();
+        client->text("{\"type\":\"ack\",\"msg\":\"failsafe cleared\"}");
+    }
+    else if (!strcmp(cmd, "getPresetList")) {
+        // Return list as JSON array; may be large so use streaming response.
+        JsonDocument r;
+        r["type"] = "presetList";
+        r["current"] = cdi::core::preset::currentId();
+        r["modified"] = cdi::core::preset::isModified();
+        JsonArray arr = r["list"].to<JsonArray>();
+        for (size_t i = 0; i < cdi::core::preset::count(); i++) {
+            const auto* p = cdi::core::preset::at(i);
+            JsonObject o = arr.add<JsonObject>();
+            o["id"]       = p->id;
+            o["cat"]      = p->category;
+            o["name"]     = p->display;
+            o["trigger"]  = p->trigger_channel;
+            o["magnet"]   = p->magnet_width_deg;
+            o["max_adv"]  = p->max_advance_deg;
+            o["points"]   = p->point_count;
+            o["rev_main"] = p->rev_main_rpm;
+            o["rev_over"] = p->rev_overrev_rpm;
+            o["dwell"]    = p->dwell_us;
+            o["notes"]    = p->notes;
+        }
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setPreset")) {
+        const char* id = doc["id"] | "";
+        if (!cdi::core::preset::apply(id)) {
+            client->text("{\"type\":\"err\",\"msg\":\"preset not found\"}");
+            return;
+        }
+        cdi::storage::config::saveNow();
+        JsonDocument r;
+        r["type"]     = "preset";
+        r["current"]  = cdi::core::preset::currentId();
+        r["modified"] = false;
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getPresetStatus")) {
+        JsonDocument r;
+        r["type"]     = "preset";
+        r["current"]  = cdi::core::preset::currentId();
+        r["modified"] = cdi::core::preset::isModified();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "startDatalog")) {
+        cdi::telemetry::datalog::start();
+        client->text("{\"type\":\"datalog\",\"recording\":true}");
+    }
+    else if (!strcmp(cmd, "stopDatalog")) {
+        cdi::telemetry::datalog::stop();
+        JsonDocument r;
+        r["type"]     = "datalog";
+        r["recording"]= false;
+        r["entries"]  = cdi::telemetry::datalog::entryCount();
+        r["duration"] = cdi::telemetry::datalog::durationMs();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getDatalogStatus")) {
+        JsonDocument r;
+        r["type"]     = "datalog";
+        r["recording"]= cdi::telemetry::datalog::isRecording();
+        r["entries"]  = cdi::telemetry::datalog::entryCount();
+        r["capacity"] = cdi::telemetry::datalog::capacity();
+        r["duration"] = cdi::telemetry::datalog::durationMs();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "clearDatalog")) {
+        cdi::telemetry::datalog::clear();
+        client->text("{\"type\":\"ack\",\"msg\":\"datalog cleared\"}");
+    }
+    else if (!strcmp(cmd, "setAlvp")) {
+        bool en = doc["enabled"] | true;
+        float dv = doc["derate"] | cdi::core::alvp::derateThresholdV();
+        float xv = doc["disarm"] | cdi::core::alvp::disarmThresholdV();
+        uint32_t lim = doc["derate_rpm"] | cdi::core::alvp::derateLimitRpm();
+        cdi::core::alvp::setThresholds(dv, xv);
+        cdi::core::alvp::setDerateLimitRpm(lim);
+        cdi::core::alvp::setEnabled(en);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]    = "alvp";
+        r["enabled"] = cdi::core::alvp::isEnabled();
+        r["derate"]  = cdi::core::alvp::derateThresholdV();
+        r["disarm"]  = cdi::core::alvp::disarmThresholdV();
+        r["derate_rpm"] = cdi::core::alvp::derateLimitRpm();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setBackfire")) {
+        bool en = doc["enabled"] | false;
+        uint8_t trig = doc["trigger"] | 0;
+        uint32_t lo = doc["rpm_lo"] | cdi::core::backfire::rpmLo();
+        uint32_t hi = doc["rpm_hi"] | cdi::core::backfire::rpmHi();
+        float retard = doc["retard"] | cdi::core::backfire::retardDeg();
+        uint32_t dur = doc["duration_ms"] | cdi::core::backfire::durationMs();
+        bool rnd = doc["random"] | cdi::core::backfire::randomPattern();
+        Serial.printf("[ws] setBackfire en=%d trig=%d range=%u-%u retard=%.1f dur=%u rnd=%d\n",
+                      en?1:0, (int)trig, (unsigned)lo, (unsigned)hi, retard, (unsigned)dur, rnd?1:0);
+
+        cdi::core::backfire::setTrigger((cdi::BackfireTrigger)trig);
+        cdi::core::backfire::setRpmRange(lo, hi);
+        cdi::core::backfire::setRetardDeg(retard);
+        cdi::core::backfire::setDurationMs(dur);
+        cdi::core::backfire::setRandomPattern(rnd);
+        cdi::core::backfire::setEnabled(en);
+        cdi::storage::config::markDirty();
+
+        JsonDocument r;
+        r["type"]      = "backfire";
+        r["enabled"]   = cdi::core::backfire::isEnabled();
+        r["trigger"]   = (uint8_t)cdi::core::backfire::trigger();
+        r["rpm_lo"]    = cdi::core::backfire::rpmLo();
+        r["rpm_hi"]    = cdi::core::backfire::rpmHi();
+        r["retard"]    = cdi::core::backfire::retardDeg();
+        r["duration_ms"] = cdi::core::backfire::durationMs();
+        r["random"]    = cdi::core::backfire::randomPattern();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setLaunch")) {
+        bool en = doc["enabled"] | false;
+        uint32_t rpm = doc["rpm"] | cdi::core::launch::launchRpm();
+        cdi::core::launch::setEnabled(en);
+        cdi::core::launch::setLaunchRpm(rpm);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]    = "launch";
+        r["enabled"] = cdi::core::launch::isEnabled();
+        r["rpm"]     = cdi::core::launch::launchRpm();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setQuickshifter")) {
+        bool en = doc["enabled"] | false;
+        uint32_t ms = doc["cut_ms"] | cdi::core::quickshift::cutDurationMs();
+        uint32_t lo = doc["min_rpm"] | cdi::core::quickshift::minRpm();
+        uint32_t hi = doc["max_rpm"] | cdi::core::quickshift::maxRpm();
+        cdi::core::quickshift::setCutDurationMs(ms);
+        cdi::core::quickshift::setRpmGuard(lo, hi);
+        cdi::core::quickshift::setEnabled(en);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]     = "quickshifter";
+        r["enabled"]  = cdi::core::quickshift::isEnabled();
+        r["cut_ms"]   = cdi::core::quickshift::cutDurationMs();
+        r["min_rpm"]  = cdi::core::quickshift::minRpm();
+        r["max_rpm"]  = cdi::core::quickshift::maxRpm();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setShiftLight")) {
+        bool en = doc["enabled"] | true;
+        uint32_t warn  = doc["warn"]  | cdi::core::shift_light::rpmWarn();
+        uint32_t shift = doc["shift"] | cdi::core::shift_light::rpmShift();
+        cdi::core::shift_light::setEnabled(en);
+        cdi::core::shift_light::setThresholds(warn, shift);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]    = "shiftLight";
+        r["enabled"] = cdi::core::shift_light::isEnabled();
+        r["warn"]    = cdi::core::shift_light::rpmWarn();
+        r["shift"]   = cdi::core::shift_light::rpmShift();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setDwellCurve")) {
+        bool en = doc["enabled"] | false;
+        JsonArrayConst arr = doc["points"].as<JsonArrayConst>();
+        if (!arr.isNull()) {
+            cdi::core::dwell::loadFromJson(arr);
+        }
+        cdi::core::dwell::setEnabled(en);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]    = "dwellCurve";
+        r["enabled"] = cdi::core::dwell::isEnabled();
+        JsonArray out_arr = r["points"].to<JsonArray>();
+        cdi::core::dwell::serialize(out_arr);
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getDwellCurve")) {
+        JsonDocument r;
+        r["type"]    = "dwellCurve";
+        r["enabled"] = cdi::core::dwell::isEnabled();
+        JsonArray out_arr = r["points"].to<JsonArray>();
+        cdi::core::dwell::serialize(out_arr);
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setCutMode")) {
+        uint8_t m = doc["mode"] | 1;
+        float retard = doc["retard"] | cdi::core::safety::mainRetardDeg();
+        uint8_t fireN = doc["fire_n"] | cdi::core::safety::patternFireN();
+        uint8_t skipN = doc["skip_n"] | cdi::core::safety::patternSkipN();
+        cdi::core::safety::setMainCutMode((cdi::CutMode)m);
+        cdi::core::safety::setMainRetardDeg(retard);
+        cdi::core::safety::setMainPatternRatio(fireN, skipN);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]   = "cutMode";
+        r["mode"]   = (uint8_t)cdi::core::safety::mainCutMode();
+        r["retard"] = cdi::core::safety::mainRetardDeg();
+        r["fire_n"] = cdi::core::safety::patternFireN();
+        r["skip_n"] = cdi::core::safety::patternSkipN();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+}
+
+void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
+             AwsEventType type, void* arg, uint8_t* data, size_t len) {
+    if (type == WS_EVT_CONNECT) {
+        digitalWrite(cdi::pins::STATUS_LED, HIGH);
+        JsonDocument doc;
+        doc["type"]   = "hello";
+        doc["fw"]     = cdi::config::FW_VERSION;
+        doc["rate"]   = cdi::scope::getRate();
+        doc["bufLen"] = cdi::config::BUF_SIZE_SCOPE;
+        doc["mode"]   = cdi::core::mode::name(cdi::core::mode::current());
+        String out; serializeJson(doc, out);
+        client->text(out);
+        sendSnapshotList(client);
+    }
+    else if (type == WS_EVT_DISCONNECT) {
+        if (server->count() == 0) digitalWrite(cdi::pins::STATUS_LED, LOW);
+    }
+    else if (type == WS_EVT_DATA) {
+        AwsFrameInfo* info = (AwsFrameInfo*)arg;
+        if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+            String msg;
+            msg.reserve(len);
+            for (size_t i = 0; i < len; i++) msg += (char)data[i];
+            handleText(client, msg);
+        }
+    }
+}
+
+} // anonymous
+
+void begin() {
+    s_ws.onEvent(onEvent);
+    cdi::net::http_server::server().addHandler(&s_ws);
+    Serial.println("[WS] handler attached at /ws");
+}
+
+void tickBroadcast() {
+    if (s_ws.count() == 0) return;
+    // Scope frame only when sampler is actually running.
+    if (cdi::core::mode::current() != cdi::OperatingMode::SCOPE) return;
+
+    // Backpressure: skip frame if any connected client still has queued
+    // messages, otherwise AsyncWebSocket internal queue overflows.
+    for (auto& c : s_ws.getClients()) {
+        if (c.queueIsFull() ||
+            c.queueLen() > cdi::config::WS_QUEUE_BACKPRESSURE_LIMIT) return;
+    }
+
+    s_liveFrame[0] = cdi::config::WS_MAGIC_SCOPE_LIVE;
+    uint32_t rate = cdi::scope::getRate();
+    memcpy(&s_liveFrame[1], &rate, 4);
+
+    auto s = cdi::scope::snapshot();
+    uint8_t* p = &s_liveFrame[5];
+    for (uint32_t i = 0; i < s.buf_size; i++) {
+        uint32_t idx = (s.start_idx + i) % s.buf_size;
+        uint16_t c1 = s.ch1[idx];
+        uint16_t c2 = s.ch2[idx];
+        memcpy(p, &c1, 2); p += 2;
+        memcpy(p, &c2, 2); p += 2;
+    }
+    s_ws.binaryAll(s_liveFrame, sizeof(s_liveFrame));
+}
+
+void tickTelemetry() {
+    if (s_ws.count() == 0) return;
+    // Telemetry frame is only 18 B, much smaller than scope (8 KB).
+    // Use the looser `queueIsFull` check so it can sneak in even
+    // when scope frames are saturating the queue.
+    for (auto& c : s_ws.getClients()) {
+        if (c.queueIsFull()) return;
+    }
+
+    auto t = cdi::telemetry::snapshot();
+    uint8_t buf[71];
+    buf[0]  = cdi::config::WS_MAGIC_TELEMETRY;
+    buf[1]  = (uint8_t)t.mode;
+    memcpy(&buf[2],  &t.rpm,                2);
+    memcpy(&buf[4],  &t.rpm_raw,            2);
+    memcpy(&buf[6],  &t.pulser_count,       4);
+    memcpy(&buf[10], &t.uptime_ms,          4);
+    memcpy(&buf[14], &t.free_heap,          4);
+    memcpy(&buf[18], &t.target_advance_x10, 2);
+    buf[20] = t.armed;
+    memcpy(&buf[21], &t.fire_count,         4);
+    memcpy(&buf[25], &t.last_jitter_us,     2);
+    buf[27] = t.safety_flags;
+    memcpy(&buf[28], &t.main_limit_rpm,      2);
+    memcpy(&buf[30], &t.overrev_limit_rpm,   2);
+    memcpy(&buf[32], &t.dwell_us,            2);
+    memcpy(&buf[34], &t.advance_offset_x10,  2);
+    buf[36] = t.cut_mode;
+    buf[37] = t.retard_half_deg;
+    buf[38] = t.pattern_fire_n;
+    buf[39] = t.pattern_skip_n;
+    buf[40] = t.shift_state;
+    buf[41] = t.flags2;
+    memcpy(&buf[42], &t.shift_rpm_warn,  2);
+    memcpy(&buf[44], &t.shift_rpm_shift, 2);
+    memcpy(&buf[46], &t.launch_rpm,      2);
+    memcpy(&buf[48], &t.qs_cut_ms,       2);
+    memcpy(&buf[50], &t.qs_count,        4);
+    buf[54] = t.backfire_trigger;
+    buf[55] = t.flags3;
+    memcpy(&buf[56], &t.bf_rpm_lo,       2);
+    memcpy(&buf[58], &t.bf_rpm_hi,       2);
+    buf[60] = t.bf_retard_half_deg;
+    memcpy(&buf[61], &t.bf_duration_ms,  2);
+    memcpy(&buf[63], &t.vbat_mv,         2);
+    buf[65] = t.alvp_state;
+    buf[66] = t.alvp_derate_v_x10;
+    buf[67] = t.alvp_disarm_v_x10;
+    buf[68] = t.flags4;
+    memcpy(&buf[69], &t.alvp_derate_rpm, 2);
+    s_ws.binaryAll(buf, sizeof(buf));
+}
+
+void cleanup() { s_ws.cleanupClients(); }
+int  clientCount() { return s_ws.count(); }
+
+} // namespace cdi::net::ws_server

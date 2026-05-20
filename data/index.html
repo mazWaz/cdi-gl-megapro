@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>CDI//MGPRO · Dasbor</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">CDI//MGPRO<span class="ver">v0.3.0</span></span>
+  <span class="chip" id="topPreset" style="cursor:pointer;background:var(--amber-soft);border-color:var(--amber);color:var(--amber)" onclick="location.href='/settings.html#preset'">
+    <b id="topPresetName">—</b>
+  </span>
+  <span class="spacer"></span>
+  <span class="chip" id="topMode"><span class="dot"></span><span class="txt">—</span></span>
+  <span class="chip" id="topLink">LINK <span class="dot"></span><span class="txt">…</span></span>
+</div>
+
+<main class="content">
+  <div class="page-title">
+    <h1>DASBOR</h1>
+    <span class="sub">// telemetri mesin</span>
+  </div>
+
+  <section class="panel">
+    <span class="label">[ pembacaan langsung ]</span>
+    <div class="readout-row">
+      <div class="readout">
+        <span class="num" id="rpmBig">0</span>
+        <span class="unit">rpm</span>
+      </div>
+      <div class="readout">
+        <span class="num cyan" id="advBig">—</span>
+        <span class="unit">° advance btdc</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ kontrol mode ]</span>
+    <div class="btn-row">
+      <button class="btn" id="ignBtn">▶ Pengapian</button>
+      <button class="btn ghost" id="scopeBtn">⏚ Diagnostik scope</button>
+      <button class="btn crit" id="safeBtn">⏻ Mode aman</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ keamanan ]</span>
+    <div class="btn-row" style="margin-bottom:6px">
+      <span class="chip" id="safetyPill" style="background:rgba(82,183,136,0.18);border-color:var(--green);color:var(--green)">
+        <span class="dot ok"></span><span id="safetyTxt">NORMAL</span>
+      </span>
+      <span class="chip">BATAS-REV <b id="kvMain">10500</b> · BATAS-MAKS <b id="kvOverrev">11500</b></span>
+      <span class="chip">MODE CUT <b id="kvCut">—</b></span>
+      <span class="chip" id="kvShift">SHIFT —</span>
+      <span class="chip" id="kvLaunch" style="display:none">LAUNCH ACTIVE</span>
+      <span class="chip" id="kvQs" style="display:none">QS CUT</span>
+      <span class="chip" id="kvBf" style="display:none">BACKFIRE</span>
+      <span class="chip" id="kvVbat">VBAT <b id="kvVbatVal">—</b> V</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" id="clearFsBtn">↺ Reset failsafe</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ output pengapian ]</span>
+    <div class="readout-row" style="grid-template-columns:1fr 1fr 1fr;background:transparent;border:0;padding:0">
+      <div class="readout"><span class="num" id="armState" style="font-size:24px">MATI</span><span class="unit">status arm</span></div>
+      <div class="readout"><span class="num cyan" id="fireCount" style="font-size:24px">0</span><span class="unit">tembakan</span></div>
+      <div class="readout"><span class="num green" id="jitterUs" style="font-size:24px">—</span><span class="unit">µs jitter</span></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn crit" id="armBtn">⚡ Aktifkan pengapian</button>
+      <button class="btn ghost" id="disarmBtn">✕ Nonaktifkan</button>
+      <button class="btn ghost" id="testFireBtn">⚡ Uji bangku (1 tembakan)</button>
+    </div>
+    <label class="chk" style="margin-top:8px">
+      <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
+    </label>
+    <p class="note crit">
+      ⚠ Mengaktifkan akan menyalakan output trigger GPIO25. Wajib mode
+      PENGAPIAN. Dengan HV stage terhubung, ini menyalakan koil pengapian.
+      Lepas busi dari silinder sebelum uji bangku.<br><br>
+      <b>Auto-arm</b>: device langsung armed setelah power on (cocok untuk
+      install permanen di motor — ESP32 dapat power dari kunci kontak).
+      Saat aktif, spark fire begitu pulser detected. Disable saat
+      bench-test / development.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ sistem ]</span>
+    <dl class="kv">
+      <dt>status</dt>         <dd id="kvMode">—</dd>
+      <dt>waktu aktif</dt>    <dd id="kvUptime">0 d</dd>
+      <dt>hitungan pulser</dt><dd id="kvCount">0</dd>
+      <dt>memori bebas</dt>   <dd id="kvHeap">— B</dd>
+      <dt>firmware</dt>       <dd>v0.2.0 · build dev</dd>
+      <dt>sesi</dt>           <dd id="kvSession" class="ok">terhubung</dd>
+    </dl>
+  </section>
+</main>
+
+<nav class="bottom-nav">
+  <a href="/"><span class="ico">▮</span>Dasbor</a>
+  <a href="/map.html"><span class="ico">⌒</span>Peta</a>
+  <a href="/scope.html"><span class="ico">~</span>Scope</a>
+  <a href="/settings.html"><span class="ico">⚙</span>Konfig</a>
+</nav>
+
+<script src="/app.js"></script>
+<script>
+function fmtTime(ms){
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+  return (h>0 ? h+'j ' : '') + String(m).padStart(2,'0') + 'm ' + String(ss).padStart(2,'0') + 'd';
+}
+
+const MODE_ID = { 0:'BOOT', 1:'SCOPE', 2:'PENGAPIAN', 3:'MODE AMAN' };
+
+cdi.bus.on('telemetry', t => {
+  $('rpmBig').textContent = t.rpm;
+  $('advBig').textContent = (t.advance_x10/10).toFixed(1);
+  $('kvMode').textContent = MODE_ID[t.mode] || '?';
+  $('kvMode').className = t.mode === 2 ? 'warn' : t.mode === 3 ? 'crit' : '';
+  $('kvUptime').textContent = fmtTime(t.uptime);
+  $('kvCount').textContent = t.count.toLocaleString();
+  $('kvHeap').textContent  = t.heap.toLocaleString() + ' B';
+  // spark readouts
+  const armed = !!t.armed;
+  $('armState').textContent = armed ? 'AKTIF' : 'MATI';
+  $('armState').style.color = armed ? 'var(--red)' : 'var(--text-faint)';
+  $('fireCount').textContent = t.fire_count;
+  $('jitterUs').textContent = t.fire_count > 0 ? t.jitter_us : '—';
+  // safety
+  const f = t.safety_flags || 0;
+  const pill = $('safetyPill');
+  const dot = pill.querySelector('.dot');
+  let label = 'NORMAL', color = 'var(--green)', bg = 'rgba(82,183,136,0.18)';
+  if (f & 0x04){ label = 'CUT BATAS MAKS'; color = 'var(--red)'; bg = 'rgba(230,57,70,0.22)'; }
+  else if (f & 0x02){ label = 'TIDAK ADA SINYAL'; color = 'var(--red)'; bg = 'rgba(230,57,70,0.22)'; }
+  else if (f & 0x01){ label = 'BATAS REV'; color = 'var(--warn)'; bg = 'rgba(244,160,0,0.18)'; }
+  $('safetyTxt').textContent = label;
+  pill.style.color = color;
+  pill.style.borderColor = color;
+  pill.style.background = bg;
+  dot.className = 'dot ' + (f & 0x06 ? 'crit' : f & 0x01 ? 'warn' : 'ok');
+  $('kvMain').textContent = t.rev_main;
+  $('kvOverrev').textContent = t.rev_overrev;
+  const cutLabels = ['OFF', 'SOFT', 'HARD', 'PATTERN', 'PROGRESSIVE'];
+  $('kvCut').textContent = cutLabels[t.cut_mode] || '?';
+  const shiftLabels = ['OFF', 'WARN', 'SHIFT'];
+  const shiftEnabled = !!(t.flags2 & 0x01);
+  const shiftLabel = shiftEnabled ? shiftLabels[t.shift_state || 0] : 'DIS';
+  const sp = $('kvShift');
+  sp.textContent = 'SHIFT ' + shiftLabel;
+  sp.style.color = t.shift_state === 2 ? 'var(--red)'
+                  : t.shift_state === 1 ? 'var(--warn)'
+                  : 'var(--text-dim)';
+  // Launch & QS active indicators
+  const launchActive = !!(t.flags2 & 0x10);
+  const qsActive     = !!(t.flags2 & 0x20);
+  const launchPill = $('kvLaunch');
+  launchPill.style.display = launchActive ? '' : 'none';
+  launchPill.style.color   = 'var(--red)';
+  launchPill.style.borderColor = 'var(--red)';
+  const qsPill = $('kvQs');
+  qsPill.style.display = qsActive ? '' : 'none';
+  qsPill.style.color   = 'var(--cyan)';
+  qsPill.style.borderColor = 'var(--cyan)';
+  const bfActive = !!(t.flags3 & 0x02);
+  const bfPill = $('kvBf');
+  bfPill.style.display = bfActive ? '' : 'none';
+  bfPill.style.color   = 'var(--warn)';
+  bfPill.style.borderColor = 'var(--warn)';
+  // VBAT chip — color based on ALVP state
+  $('kvVbatVal').textContent = (t.vbat_mv / 1000).toFixed(2);
+  const vbatPill = $('kvVbat');
+  vbatPill.style.color       = t.alvp_state === 2 ? 'var(--red)'
+                              : t.alvp_state === 1 ? 'var(--warn)'
+                              : 'var(--text)';
+  vbatPill.style.borderColor = t.alvp_state === 2 ? 'var(--red)'
+                              : t.alvp_state === 1 ? 'var(--warn)'
+                              : 'var(--border-hi)';
+});
+
+cdi.bus.on('connection', () => {
+  $('kvSession').textContent = cdi.state.connected ? 'terhubung' : 'menyambung…';
+  $('kvSession').className   = cdi.state.connected ? 'ok' : 'crit';
+});
+
+$('ignBtn').addEventListener('click',   () => cdi.send({cmd:'setMode', mode:'ignition'}));
+$('scopeBtn').addEventListener('click', () => {
+  if (!confirm('Pindah ke mode SCOPE diagnostik? Monitoring mesin akan berhenti.')) return;
+  cdi.send({cmd:'setMode', mode:'scope'});
+});
+$('safeBtn').addEventListener('click',  () => {
+  if (!confirm('Masuk MODE AMAN? Semua output dimatikan.')) return;
+  cdi.send({cmd:'setMode', mode:'safehold'});
+});
+
+$('armBtn').addEventListener('click', () => {
+  if (!confirm('⚠ AKTIFKAN OUTPUT PENGAPIAN?\n\nGPIO25 akan pulse setiap siklus pulser. Dengan HV stage terhubung, ini akan menembakkan koil pengapian.\n\nLanjutkan hanya dengan beban aman (busi lepas, resistor dummy, atau bench test).')) return;
+  cdi.send({cmd:'setArmed', armed:true});
+});
+$('disarmBtn').addEventListener('click', () => cdi.send({cmd:'setArmed', armed:false}));
+
+// preset badge
+cdi.bus.on('open', () => cdi.send({cmd:'getPresetStatus'}));
+cdi.bus.on('preset', m => {
+  cdi.send({cmd:'getPresetList'});  // fetch full list to resolve display name
+});
+cdi.bus.on('presetList', m => {
+  const p = m.list.find(x => x.id === m.current);
+  if (p) $('topPresetName').textContent = p.name.replace(/Honda |Yamaha |Suzuki |Kawasaki /g, '').toUpperCase().substring(0, 22);
+});
+
+let autoArmInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!autoArmInit){
+    $('autoArmChk').checked = !!(t.flags4 & 0x02);
+    autoArmInit = true;
+  }
+});
+$('autoArmChk').addEventListener('change', e => {
+  if (e.target.checked && !confirm('Auto-arm ON?\n\nDevice akan langsung aktif spark setiap boot. Pastikan install di motor / safe context — jangan ON di bench dengan koil terhubung.')) {
+    e.target.checked = false;
+    return;
+  }
+  cdi.send({cmd:'setAutoArm', enabled: e.target.checked});
+});
+
+$('clearFsBtn').addEventListener('click', () => cdi.send({cmd:'clearFailsafe'}));
+
+$('testFireBtn').addEventListener('click', () => {
+  if (!confirm('Tembakkan 1 spark uji SEKARANG?\n\nGPIO25 akan pulse SEKALI selama dwell. Dengan HV stage terhubung, ini menembakkan koil sekali. Pastikan bench-aman (busi lepas / dummy load).')) return;
+  cdi.send({cmd:'testFire'});
+});
+</script>
+</body>
+</html>

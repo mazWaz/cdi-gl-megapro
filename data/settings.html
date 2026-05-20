@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>CDI//MGPRO · Konfig</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">CDI//MGPRO<span class="ver">v0.2.0</span></span>
+  <span class="spacer"></span>
+  <span class="chip" id="topMode"><span class="dot"></span><span class="txt">—</span></span>
+  <span class="chip" id="topLink">LINK <span class="dot"></span><span class="txt">…</span></span>
+</div>
+
+<main class="content">
+  <div class="page-title">
+    <h1>KONFIGURASI</h1>
+    <span class="sub">// parameter perangkat + fitur</span>
+  </div>
+
+  <section class="panel" style="border-color:var(--amber)">
+    <span class="label">[ ⚙ motor preset ]</span>
+    <div class="btn-row" style="margin-bottom:6px">
+      <span class="chip" id="presetCurrent" style="background:var(--amber-soft);border-color:var(--amber);color:var(--amber)">
+        <b id="presetNameTxt">—</b>
+      </span>
+      <span class="chip" id="presetModBadge" style="display:none;background:rgba(244,160,0,0.18);border-color:var(--warn);color:var(--warn)">
+        ✎ MODIFIED
+      </span>
+    </div>
+    <p class="note" id="presetDesc" style="min-height:30px;color:var(--text-dim)">—</p>
+    <div class="btn-row">
+      <button class="btn" id="presetChooseBtn">↺ Pilih motor lain</button>
+      <button class="btn ghost" id="presetResetBtn" style="display:none">⤺ Reset ke default preset</button>
+    </div>
+    <p class="note" style="margin-top:6px">
+      Preset memuat: trigger channel · magnet width · advance map · rev limit · dwell.
+      Setelah ganti motor, semua setting disesuaikan otomatis. Bisa edit individual nanti
+      (badge MODIFIED akan muncul).
+    </p>
+  </section>
+
+  <!-- modal preset picker -->
+  <div id="presetModal" style="display:none;position:fixed;inset:0;background:rgba(10,13,18,0.95);z-index:1000;overflow-y:auto;padding:20px">
+    <div style="max-width:560px;margin:0 auto">
+      <div class="page-title" style="margin-bottom:10px">
+        <h1>PILIH MOTOR</h1>
+        <span class="sub">// preset library</span>
+      </div>
+      <p class="note">
+        Pilih motor untuk auto-config trigger, advance map, rev limit, dwell, dll.
+        Setting custom yang sudah ada akan ditimpa.
+      </p>
+      <div id="presetList"></div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn ghost" id="presetCancelBtn">✕ Batal</button>
+      </div>
+    </div>
+  </div>
+    <label class="field">utama · soft band
+      <input id="mainInp" type="number" min="3000" max="15000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">batas maks · hard cut
+      <input id="overrevInp" type="number" min="3500" max="20000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyRevBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadRevBtn">↻ Muat dari perangkat</button>
+      <span class="note" id="revStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      Band antara <b>utama</b> dan <b>batas maks</b> dikelola oleh mode cut yang dipilih di bawah.
+      Di atas batas maks selalu hard cut (paksa disarm 3 cycle) untuk safety.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ pembatas rev · mode cut ]</span>
+    <div class="seg-group" id="cutModeBtns">
+      <button type="button" data-mode="1">Soft Retard</button>
+      <button type="button" data-mode="2">Hard Cut</button>
+      <button type="button" data-mode="3">Pattern Cut</button>
+      <button type="button" data-mode="4">Progressive</button>
+      <button type="button" data-mode="0">Off</button>
+    </div>
+    <p class="note" id="cutDesc" style="min-height:34px">—</p>
+    <div id="paramSoft" class="cut-params" style="display:none">
+      <label class="field">retard amount
+        <input id="retardInp" type="number" min="0" max="30" step="0.5" style="width:90px">
+        <span class="val">° BTDC</span>
+      </label>
+    </div>
+    <div id="paramPattern" class="cut-params" style="display:none">
+      <label class="field">fire N siklus
+        <input id="fireInp" type="number" min="1" max="15" step="1" style="width:90px">
+        <span class="val">cycle</span>
+      </label>
+      <label class="field">skip N siklus
+        <input id="skipInp" type="number" min="1" max="15" step="1" style="width:90px">
+        <span class="val">cycle</span>
+      </label>
+    </div>
+    <div class="btn-row">
+      <button class="btn green" id="applyCutBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadCutBtn">↻ Muat ulang</button>
+      <span class="note" id="cutStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      <b>Soft Retard</b>: kurangi advance° di soft band → power drop halus, mesin tetap fire.<br>
+      <b>Hard Cut</b>: paksa disarm di soft band → mesin mati total di limit.<br>
+      <b>Pattern Cut</b>: fire X siklus lalu skip Y → suara "memantul" khas drag race.<br>
+      <b>Progressive</b>: probabilitas skip naik linear dari 0% (di utama) → 95% (di batas maks).
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ backfire · burble · anti-lag ]</span>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="bfEn"> enabled</label>
+    </label>
+    <div class="seg-group" id="bfTrigBtns">
+      <button type="button" data-trig="0">OFF</button>
+      <button type="button" data-trig="1">Decel</button>
+      <button type="button" data-trig="2">Burble</button>
+      <button type="button" data-trig="3">Launch</button>
+    </div>
+    <p class="note" id="bfTrigDesc">—</p>
+    <label class="field">rpm range bawah
+      <input id="bfLoInp" type="number" min="500" max="14000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">rpm range atas
+      <input id="bfHiInp" type="number" min="700" max="15000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">retard°
+      <input id="bfRetInp" type="number" min="0" max="45" step="0.5" style="width:90px">
+      <span class="val">° BTDC</span>
+    </label>
+    <label class="field">durasi window
+      <input id="bfDurInp" type="number" min="50" max="2000" step="10" style="width:90px">
+      <span class="val">ms</span>
+    </label>
+    <label class="field">
+      <span style="min-width:70px">random</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="bfRndInp"> pola acak ±50%</label>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyBfBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadBfBtn">↻ Muat ulang</button>
+      <span class="note" id="bfStatus" style="align-self:center"></span>
+    </div>
+    <p class="note crit">
+      ⚠ Backfire memperpendek umur exhaust valve &amp; header (temperatur naik).
+      OFF by default. Pakai dengan pertimbangan — efek suara/api, bukan power gain.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ launch control · 2-step ]</span>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="launchEn"> enabled</label>
+    </label>
+    <label class="field">launch rpm · 2-step
+      <input id="launchRpmInp" type="number" min="1500" max="15000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyLaunchBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadLaunchBtn">↻ Muat ulang</button>
+      <span class="note" id="launchStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      Input GPIO13 (pull-up). Sambungkan ke saklar di tuas kopling / launch switch.
+      Saat input LOW (kopling ditarik), pembatas rev override ke launch_rpm dengan HARD CUT.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ quickshifter · clutchless up-shift ]</span>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="qsEn"> enabled</label>
+    </label>
+    <label class="field">cut duration
+      <input id="qsCutInp" type="number" min="20" max="250" step="5" style="width:90px">
+      <span class="val">ms</span>
+    </label>
+    <label class="field">min rpm guard
+      <input id="qsMinInp" type="number" min="1000" max="14000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">max rpm guard
+      <input id="qsMaxInp" type="number" min="1500" max="15000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyQsBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadQsBtn">↻ Muat ulang</button>
+      <span class="note" id="qsStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      Input GPIO14 (pull-up + interrupt FALLING). Sensor strain/microswitch di tuas perseneling.
+      Trigger → cut ignition selama cut_ms → torsi drop → gigi pindah mulus.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ shift light · gpio27 ]</span>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="shiftEn"> enabled</label>
+    </label>
+    <label class="field">rpm warn · flashing
+      <input id="shiftWarnInp" type="number" min="500" max="15000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">rpm shift · solid
+      <input id="shiftShiftInp" type="number" min="700" max="15000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyShiftBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadShiftBtn">↻ Muat ulang</button>
+      <span class="note" id="shiftStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      LED di GPIO27 mati di bawah warn, flash 5 Hz antara warn & shift, solid ON di atas shift.
+      Sambungkan LED 3 mm + resistor 220 Ω dari GPIO27 ke GND.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ kurva dwell · rpm-kompensasi ]</span>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="dwellCurveEn"> override manual dwell</label>
+    </label>
+    <p class="note">
+      Bila aktif, dwell µs dihitung dari curve di bawah berdasarkan RPM saat ini. Bila nonaktif,
+      dwell fix dari tuning manual di card sebelah dipakai.
+    </p>
+    <textarea id="dwellJson" rows="3" spellcheck="false"
+      placeholder='[[1000,2500],[3000,2500],[6000,3000],[10000,3500]]'></textarea>
+    <div class="btn-row">
+      <button class="btn green" id="applyDwellCurveBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadDwellCurveBtn">↻ Muat ulang</button>
+      <span class="note" id="dwellCurveStatus" style="align-self:center"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ tuning output pengapian ]</span>
+    <label class="field">dwell · lebar pulse gate
+      <input id="dwellInp" type="number" min="500" max="8000" step="100" style="width:90px">
+      <span class="val">µs</span>
+    </label>
+    <label class="field">offset advance · trim global
+      <input id="offsetInp" type="number" min="-10" max="10" step="0.5" style="width:90px">
+      <span class="val">° BTDC</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyTuningBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadTuningBtn">↻ Muat ulang</button>
+      <span class="note" id="tuningStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      Dwell = berapa lama GPIO25 HIGH per tembakan (= waktu pengisian kapasitor di HV stage).
+      Offset menambah ke setiap lookup advance° — pakai untuk kompensasi propagation delay
+      melalui optocoupler + driver SCR (+ve = spark lebih cepat = kompensasi delay positif).
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ wiring hv stage ]</span>
+    <pre style="background:var(--bg);border:1px solid var(--border);padding:10px;font-size:10px;color:var(--text-dim);overflow-x:auto;line-height:1.5">
+ESP32 GPIO25 ──[ 220 Ω ]──┬── opto LED anode ── │ ── opto collector ── SCR gate
+                          │                     │              │
+                         GND                  opto LED      SCR cathode
+                                                emitter        │
+                                                              GND (HV)
+
+  HV stage: 12V → step-up → cap 300V → SCR discharge → koil primer
+
+  Spec GPIO25: logic 3.3 V, ~20 mA maks. Pakai resistor 220 Ω untuk
+  membatasi arus LED optocoupler.
+
+  GND ESP32 harus terhubung ke GND signal HV stage (bukan GND power koil)
+  via kabel tipis tunggal untuk menghindari ground loop.
+
+  TEST LOAD sebelum konek HV beneran: 10 kΩ + LED dari GPIO25 ke GND.
+  LED harus kedip terlihat setiap Bench test fire.</pre>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ alvp · proteksi voltase rendah ]</span>
+    <div class="btn-row" style="margin-bottom:6px">
+      <span class="chip">VBAT <b id="vbatNow">—</b> V</span>
+      <span class="chip" id="alvpStatePill"><span class="dot"></span><span id="alvpStateTxt">NORMAL</span></span>
+    </div>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="alvpEn"> enabled</label>
+    </label>
+    <label class="field">derate threshold
+      <input id="alvpDerateInp" type="number" min="7" max="14" step="0.1" style="width:90px">
+      <span class="val">V</span>
+    </label>
+    <label class="field">disarm threshold
+      <input id="alvpDisarmInp" type="number" min="6" max="13" step="0.1" style="width:90px">
+      <span class="val">V</span>
+    </label>
+    <label class="field">derate rpm limit
+      <input id="alvpDerateRpmInp" type="number" min="1500" max="10000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyAlvpBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadAlvpBtn">↻ Muat ulang</button>
+      <span class="note" id="alvpStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      VBAT diukur via ADC GPIO32 + voltage divider 1:4 (mis. 30 kΩ + 10 kΩ). Di bawah derate
+      threshold (default 10.5V), main rev limit auto-clamp ke derate_rpm (rider terasa power drop).
+      Di bawah disarm threshold (default 9.0V), spark auto-disarm — koil HV butuh voltase cukup.
+      Hysteresis 2 detik anti flicker saat cranking dip.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ geometri pulser ]</span>
+    <dl class="kv">
+      <dt>lebar magnet</dt>     <dd>18.0° (stok megapro)</dd>
+      <dt>ref advance maks</dt> <dd>32.0° btdc (ch1 leading)</dd>
+      <dt>ref advance base</dt> <dd>14.0° btdc (ch2 trailing)</dd>
+    </dl>
+    <p class="note">Konstanta geometri dari <code style="color:var(--text);background:var(--bg);padding:1px 4px">config.h</code>. Ganti hardware pickup → update di sana.</p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ datalog · ring buffer ]</span>
+    <div class="btn-row" style="margin-bottom:6px">
+      <span class="chip" id="dlState"><span class="dot"></span><span id="dlStateTxt">IDLE</span></span>
+      <span class="chip">ENTRIES <b id="dlEntries">0</b> / <span id="dlCap">1500</span></span>
+      <span class="chip">SPAN <b id="dlDur">0.0</b> d</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn green" id="dlStartBtn">▶ Start</button>
+      <button class="btn ghost" id="dlStopBtn">⏹ Stop</button>
+      <button class="btn ghost" id="dlClearBtn">⊘ Clear</button>
+      <a class="btn ghost" id="dlDownloadBtn" href="/datalog.csv">↓ Download CSV</a>
+    </div>
+    <p class="note">
+      Sampling 50 Hz (20 ms) · kapasitas 1500 entries (30 detik). Saat ring penuh, entry terlama
+      di-overwrite (sliding window). Format CSV: ts_ms, rpm, advance°, jitter µs, vbat_mv,
+      armed, launch, qs, backfire, cut_mode, alvp_state.
+    </p>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ perangkat ]</span>
+    <dl class="kv">
+      <dt>firmware</dt>       <dd>v0.2.0</dd>
+      <dt>chip</dt>           <dd>ESP32-WROOM-32</dd>
+      <dt>waktu aktif</dt>    <dd id="upBig">0 d</dd>
+      <dt>memori bebas</dt>   <dd id="hpBig">— B</dd>
+      <dt>ssid ap</dt>        <dd>CDI-Megapro · open</dd>
+      <dt>ip captive</dt>     <dd>192.168.4.1</dd>
+    </dl>
+    <div class="btn-row">
+      <button class="btn crit" id="rebootBtn">⏻ Restart perangkat</button>
+      <button class="btn ghost" id="otaBtn">↑ Update OTA</button>
+    </div>
+  </section>
+
+  <section class="panel" id="otaPanel" style="display:none">
+    <span class="label">[ ota · update firmware ]</span>
+    <p class="note crit">
+      ⚠ Wajib mode <b>SCOPE</b> (engine monitoring akan terhenti). Pastikan baterai
+      cukup — interrupt saat flashing bisa bikin device perlu re-flash via USB.
+    </p>
+    <label class="field" style="align-items:flex-start;flex-direction:column;gap:8px">
+      <span>pilih file firmware.bin</span>
+      <input id="otaFile" type="file" accept=".bin" style="width:100%">
+    </label>
+    <div id="otaProgWrap" style="display:none;margin-top:8px">
+      <div style="background:var(--bg);border:1px solid var(--border-hi);height:18px;position:relative;overflow:hidden">
+        <div id="otaProgBar" style="background:var(--amber);height:100%;width:0%;transition:width 0.1s"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text)">
+          <span id="otaProgTxt">0%</span>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn green" id="otaUploadBtn">↑ Upload &amp; flash</button>
+      <button class="btn ghost" id="otaCancelBtn">✕ Tutup</button>
+      <span class="note" id="otaStatus" style="align-self:center"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <span class="label">[ roadmap ]</span>
+    <dl class="kv">
+      <dt class="ok">T0–T4</dt><dd class="ok">skeleton · scope · net · storage · pulser ✓</dd>
+      <dt class="ok">T5</dt><dd class="ok">peta advance ✓</dd>
+      <dt class="ok">T6</dt><dd class="ok">spark_scheduler · GPIO25 output ✓</dd>
+      <dt class="ok">T7</dt><dd class="ok">safety · pembatas rev · failsafe ✓</dd>
+      <dt class="ok">T8</dt><dd class="ok">integrasi HV stage · test fire ✓</dd>
+      <dt>T9</dt><dd>pembatas rev 4-mode (halus / keras / pola / progressive)</dd>
+      <dt>T10–T14</dt><dd>shift light · dwell · launch · quickshifter · backfire · alvp</dd>
+      <dt>T15+</dt><dd>datalog · ota · poles ui</dd>
+    </dl>
+  </section>
+</main>
+
+<nav class="bottom-nav">
+  <a href="/"><span class="ico">▮</span>Dasbor</a>
+  <a href="/map.html"><span class="ico">⌒</span>Peta</a>
+  <a href="/scope.html"><span class="ico">~</span>Scope</a>
+  <a href="/settings.html"><span class="ico">⚙</span>Konfig</a>
+</nav>
+
+<script src="/app.js"></script>
+<script>
+function fmtTime(ms){
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+  return (h>0 ? h+'j ' : '') + String(m).padStart(2,'0') + 'm ' + String(ss).padStart(2,'0') + 'd';
+}
+
+let initialPopulated = false;
+cdi.bus.on('telemetry', t => {
+  $('upBig').textContent = fmtTime(t.uptime);
+  $('hpBig').textContent = t.heap.toLocaleString() + ' B';
+  if (!initialPopulated && t.rev_main){
+    $('mainInp').value    = t.rev_main;
+    $('overrevInp').value = t.rev_overrev;
+    initialPopulated = true;
+  }
+});
+
+$('reloadRevBtn').addEventListener('click', () => {
+  $('mainInp').value    = cdi.state.telemetry.rev_main;
+  $('overrevInp').value = cdi.state.telemetry.rev_overrev;
+  $('revStatus').textContent = '› nilai perangkat dimuat';
+});
+
+let tuningInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!tuningInit && t.dwell_us){
+    $('dwellInp').value  = t.dwell_us;
+    $('offsetInp').value = (t.adv_offset_x10 / 10).toFixed(1);
+    tuningInit = true;
+  }
+});
+$('reloadTuningBtn').addEventListener('click', () => {
+  $('dwellInp').value  = cdi.state.telemetry.dwell_us;
+  $('offsetInp').value = (cdi.state.telemetry.adv_offset_x10 / 10).toFixed(1);
+  $('tuningStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyTuningBtn').addEventListener('click', () => {
+  const dwell  = parseInt($('dwellInp').value, 10);
+  const offset = parseFloat($('offsetInp').value);
+  if (!dwell || isNaN(offset)){ $('tuningStatus').textContent = '› nilai tidak valid'; return; }
+  cdi.send({cmd:'setDwell', us: dwell});
+  cdi.send({cmd:'setAdvanceOffset', deg: offset});
+  $('tuningStatus').textContent = '› terkirim';
+});
+
+$('applyRevBtn').addEventListener('click', () => {
+  const main = parseInt($('mainInp').value, 10);
+  const over = parseInt($('overrevInp').value, 10);
+  if (!main || !over || over <= main){
+    $('revStatus').textContent = '› batas maks harus > utama';
+    return;
+  }
+  cdi.send({cmd:'setRevLimit', main, overrev: over});
+  $('revStatus').textContent = '› mengirim… (cek chip di dasbor)';
+});
+
+// ── Motor preset ──
+let presetData = null;
+function renderCurrent(){
+  if (!presetData) return;
+  const p = presetData.list.find(x => x.id === presetData.current);
+  if (p){
+    $('presetNameTxt').textContent = p.name;
+    $('presetDesc').innerHTML = `<b>${p.cat}</b> · CH${p.trigger} trigger · magnet ${p.magnet.toFixed(1)}° · ${p.points} titik map · rev ${p.rev_main}/${p.rev_over} · dwell ${p.dwell}µs<br><span style="color:var(--text-faint);font-size:10px">${p.notes}</span>`;
+  }
+  const mod = presetData.modified;
+  $('presetModBadge').style.display = mod ? '' : 'none';
+  $('presetResetBtn').style.display = mod ? '' : 'none';
+}
+
+function openPresetModal(){
+  if (!presetData){ cdi.send({cmd:'getPresetList'}); return; }
+  // group by category
+  const groups = {};
+  presetData.list.forEach(p => { (groups[p.cat] = groups[p.cat] || []).push(p); });
+  let html = '';
+  Object.keys(groups).forEach(cat => {
+    html += `<div style="color:var(--amber);font-size:11px;letter-spacing:0.2em;text-transform:uppercase;margin:14px 0 6px;border-bottom:1px solid var(--border)">${cat}</div>`;
+    groups[cat].forEach(p => {
+      const active = (p.id === presetData.current) ? ' style="border-color:var(--amber);background:var(--amber-soft)"' : '';
+      html += `<div class="panel" data-pid="${p.id}"${active} style="cursor:pointer;padding:10px;margin-bottom:6px">`;
+      html += `<div style="display:flex;align-items:baseline;gap:8px">`;
+      html += `<b style="color:var(--amber);font-size:13px">${p.name}</b>`;
+      html += `<span style="font-size:10px;color:var(--text-faint)">CH${p.trigger} · ${p.points} titik · ${p.rev_main} rpm</span>`;
+      html += `</div>`;
+      html += `<div style="font-size:10px;color:var(--text-dim);margin-top:3px">${p.notes}</div>`;
+      html += `</div>`;
+    });
+  });
+  $('presetList').innerHTML = html;
+  $('presetList').querySelectorAll('[data-pid]').forEach(el => {
+    el.addEventListener('click', () => {
+      const pid = el.dataset.pid;
+      const p = presetData.list.find(x => x.id === pid);
+      if (!confirm('Pilih "' + p.name + '"?\n\nSemua setting (rev limit, advance map, dwell, dll) akan diganti dengan preset ini.')) return;
+      cdi.send({cmd:'setPreset', id:pid});
+      $('presetModal').style.display = 'none';
+    });
+  });
+  $('presetModal').style.display = '';
+}
+
+$('presetChooseBtn').addEventListener('click', openPresetModal);
+$('presetCancelBtn').addEventListener('click', () => $('presetModal').style.display = 'none');
+$('presetResetBtn').addEventListener('click', () => {
+  if (!confirm('Reset ke default preset "' + presetData.current + '"?\n\nSemua modifikasi custom akan hilang.')) return;
+  cdi.send({cmd:'setPreset', id: presetData.current});
+});
+
+cdi.bus.on('open', () => cdi.send({cmd:'getPresetList'}));
+cdi.bus.on('presetList', m => { presetData = m; renderCurrent(); });
+cdi.bus.on('preset', m => {
+  if (presetData){ presetData.current = m.current; presetData.modified = m.modified; renderCurrent(); }
+  else cdi.send({cmd:'getPresetList'});
+});
+
+// ── Cut mode UI (segmented buttons) ──
+const CUT_DESC = {
+  0: 'OFF — tidak ada pembatasan di soft band (overrev hard cut tetap aktif).',
+  1: 'Soft Retard — kurangi advance° di soft band. Power drop halus, mesin tetap fire. Cocok riding harian.',
+  2: 'Hard Cut — paksa disarm di soft band. Mesin mati di limit. Strict redline.',
+  3: 'Pattern Cut — fire N siklus lalu skip M siklus. Suara "memantul" khas drag race / 2-step.',
+  4: 'Progressive — probabilitas skip naik linear dari 0% (di utama) ke 95% (di batas maks). Transisi smooth.'
+};
+let cutModeValue = 1;
+function setCutMode(mode){
+  cutModeValue = +mode;
+  document.querySelectorAll('#cutModeBtns button').forEach(b => {
+    b.classList.toggle('active', +b.dataset.mode === cutModeValue);
+  });
+  $('cutDesc').textContent = CUT_DESC[cutModeValue] || '—';
+  $('paramSoft').style.display    = (cutModeValue == 1) ? '' : 'none';
+  $('paramPattern').style.display = (cutModeValue == 3) ? '' : 'none';
+}
+function applyCutNow(){
+  const ret   = parseFloat($('retardInp').value);
+  const fireN = parseInt($('fireInp').value, 10);
+  const skipN = parseInt($('skipInp').value, 10);
+  cdi.send({cmd:'setCutMode', mode: cutModeValue, retard: ret, fire_n: fireN, skip_n: skipN});
+  $('cutStatus').textContent = '› diterapkan';
+}
+document.querySelectorAll('#cutModeBtns button').forEach(b => {
+  b.addEventListener('click', () => { setCutMode(b.dataset.mode); applyCutNow(); });
+});
+
+let cutInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!cutInit && (t.cut_mode !== undefined)){
+    setCutMode(t.cut_mode);
+    $('retardInp').value = t.retard_deg.toFixed(1);
+    $('fireInp').value   = t.pattern_fire_n;
+    $('skipInp').value   = t.pattern_skip_n;
+    cutInit = true;
+  }
+});
+$('reloadCutBtn').addEventListener('click', () => {
+  const t = cdi.state.telemetry;
+  setCutMode(t.cut_mode);
+  $('retardInp').value = t.retard_deg.toFixed(1);
+  $('fireInp').value   = t.pattern_fire_n;
+  $('skipInp').value   = t.pattern_skip_n;
+  $('cutStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyCutBtn').addEventListener('click', applyCutNow);
+
+// ── Backfire ──
+const BF_DESC = {
+  0: 'OFF — backfire mati.',
+  1: 'Decel — auto trigger saat RPM drop >500 dalam 100ms di range. Window aktif "durasi" ms.',
+  2: 'Burble — kontinu aktif selama RPM di range. Suara "burble" terus menerus.',
+  3: 'Launch — sinkron dengan launch control (2-step). Pop di start drag.'
+};
+// Suggested defaults per mode (auto-fill saat user ganti, tapi cuma kalau user belum edit manual)
+const BF_DEFAULTS = {
+  0: { lo: 3000, hi: 7000, ret: 15.0, dur:  200 },
+  1: { lo: 3000, hi: 7000, ret: 15.0, dur:  500 },   // decel: window panjang
+  2: { lo: 2000, hi: 5000, ret: 10.0, dur:  200 },   // burble: band sempit, retard halus
+  3: { lo: 4500, hi: 5500, ret: 20.0, dur:  100 }    // launch: sekitar launch_rpm
+};
+let bfTrigValue = 0;
+function setBfTrig(t, autofill){
+  bfTrigValue = +t;
+  document.querySelectorAll('#bfTrigBtns button').forEach(b => {
+    b.classList.toggle('active', +b.dataset.trig === bfTrigValue);
+  });
+  $('bfTrigDesc').textContent = BF_DESC[bfTrigValue] || '—';
+  if (autofill){
+    const d = BF_DEFAULTS[bfTrigValue];
+    if (d){
+      $('bfLoInp').value  = d.lo;
+      $('bfHiInp').value  = d.hi;
+      $('bfRetInp').value = d.ret.toFixed(1);
+      $('bfDurInp').value = d.dur;
+    }
+  }
+}
+function applyBfNow(){
+  cdi.send({
+    cmd:'setBackfire',
+    enabled: $('bfEn').checked,
+    trigger: bfTrigValue,
+    rpm_lo:  parseInt($('bfLoInp').value, 10),
+    rpm_hi:  parseInt($('bfHiInp').value, 10),
+    retard:  parseFloat($('bfRetInp').value),
+    duration_ms: parseInt($('bfDurInp').value, 10),
+    random:  $('bfRndInp').checked
+  });
+  $('bfStatus').textContent = '› ' + (BF_DESC[bfTrigValue]||'').split('—')[0].trim() + ' diterapkan';
+}
+document.querySelectorAll('#bfTrigBtns button').forEach(b => {
+  b.addEventListener('click', () => {
+    setBfTrig(b.dataset.trig, true);   // autofill defaults
+    applyBfNow();                       // immediately send to firmware
+  });
+});
+$('bfEn').addEventListener('change', applyBfNow);   // toggle enable auto-applies
+let bfInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!bfInit && t.bf_rpm_lo){
+    $('bfEn').checked  = !!(t.flags3 & 0x01);
+    setBfTrig(t.bf_trigger, false);   // load from device — don't autofill
+    $('bfLoInp').value  = t.bf_rpm_lo;
+    $('bfHiInp').value  = t.bf_rpm_hi;
+    $('bfRetInp').value = t.bf_retard.toFixed(1);
+    $('bfDurInp').value = t.bf_duration;
+    $('bfRndInp').checked = !!(t.flags3 & 0x04);
+    bfInit = true;
+  }
+});
+$('reloadBfBtn').addEventListener('click', () => {
+  const t = cdi.state.telemetry;
+  $('bfEn').checked  = !!(t.flags3 & 0x01);
+  setBfTrig(t.bf_trigger, false);
+  $('bfLoInp').value  = t.bf_rpm_lo;
+  $('bfHiInp').value  = t.bf_rpm_hi;
+  $('bfRetInp').value = t.bf_retard.toFixed(1);
+  $('bfDurInp').value = t.bf_duration;
+  $('bfRndInp').checked = !!(t.flags3 & 0x04);
+  $('bfStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyBfBtn').addEventListener('click', applyBfNow);
+
+// ── Launch ──
+let launchInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!launchInit && t.launch_rpm){
+    $('launchEn').checked    = !!(t.flags2 & 0x04);
+    $('launchRpmInp').value  = t.launch_rpm;
+    launchInit = true;
+  }
+});
+$('reloadLaunchBtn').addEventListener('click', () => {
+  const t = cdi.state.telemetry;
+  $('launchEn').checked    = !!(t.flags2 & 0x04);
+  $('launchRpmInp').value  = t.launch_rpm;
+  $('launchStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyLaunchBtn').addEventListener('click', () => {
+  cdi.send({cmd:'setLaunch', enabled: $('launchEn').checked, rpm: parseInt($('launchRpmInp').value,10)});
+  $('launchStatus').textContent = '› terkirim';
+});
+
+// ── Quickshifter ──
+let qsInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!qsInit && t.qs_cut_ms){
+    $('qsEn').checked     = !!(t.flags2 & 0x08);
+    $('qsCutInp').value   = t.qs_cut_ms;
+    qsInit = true;
+  }
+});
+$('reloadQsBtn').addEventListener('click', () => {
+  const t = cdi.state.telemetry;
+  $('qsEn').checked   = !!(t.flags2 & 0x08);
+  $('qsCutInp').value = t.qs_cut_ms;
+  $('qsStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyQsBtn').addEventListener('click', () => {
+  cdi.send({
+    cmd:'setQuickshifter',
+    enabled: $('qsEn').checked,
+    cut_ms:  parseInt($('qsCutInp').value, 10),
+    min_rpm: parseInt($('qsMinInp').value, 10) || 4000,
+    max_rpm: parseInt($('qsMaxInp').value, 10) || 12000
+  });
+  $('qsStatus').textContent = '› terkirim';
+});
+// Default values for guard inputs
+$('qsMinInp').value = 4000;
+$('qsMaxInp').value = 12000;
+
+// ── Shift Light ──
+let shiftInit = false;
+cdi.bus.on('telemetry', t => {
+  if (!shiftInit && t.shift_warn){
+    $('shiftEn').checked    = !!(t.flags2 & 0x01);
+    $('shiftWarnInp').value = t.shift_warn;
+    $('shiftShiftInp').value = t.shift_shift;
+    shiftInit = true;
+  }
+});
+$('reloadShiftBtn').addEventListener('click', () => {
+  const t = cdi.state.telemetry;
+  $('shiftEn').checked     = !!(t.flags2 & 0x01);
+  $('shiftWarnInp').value  = t.shift_warn;
+  $('shiftShiftInp').value = t.shift_shift;
+  $('shiftStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyShiftBtn').addEventListener('click', () => {
+  const warn  = parseInt($('shiftWarnInp').value, 10);
+  const shift = parseInt($('shiftShiftInp').value, 10);
+  if (!warn || !shift || shift <= warn){
+    $('shiftStatus').textContent = '› shift harus > warn'; return;
+  }
+  cdi.send({cmd:'setShiftLight', enabled: $('shiftEn').checked, warn, shift});
+  $('shiftStatus').textContent = '› terkirim';
+});
+
+// ── Dwell Curve ──
+cdi.bus.on('open', () => cdi.send({cmd:'getDwellCurve'}));
+cdi.bus.on('dwellCurve', m => {
+  $('dwellCurveEn').checked = m.enabled;
+  $('dwellJson').value = JSON.stringify(m.points || []);
+  $('dwellCurveStatus').textContent = '› ' + (m.points || []).length + ' titik';
+});
+$('reloadDwellCurveBtn').addEventListener('click', () => cdi.send({cmd:'getDwellCurve'}));
+$('applyDwellCurveBtn').addEventListener('click', () => {
+  let pts;
+  try { pts = JSON.parse($('dwellJson').value); }
+  catch (e) { $('dwellCurveStatus').textContent = '› JSON tidak valid'; return; }
+  if (!Array.isArray(pts) || pts.length < 1){ $('dwellCurveStatus').textContent = '› minimal 1 titik'; return; }
+  cdi.send({cmd:'setDwellCurve', enabled: $('dwellCurveEn').checked, points: pts});
+  $('dwellCurveStatus').textContent = '› mengirim…';
+});
+
+// ── ALVP ──
+const ALVP_LABELS = ['NORMAL', 'DERATE', 'DISARM LOW'];
+const ALVP_COLORS = ['var(--green)', 'var(--warn)', 'var(--red)'];
+let alvpInit = false;
+cdi.bus.on('telemetry', t => {
+  $('vbatNow').textContent = (t.vbat_mv / 1000).toFixed(2);
+  const pill = $('alvpStatePill');
+  const dot  = pill.querySelector('.dot');
+  $('alvpStateTxt').textContent = ALVP_LABELS[t.alvp_state] || '?';
+  pill.style.color = ALVP_COLORS[t.alvp_state] || 'var(--text-dim)';
+  pill.style.borderColor = ALVP_COLORS[t.alvp_state] || 'var(--border-hi)';
+  dot.className = 'dot ' + (t.alvp_state === 2 ? 'crit' : t.alvp_state === 1 ? 'warn' : 'ok');
+  if (!alvpInit){
+    $('alvpEn').checked            = !!(t.flags4 & 0x01);
+    $('alvpDerateInp').value       = t.alvp_derate.toFixed(1);
+    $('alvpDisarmInp').value       = t.alvp_disarm.toFixed(1);
+    $('alvpDerateRpmInp').value    = t.alvp_derate_rpm;
+    alvpInit = true;
+  }
+});
+$('reloadAlvpBtn').addEventListener('click', () => {
+  const t = cdi.state.telemetry;
+  $('alvpEn').checked         = !!(t.flags4 & 0x01);
+  $('alvpDerateInp').value    = t.alvp_derate.toFixed(1);
+  $('alvpDisarmInp').value    = t.alvp_disarm.toFixed(1);
+  $('alvpDerateRpmInp').value = t.alvp_derate_rpm;
+  $('alvpStatus').textContent = '› nilai perangkat dimuat';
+});
+$('applyAlvpBtn').addEventListener('click', () => {
+  cdi.send({
+    cmd:'setAlvp',
+    enabled: $('alvpEn').checked,
+    derate:  parseFloat($('alvpDerateInp').value),
+    disarm:  parseFloat($('alvpDisarmInp').value),
+    derate_rpm: parseInt($('alvpDerateRpmInp').value, 10)
+  });
+  $('alvpStatus').textContent = '› terkirim';
+});
+
+// ── Datalog ──
+function applyDatalogState(m){
+  const rec = !!m.recording;
+  $('dlStateTxt').textContent = rec ? 'RECORDING' : 'IDLE';
+  const pill = $('dlState');
+  pill.style.color = rec ? 'var(--red)' : 'var(--text-dim)';
+  pill.style.borderColor = rec ? 'var(--red)' : 'var(--border-hi)';
+  pill.querySelector('.dot').className = 'dot ' + (rec ? 'crit' : '');
+  $('dlEntries').textContent = m.entries || 0;
+  if (m.capacity) $('dlCap').textContent = m.capacity;
+  if (m.duration !== undefined) $('dlDur').textContent = (m.duration / 1000).toFixed(1);
+}
+cdi.bus.on('datalog', applyDatalogState);
+cdi.bus.on('open', () => cdi.send({cmd:'getDatalogStatus'}));
+$('dlStartBtn').addEventListener('click', () => cdi.send({cmd:'startDatalog'}));
+$('dlStopBtn').addEventListener('click', () => cdi.send({cmd:'stopDatalog'}));
+$('dlClearBtn').addEventListener('click', () => { cdi.send({cmd:'clearDatalog'}); setTimeout(()=>cdi.send({cmd:'getDatalogStatus'}), 100); });
+// Poll status while recording (since recording state isn't in telemetry binary)
+setInterval(() => cdi.send({cmd:'getDatalogStatus'}), 2000);
+
+// ── OTA ──
+$('otaBtn').addEventListener('click', () => {
+  $('otaPanel').style.display = '';
+  $('otaPanel').scrollIntoView({behavior:'smooth'});
+});
+$('otaCancelBtn').addEventListener('click', () => { $('otaPanel').style.display = 'none'; });
+
+$('otaUploadBtn').addEventListener('click', () => {
+  const f = $('otaFile').files[0];
+  if (!f){ $('otaStatus').textContent = '› pilih file dulu'; return; }
+  if (!confirm('Upload ' + f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)?\n\nESP32 akan reboot setelah selesai.\nPastikan device dalam mode SCOPE.')) return;
+
+  const fd = new FormData();
+  fd.append('firmware', f);
+  $('otaProgWrap').style.display = '';
+  $('otaProgBar').style.width = '0%';
+  $('otaProgTxt').textContent = '0%';
+  $('otaStatus').textContent = '› uploading…';
+
+  const xhr = new XMLHttpRequest();
+  xhr.upload.addEventListener('progress', e => {
+    if (e.lengthComputable){
+      const pct = Math.round(e.loaded / e.total * 100);
+      $('otaProgBar').style.width = pct + '%';
+      $('otaProgTxt').textContent = pct + '%';
+    }
+  });
+  xhr.addEventListener('load', () => {
+    if (xhr.status === 200){
+      $('otaStatus').textContent = '› ok · device reboot…';
+      $('otaProgBar').style.background = 'var(--green)';
+      setTimeout(() => { location.reload(); }, 8000);
+    } else {
+      $('otaStatus').textContent = '› ERR ' + xhr.status + ': ' + xhr.responseText;
+      $('otaProgBar').style.background = 'var(--red)';
+    }
+  });
+  xhr.addEventListener('error', () => {
+    $('otaStatus').textContent = '› koneksi terputus (mungkin reboot — coba refresh setelah 10d)';
+    setTimeout(() => location.reload(), 10000);
+  });
+  xhr.open('POST', '/api/ota/upload', true);
+  xhr.send(fd);
+});
+
+$('rebootBtn').addEventListener('click', () => {
+  if (!confirm('Restart ESP32 sekarang?')) return;
+  cdi.send({cmd:'reboot'});
+  setTimeout(() => location.reload(), 1500);
+});
+</script>
+</body>
+</html>
