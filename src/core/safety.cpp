@@ -55,14 +55,21 @@ void tick() {
     const uint32_t now_ms = millis();
     const cdi::micros_t now_us = (cdi::micros_t)micros();
 
-    // ─── No-signal failsafe (only matters if currently armed) ───
+    // ─── No-signal failsafe ───
+    // Trip ONLY when we previously HAD pulser signal and then lost it
+    // (cable cut mid-ride, pulser failed, etc). We do NOT trip when
+    // `last == 0` — that just means the engine has never been cranked
+    // yet since boot. Tripping in that case prevented bench-arming
+    // for test-fire workflows: user clicks Arm, has 500 ms to react,
+    // then is auto-disarmed before they can press Test Fire.
     if (cdi::core::spark::isArmed()) {
         cdi::micros_t last = cdi::core::rpm::lastCh1Us();
-        if (last == 0 ||
+        if (last != 0 &&
             (now_us - last) > (cdi::micros_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000ULL) {
             cdi::core::spark::setArmed(false);
             s_noSignal = true;
-            Serial.println("[safety] NO-SIGNAL failsafe → auto disarm");
+            Serial.println("[safety] NO-SIGNAL failsafe → auto disarm "
+                           "(pulser signal lost after being active)");
         }
     } else {
         // Don't clear no_signal automatically — sticky until re-arm.
