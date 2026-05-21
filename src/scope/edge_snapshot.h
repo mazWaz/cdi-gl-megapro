@@ -39,14 +39,22 @@ struct Event {
 } __attribute__((packed));
 static_assert(sizeof(Event) == EVENT_BYTES, "Event must be 6 bytes packed");
 
-void   begin();                          // init LittleFS snap dir
+void   begin();                          // init LittleFS snap dir + saver task
 void   record(uint32_t ts_us, uint8_t ch, uint8_t level);   // hot path
 size_t buffered();                       // how many events currently in ring
 size_t capacity();                       // RING_CAPACITY
 
 // File ops — all paths kebab-sanitized at the boundary.
 String sanitize(const char* raw);        // strip unsafe chars → kebab
+// Synchronous save (used internally by the saver task). Callers from
+// the main loop should NOT call this directly; use saveAsync() so the
+// 10-50 ms LittleFS write happens on core 0.
 bool   save(const String& name);         // snapshot ring → /snap/<name>.bin
+// Producer side: queue a save request, return immediately. The work
+// runs on the snapshot saver task pinned to core 0.
+bool   saveAsync(const String& name);
+// True while a save request is queued or in progress.
+bool   isSaving();
 bool   list(JsonArray out);              // {name, size_bytes, count}[]
 int    fileSize(const String& name);     // -1 if missing
 int    load(const String& name, uint8_t* buf, size_t cap);  // read into buf

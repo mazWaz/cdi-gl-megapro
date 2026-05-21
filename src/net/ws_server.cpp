@@ -173,7 +173,10 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
             client->text("{\"type\":\"err\",\"msg\":\"invalid name\"}");
             return;
         }
-        const bool ok = cdi::scope::snapshot::save(name);
+        // Async save — work happens on the snapshot saver task on
+        // core 0. Returns immediately; WS reply tells UI the request
+        // was queued. UI can poll listSnaps to see when it lands.
+        const bool ok = cdi::scope::snapshot::saveAsync(name);
         JsonDocument r;
         r["type"]  = "snapSaved";
         r["name"]  = name;
