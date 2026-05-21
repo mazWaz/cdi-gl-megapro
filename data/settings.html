@@ -469,14 +469,39 @@ ESP32 GPIO25 ──[ 220 Ω ]──┬── opto LED anode ── │ ── op
   <section class="panel">
     <span class="label">[ wifi ap ]</span>
     <div class="readout-row" style="grid-template-columns:1fr 1fr;background:transparent;border:0;padding:0">
-      <div class="readout"><span class="num" id="wifiSsid" style="font-size:14px">—</span><span class="unit">SSID</span></div>
-      <div class="readout"><span class="num amber" id="wifiPwd" style="font-size:14px;letter-spacing:0.05em">—</span><span class="unit">password</span></div>
+      <div class="readout">
+        <span class="num" id="wifiSsid" style="font-size:14px">—</span>
+        <span class="unit">SSID (aktif)</span>
+      </div>
+      <div class="readout">
+        <span class="num amber" id="wifiPwd" style="font-size:14px;letter-spacing:0.05em">—</span>
+        <span class="unit">password (aktif)</span>
+      </div>
     </div>
-    <p class="note" style="margin-top:6px;font-size:10px;color:var(--text-dim)">
-      SSID dan password adalah konstanta compile-time di <code>platformio.ini</code>
-      (build flag <code>CDI_AP_SSID</code> dan <code>CDI_AP_PASSWORD</code>).
-      Ganti: edit file, <code>pio run -t upload</code>. Read-only di UI.
+    <p class="note" id="wifiSourceNote" style="margin-top:4px;font-size:10px;color:var(--text-dim)">
+      Sumber: <b id="wifiSource" style="color:var(--text-dim)">—</b> · efektif setelah reboot
     </p>
+
+    <div style="margin-top:10px">
+      <label class="field" style="margin-bottom:6px">
+        <span style="min-width:80px">SSID</span>
+        <input id="wifiSsidInp" type="text" maxlength="31" placeholder="1-31 char ASCII" style="flex:1">
+      </label>
+      <label class="field" style="margin-bottom:6px">
+        <span style="min-width:80px">Password</span>
+        <input id="wifiPwdInp" type="text" maxlength="63" placeholder="min 8 char ASCII" style="flex:1">
+      </label>
+      <div class="btn-row">
+        <button class="btn green" id="wifiSaveBtn">✓ Simpan + reboot</button>
+        <button class="btn ghost" id="wifiResetBtn">⤺ Reset ke default</button>
+      </div>
+      <p class="note" id="wifiStatus" style="font-size:10px;color:var(--text-dim);margin-top:4px">—</p>
+      <p class="note" style="font-size:10px;color:var(--text-faint);margin-top:4px">
+        Default factory ada di <code>platformio.ini</code> build flags. Nilai yang disimpan
+        lewat UI override default tersebut, persist di NVS. Lupa password?
+        <code>pio run -t erase</code> via USB untuk wipe NVS dan kembali ke default.
+      </p>
+    </div>
   </section>
 
   <section class="panel">
@@ -626,10 +651,71 @@ $('presetResetBtn').addEventListener('click', async () => {
 
 cdi.bus.on('open', () => { cdi.send({cmd:'getPresetList'}); cdi.send({cmd:'getPickup'}); cdi.send({cmd:'getWifi'}); });
 
-// ── WiFi AP info (read-only — compile-time creds from platformio.ini) ──
+// ── WiFi AP — runtime override on top of platformio.ini defaults ──
 cdi.bus.on('wifi', m => {
   if (m.ssid)     $('wifiSsid').textContent = m.ssid;
   if (m.password) $('wifiPwd').textContent  = m.password;
+  if (m.source){
+    const isOverride = (m.source === 'override');
+    const src = $('wifiSource');
+    src.textContent = isOverride ? 'NVS override' : 'platformio.ini default';
+    src.style.color = isOverride ? 'var(--amber)' : 'var(--text-dim)';
+  }
+  if (typeof m.msg === 'string' && typeof m.ok !== 'undefined'){
+    $('wifiStatus').textContent = '› ' + m.msg;
+    $('wifiStatus').style.color = m.ok ? 'var(--green)' : 'var(--warn)';
+    if (m.ok){
+      cdi.modal.confirm({
+        title: 'TERSIMPAN',
+        severity: 'info',
+        body: 'Kredensial WiFi tersimpan di NVS. Reboot sekarang untuk apply?\n\nSetelah reboot, AP akan up dengan SSID/password baru. Connect ulang dengan kredensial baru.',
+        okLabel: '↻ Reboot sekarang',
+        cancelLabel: '× Nanti saja',
+      }).then(ok => { if (ok) cdi.send({cmd:'reboot'}); });
+    }
+  }
+});
+$('wifiSaveBtn').addEventListener('click', async () => {
+  const newSsid = $('wifiSsidInp').value.trim();
+  const newPwd  = $('wifiPwdInp').value;
+  if (!newSsid && !newPwd){
+    $('wifiStatus').textContent = '› isi minimal salah satu field';
+    $('wifiStatus').style.color = 'var(--warn)';
+    return;
+  }
+  if (newSsid && (newSsid.length < 1 || newSsid.length > 31)){
+    $('wifiStatus').textContent = '› SSID 1-31 karakter';
+    $('wifiStatus').style.color = 'var(--warn)';
+    return;
+  }
+  if (newPwd && (newPwd.length < 8 || newPwd.length > 63)){
+    $('wifiStatus').textContent = '› password 8-63 karakter';
+    $('wifiStatus').style.color = 'var(--warn)';
+    return;
+  }
+  const ok = await cdi.modal.confirm({
+    title: 'GANTI KREDENSIAL WIFI',
+    severity: 'danger',
+    body: 'Setelah reboot, AP akan up dengan kredensial baru.\n\nSSID: ' + (newSsid || '(unchanged)') +
+          '\nPassword: ' + (newPwd ? newPwd : '(unchanged)') +
+          '\n\n⚠ CATAT password baru dulu — kalau lupa, harus erase NVS via USB untuk recovery.',
+    okLabel: '✓ Simpan',
+  });
+  if (!ok) return;
+  if (newSsid) cdi.send({cmd:'setWifiSsid', ssid: newSsid});
+  if (newPwd)  cdi.send({cmd:'setWifiPassword', password: newPwd});
+  $('wifiSsidInp').value = '';
+  $('wifiPwdInp').value  = '';
+});
+$('wifiResetBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'RESET KE DEFAULT',
+    severity: 'warn',
+    body: 'Buang override NVS dan kembali ke kredensial default di platformio.ini?\n\nEfektif setelah reboot — pastikan tahu password default sebelum lanjut.',
+    okLabel: '⤺ Reset',
+  });
+  if (!ok) return;
+  cdi.send({cmd:'resetWifi'});
 });
 cdi.bus.on('presetList', m => { presetData = m; renderCurrent(); });
 cdi.bus.on('preset', m => {

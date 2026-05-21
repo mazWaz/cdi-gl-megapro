@@ -173,18 +173,47 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         r["type"]     = "wifi";
         r["ssid"]     = cdi::net::wifi_ap::ssid();
         r["password"] = cdi::net::wifi_ap::password();
+        r["source"]   = cdi::net::wifi_ap::source();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setWifiSsid")) {
+        const char* s = doc["ssid"] | "";
+        const bool ok = cdi::net::wifi_ap::setSsid(s);
+        JsonDocument r;
+        r["type"]     = "wifi";
+        r["ok"]       = ok;
+        r["msg"]      = ok ? "SSID updated — reboot to apply"
+                           : "invalid SSID (1-31 printable ASCII)";
+        r["ssid"]     = cdi::net::wifi_ap::ssid();
+        r["password"] = cdi::net::wifi_ap::password();
+        r["source"]   = cdi::net::wifi_ap::source();
         String out; serializeJson(r, out);
         client->text(out);
     }
     else if (!strcmp(cmd, "setWifiPassword")) {
-        // Password is compile-time (platformio.ini build flag).
-        // Reject runtime change so the source of truth stays single.
+        const char* pwd = doc["password"] | "";
+        const bool ok = cdi::net::wifi_ap::setPassword(pwd);
         JsonDocument r;
         r["type"]     = "wifi";
-        r["ok"]       = false;
-        r["msg"]      = "password is compile-time — edit platformio.ini and rebuild";
+        r["ok"]       = ok;
+        r["msg"]      = ok ? "password updated — reboot to apply"
+                           : "invalid password (8-63 printable ASCII)";
         r["ssid"]     = cdi::net::wifi_ap::ssid();
         r["password"] = cdi::net::wifi_ap::password();
+        r["source"]   = cdi::net::wifi_ap::source();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "resetWifi")) {
+        cdi::net::wifi_ap::resetToDefaults();
+        JsonDocument r;
+        r["type"]     = "wifi";
+        r["ok"]       = true;
+        r["msg"]      = "reset to platformio.ini defaults — reboot to apply";
+        r["ssid"]     = cdi::net::wifi_ap::ssid();
+        r["password"] = cdi::net::wifi_ap::password();
+        r["source"]   = "default";
         String out; serializeJson(r, out);
         client->text(out);
     }
