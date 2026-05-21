@@ -48,6 +48,45 @@ void sendApp(AsyncWebServerRequest* req) {
     req->send(r);
 }
 
+// ── Captive-portal probe responders ──────────────────────────────
+//
+// Each major OS pings a well-known URL to test whether the network
+// has real internet. If we return ANYTHING other than the exact
+// expected response, the OS thinks the network is a captive portal
+// requiring sign-in and pops the "Sign in to network" banner —
+// repeatedly on Android, every ~10 s. That banner is annoying and
+// drops the user into a stripped-down mini-browser instead of full
+// Chrome.
+//
+// We respond with the exact expected payload so the OS marks the
+// network as "no internet" silently and lets the user navigate to
+// 192.168.4.1 normally in real Chrome.
+//
+// Reference probe URLs:
+//   Android  /generate_204 /gen_204                  → 204 empty
+//   Windows  /ncsi.txt                               → "Microsoft NCSI"
+//   Windows  /connecttest.txt                        → "Microsoft Connect Test"
+//   iOS/Mac  /hotspot-detect.html /library/test/success.html
+//                                                    → HTML containing "Success"
+//   Mozilla  /success.txt                            → "success"
+void probeEmpty(AsyncWebServerRequest* req) {
+    // 204 No Content — silent "internet works"
+    req->send(204);
+}
+void probeNcsi(AsyncWebServerRequest* req) {
+    req->send(200, "text/plain", "Microsoft NCSI");
+}
+void probeConnectTest(AsyncWebServerRequest* req) {
+    req->send(200, "text/plain", "Microsoft Connect Test");
+}
+void probeAppleSuccess(AsyncWebServerRequest* req) {
+    req->send(200, "text/html",
+              "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+}
+void probeMozillaSuccess(AsyncWebServerRequest* req) {
+    req->send(200, "text/plain", "success");
+}
+
 void handleSnapshotCsv(AsyncWebServerRequest* req) {
     if (!req->hasParam("name")) {
         req->send(400, "text/plain", "missing name"); return;
@@ -97,18 +136,22 @@ void begin() {
     s_server.on("/datalog.csv",    HTTP_GET, handleDatalogCsv);
     s_server.on("/snapshot.csv",   HTTP_GET, handleSnapshotCsv);
 
-    // OS captive-portal probes — return index.html so HP auto-opens UI.
-    s_server.on("/generate_204",              HTTP_GET, sendIndex);
-    s_server.on("/gen_204",                   HTTP_GET, sendIndex);
-    s_server.on("/hotspot-detect.html",       HTTP_GET, sendIndex);
-    s_server.on("/library/test/success.html", HTTP_GET, sendIndex);
-    s_server.on("/ncsi.txt",                  HTTP_GET, sendIndex);
-    s_server.on("/connecttest.txt",           HTTP_GET, sendIndex);
-    s_server.on("/redirect",                  HTTP_GET, sendIndex);
-    s_server.on("/canonical.html",            HTTP_GET, sendIndex);
-    s_server.on("/success.txt",               HTTP_GET, sendIndex);
+    // OS captive-portal probes — respond with the exact payload each
+    // OS expects so they DON'T pop a "Sign in to network" banner.
+    // The user just opens a real browser to http://192.168.4.1/.
+    s_server.on("/generate_204",              HTTP_GET, probeEmpty);
+    s_server.on("/gen_204",                   HTTP_GET, probeEmpty);
+    s_server.on("/hotspot-detect.html",       HTTP_GET, probeAppleSuccess);
+    s_server.on("/library/test/success.html", HTTP_GET, probeAppleSuccess);
+    s_server.on("/ncsi.txt",                  HTTP_GET, probeNcsi);
+    s_server.on("/connecttest.txt",           HTTP_GET, probeConnectTest);
+    s_server.on("/success.txt",               HTTP_GET, probeMozillaSuccess);
+    s_server.on("/canonical.html",            HTTP_GET, probeAppleSuccess);
+    s_server.on("/redirect",                  HTTP_GET, probeEmpty);
 
-    // Anything else also goes to index → keeps captive portal happy.
+    // Unknown paths → serve index.html so a legitimate browser typing
+    // a wrong URL still lands on the dashboard (won't trigger captive
+    // banner because the explicit probe routes above already won).
     s_server.onNotFound(sendIndex);
 
     s_server.begin();
