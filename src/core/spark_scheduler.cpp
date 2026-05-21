@@ -135,7 +135,21 @@ void setAdvanceOffsetDeg(float deg) {
 }
 float advanceOffsetDeg() { return s_advanceOffsetDeg; }
 
-void manualFire() {
+void manualFire(uint32_t dwell_override_us) {
+    // Optional dwell override for bench diagnostic — temporarily
+    // swap s_dwellUs, schedule fire, restore after the fire-off ISR
+    // would have completed. (Worst-case dwell + safety margin.)
+    const uint32_t saved_dwell = s_dwellUs;
+    if (dwell_override_us > 0) {
+        uint32_t d = dwell_override_us;
+        if (d < 500)    d = 500;
+        if (d > 20000)  d = 20000;     // allow up to 20 ms for diag
+        s_dwellUs = d;
+        Serial.printf("[spark] manual test fire (override dwell=%u us)\n", (unsigned)d);
+    } else {
+        Serial.printf("[spark] manual test fire (dwell=%u us)\n", (unsigned)s_dwellUs);
+    }
+
     s_scheduledFireUs = (cdi::micros_t)micros() + 100;
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
     timerAlarm(s_fireOnTimer, 100, false, 0);
@@ -145,7 +159,15 @@ void manualFire() {
     timerAlarmWrite(s_fireOnTimer, 100, false);
     timerAlarmEnable(s_fireOnTimer);
 #endif
-    Serial.println("[spark] manual test fire");
+
+    // Restore configured dwell after the fire window has closed.
+    // (Crude — relies on the timer-based ISR completing within
+    // override+safety. Acceptable since this is a manual single-shot
+    // diagnostic path, not the hot pulser path.)
+    if (dwell_override_us > 0) {
+        delay((dwell_override_us / 1000) + 5);
+        s_dwellUs = saved_dwell;
+    }
 }
 
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {

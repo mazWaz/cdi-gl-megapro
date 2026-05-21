@@ -148,8 +148,12 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "testFire")) {
-        Serial.println("[ws] test fire requested");
-        cdi::core::spark::manualFire();
+        // Optional `dwell` override in µs for diagnostic spark (e.g.
+        // 10000 = 10 ms long-dwell to make a visible arc on bench
+        // when the configured dwell is too short to see).
+        uint32_t override_dwell = doc["dwell"] | 0;
+        Serial.printf("[ws] test fire requested (override=%u)\n", (unsigned)override_dwell);
+        cdi::core::spark::manualFire(override_dwell);
         client->text("{\"type\":\"ack\",\"msg\":\"fired\"}");
     }
     else if (!strcmp(cmd, "setRevLimit")) {

@@ -75,7 +75,8 @@
     <div class="btn-row">
       <button class="btn crit" id="armBtn">⚡ Aktifkan pengapian</button>
       <button class="btn ghost" id="disarmBtn">✕ Nonaktifkan</button>
-      <button class="btn ghost" id="testFireBtn">⚡ Uji bangku (1 tembakan)</button>
+      <button class="btn ghost" id="testFireBtn">⚡ Uji 1× (dwell config)</button>
+      <button class="btn ghost" id="testFireLongBtn">⚡ Uji 1× (10ms long-dwell)</button>
     </div>
     <label class="chk" style="margin-top:8px">
       <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
@@ -252,11 +253,22 @@ $('testFireBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
     title: 'UJI TEMBAKAN',
     severity: 'danger',
-    body: 'Tembakkan 1 spark uji sekarang?\n\nGPIO25 akan pulse SEKALI selama durasi dwell. Dengan HV stage terhubung, koil pengapian menembak satu kali — pastikan bench-aman (busi lepas atau dummy load).',
+    body: 'Tembakkan 1 spark uji sekarang dengan dwell yang dikonfigurasi (default 2500µs)?\n\nGPIO25 akan HIGH selama dwell, lalu LOW — fall edge fire koil. Pastikan bench-aman (busi lepas / dummy load).',
     okLabel: '⚡ Tembak 1×',
   });
   if (!ok) return;
   cdi.send({cmd:'testFire'});
+});
+
+$('testFireLongBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'UJI TEMBAKAN LONG-DWELL',
+    severity: 'danger',
+    body: 'Tembakkan 1 spark dengan dwell 10ms (override sementara untuk diagnostic).\n\nDwell panjang memastikan primary coil tersaturasi penuh — flyback akan jauh lebih kuat dan spark TERLIHAT jelas di bench. Pakai untuk konfirmasi wiring MOSFET path hidup.\n\nJANGAN dipakai di motor running (10ms dwell di RPM tinggi = primary overload).',
+    okLabel: '⚡ Tembak (10ms)',
+  });
+  if (!ok) return;
+  cdi.send({cmd:'testFire', dwell: 10000});
 });
 </script>
 </body>

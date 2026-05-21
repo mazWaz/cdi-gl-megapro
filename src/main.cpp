@@ -60,6 +60,24 @@ const char* resetReasonStr(esp_reset_reason_t r) {
 }
 
 void setup() {
+    // ── EARLIEST POSSIBLE GPIO25 SAFETY GUARD ──
+    // The spark output pin must be driven LOW before ANYTHING else
+    // touches the chip. Wiring (TCI/inductive): GPIO25 → resistor →
+    // MOSFET/NPN gate → coil primary → +12V. A floating gate at
+    // power-on (before pinMode() runs) lets the MOSFET conduct
+    // briefly; when we finally drive the pin LOW, the falling edge
+    // collapses the primary field and fires a spark. NOT what we
+    // want before the bike is ready.
+    //
+    // ESP32 GPIO25 has no internal pull-down at boot. STRONGLY
+    // recommend an external 10 kΩ from GPIO25 (or the MOSFET gate)
+    // to GND in hardware — software alone can't beat the ~50 ms
+    // gap between power and the first instruction.
+    pinMode(pin::SPARK_OUT, OUTPUT);
+    digitalWrite(pin::SPARK_OUT, LOW);
+    pinMode(pin::MODE_LED, OUTPUT);
+    digitalWrite(pin::MODE_LED, LOW);
+
     Serial.begin(115200);
     delay(100);
 

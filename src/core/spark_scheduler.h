@@ -56,8 +56,11 @@ void setAdvanceOffsetDeg(float deg);
 float advanceOffsetDeg();
 
 // Fire one test spark 100 µs from now. Bypasses pulser/armed gate —
-// caller is responsible for confirming bench-safe conditions.
-void manualFire();
+// caller is responsible for confirming bench-safe conditions. When
+// `dwell_override_us` is non-zero, use that duration instead of the
+// configured s_dwellUs — useful for bench diagnostic (e.g. 10 ms
+// long-dwell test to confirm the MOSFET path is alive visually).
+void manualFire(uint32_t dwell_override_us = 0);
 
 // ─── ISR entry — called from pulser CH1 falling-edge ISR ───
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead);

@@ -19,7 +19,20 @@ constexpr adc1_channel_t PULSER_CH1_ADC = ADC1_CHANNEL_6;  // GPIO34
 constexpr adc1_channel_t PULSER_CH2_ADC = ADC1_CHANNEL_7;  // GPIO35
 
 // ---------- Spark output ----------
-constexpr uint8_t SPARK_OUT = 25;   // HIGH ~dwell_us to SCR gate (via opto)
+// Wiring used in this build is INDUCTIVE (TCI), NOT CDI:
+//   GPIO25 → series resistor (220-1k Ω) → MOSFET/NPN gate → coil
+//   primary → +12V battery.
+// Behaviour: GPIO25 HIGH for dwell_us charges primary; LOW → flyback
+// → spark fires on the FALLING edge. The scheduler holds HIGH for
+// dwell_us then drops LOW (NOT a momentary HIGH pulse like SCR CDI).
+//
+// External 10 kΩ pull-down GPIO25→GND is STRONGLY recommended — the
+// pin floats during ~50 ms of bootloader execution before main.cpp
+// can drive it LOW, and a floating MOSFET gate can start charging
+// the primary, then a sudden LOW transition fires an unwanted spark
+// at every power-on. Software pinMode in setup() helps but doesn't
+// cover the pre-setup window.
+constexpr uint8_t SPARK_OUT = 25;
 
 // ---------- Status LEDs ----------
 constexpr uint8_t STATUS_LED  = 2;  // onboard, blink = health
