@@ -8,6 +8,7 @@
 #include "pinmap.h"
 #include "net/http_server.h"
 #include "scope/edge_capture.h"
+#include "scope/edge_snapshot.h"
 #include "core/mode.h"
 #include "core/advance_map.h"
 #include "core/spark_scheduler.h"
@@ -165,6 +166,84 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
     else if (!strcmp(cmd, "clearFailsafe")) {
         cdi::core::safety::clearFlags();
         client->text("{\"type\":\"ack\",\"msg\":\"failsafe cleared\"}");
+    }
+    else if (!strcmp(cmd, "saveSnap")) {
+        const String name = cdi::scope::snapshot::sanitize(doc["name"] | "snap");
+        if (name.length() == 0) {
+            client->text("{\"type\":\"err\",\"msg\":\"invalid name\"}");
+            return;
+        }
+        const bool ok = cdi::scope::snapshot::save(name);
+        JsonDocument r;
+        r["type"]  = "snapSaved";
+        r["name"]  = name;
+        r["ok"]    = ok;
+        r["count"] = (uint32_t)cdi::scope::snapshot::buffered();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "listSnaps")) {
+        JsonDocument r;
+        r["type"] = "snapList";
+        JsonArray arr = r["snaps"].to<JsonArray>();
+        cdi::scope::snapshot::list(arr);
+        r["buffered"] = (uint32_t)cdi::scope::snapshot::buffered();
+        r["capacity"] = (uint32_t)cdi::scope::snapshot::capacity();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "loadSnap")) {
+        const String name = cdi::scope::snapshot::sanitize(doc["name"] | "");
+        const int fsize = cdi::scope::snapshot::fileSize(name);
+        if (fsize <= 0) {
+            client->text("{\"type\":\"err\",\"msg\":\"snapshot not found\"}");
+            return;
+        }
+        if (fsize > 32768) {   // sanity guard, max ~12 KB expected
+            client->text("{\"type\":\"err\",\"msg\":\"snapshot too large\"}");
+            return;
+        }
+        // Read file into a temporary buffer, parse, send as JSON of
+        // {ts_us, ch, level} events. Large but manageable for a UI
+        // overlay request (one-shot, not streamed).
+        uint8_t* buf = (uint8_t*)malloc((size_t)fsize);
+        if (!buf) { client->text("{\"type\":\"err\",\"msg\":\"oom\"}"); return; }
+        const int n = cdi::scope::snapshot::load(name, buf, (size_t)fsize);
+        if (n < 6 || buf[0] != cdi::scope::snapshot::FILE_MAGIC_0 ||
+                    buf[1] != cdi::scope::snapshot::FILE_MAGIC_1) {
+            free(buf);
+            client->text("{\"type\":\"err\",\"msg\":\"bad snapshot file\"}");
+            return;
+        }
+        uint16_t cnt = 0;
+        memcpy(&cnt, &buf[4], 2);
+        JsonDocument r;
+        r["type"] = "snapData";
+        r["name"] = name;
+        r["count"] = cnt;
+        JsonArray ev = r["events"].to<JsonArray>();
+        const uint8_t* p = &buf[6];
+        for (uint16_t i = 0; i < cnt; i++) {
+            uint32_t ts; memcpy(&ts, p, 4);
+            JsonObject o = ev.add<JsonObject>();
+            o["ts"]    = ts;
+            o["ch"]    = p[4];
+            o["level"] = p[5];
+            p += 6;
+        }
+        free(buf);
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "deleteSnap")) {
+        const String name = cdi::scope::snapshot::sanitize(doc["name"] | "");
+        const bool ok = cdi::scope::snapshot::remove(name);
+        JsonDocument r;
+        r["type"] = "snapDeleted";
+        r["name"] = name;
+        r["ok"]   = ok;
+        String out; serializeJson(r, out);
+        client->text(out);
     }
     else if (!strcmp(cmd, "getPresetList")) {
         // Return list as JSON array; may be large so use streaming response.
@@ -529,27 +608,30 @@ void begin() {
 }
 
 void tickBroadcast() {
-    if (s_ws.count() == 0) return;
-
     // Edge-event stream (opcode 0xA7) — live whenever pulser ISR is
     // attached (i.e. not in SAFE_HOLD). Drives the scope visualization
     // concurrently with ignition; no mode change required.
     //
     // Auto-cal owns the scope ring exclusively while COLLECTING: edge
     // broadcast pauses so the calibrator drains every event.
+    //
+    // We call buildFrame regardless of WS client count — it also feeds
+    // the rolling RAM snapshot ring as a side effect, and we don't want
+    // to lose events while no phone is connected.
     if (cdi::core::mode::current() == cdi::OperatingMode::SAFE_HOLD) return;
     if (cdi::core::pickup_cal::status().state ==
             cdi::core::pickup_cal::State::COLLECTING) return;
     if (!cdi::scope::edge::dueNow(millis())) return;
 
+    size_t len = 0;
+    const uint8_t* f = cdi::scope::edge::buildFrame(len);
+    if (s_ws.count() == 0 || !f || len == 0) return;
+
     for (auto& c : s_ws.getClients()) {
         if (c.queueIsFull() ||
             c.queueLen() > cdi::config::WS_QUEUE_BACKPRESSURE_LIMIT) return;
     }
-
-    size_t len = 0;
-    const uint8_t* f = cdi::scope::edge::buildFrame(len);
-    if (f && len > 0) s_ws.binaryAll((uint8_t*)f, len);
+    s_ws.binaryAll((uint8_t*)f, len);
 }
 
 void tickTelemetry() {

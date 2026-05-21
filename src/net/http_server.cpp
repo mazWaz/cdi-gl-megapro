@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "telemetry/datalog.h"
+#include "scope/edge_snapshot.h"
 
 namespace cdi::net::http_server {
 namespace {
@@ -47,6 +48,23 @@ void sendApp(AsyncWebServerRequest* req) {
     req->send(r);
 }
 
+void handleSnapshotCsv(AsyncWebServerRequest* req) {
+    if (!req->hasParam("name")) {
+        req->send(400, "text/plain", "missing name"); return;
+    }
+    String name = cdi::scope::snapshot::sanitize(req->getParam("name")->value().c_str());
+    if (name.length() == 0) {
+        req->send(400, "text/plain", "invalid name"); return;
+    }
+    String csv;
+    if (!cdi::scope::snapshot::toCsv(name, csv)) {
+        req->send(404, "text/plain", "not found"); return;
+    }
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/csv", csv);
+    r->addHeader("Content-Disposition", "attachment; filename=\"" + name + ".csv\"");
+    req->send(r);
+}
+
 void handleDatalogCsv(AsyncWebServerRequest* req) {
     String csv;
     if (!cdi::telemetry::datalog::fillCsv(csv)) {
@@ -77,6 +95,7 @@ void begin() {
 
     // Dynamic endpoints.
     s_server.on("/datalog.csv",    HTTP_GET, handleDatalogCsv);
+    s_server.on("/snapshot.csv",   HTTP_GET, handleSnapshotCsv);
 
     // OS captive-portal probes — return index.html so HP auto-opens UI.
     s_server.on("/generate_204",              HTTP_GET, sendIndex);
