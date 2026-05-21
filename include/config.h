@@ -57,10 +57,18 @@ constexpr float    ALVP_DISARM_BELOW_V   = 9.0f;
 constexpr uint32_t ALVP_LOW_DURATION_MS  = 2000;  // hysteresis
 
 // ---------- Network ----------
-constexpr const char* AP_SSID     = "CDI-Megapro";
+// SSID is overridable from platformio.ini via -D CDI_AP_SSID='"..."'.
+// The compile-time fallback below applies when no build flag is set,
+// e.g. during direct CMake / Arduino-IDE builds.
+#ifdef CDI_AP_SSID
+constexpr const char* AP_SSID = CDI_AP_SSID;
+#else
+constexpr const char* AP_SSID = "CDI-Megapro";
+#endif
 // AP password is generated randomly on first boot and stored in NVS
-// (namespace "cdiwifi"). See src/net/wifi_ap.cpp. Compile-time
-// AP_PASSWORD constant removed — open AP is no longer supported.
+// (namespace "cdiwifi"). See src/net/wifi_ap.cpp. Intentionally NOT
+// a compile-time constant — that would commit the same secret across
+// every unit/build into git.
 constexpr uint16_t    AP_DNS_PORT  = 53;
 constexpr uint16_t    AP_HTTP_PORT = 80;
 
