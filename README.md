@@ -87,22 +87,41 @@ iteration use `upload` only.
 
 ---
 
+## WiFi Credentials
+
+SSID and password live in `platformio.ini` as compile-time build flags:
+
+```ini
+build_flags =
+    -D CDI_AP_SSID='"CDI-Megapro"'
+    -D CDI_AP_PASSWORD='"ganti-password"'    ; WPA2-PSK, 8-63 ASCII chars
+```
+
+**Change them before flashing.** Defaults are intentionally weak so
+nobody runs production with stock credentials.
+
+To rotate: edit the file → `pio run -t upload`. Both values are read
+from these defines on every boot — no NVS state to manage, no
+runtime change path in the UI (intentional: single source of truth,
+no chance of locking yourself out via a typo over WiFi).
+
+If you push this repo to a public git remote, the password is
+exposed in commit history. Treat the repo as private if that
+matters to you.
+
 ## First Boot
 
 1. Connect USB serial @ 115200 baud
 2. Power on, watch boot log:
    ```
    [CDI] firmware v0.3.0 booting (reset: power-on, heap=…)
-   [fs] LittleFS mount OK
    [snap] saver task running on core 0
    [config] persist task running on core 0
-   [AP] first boot — generating WPA2 password
-   [AP] SSID=CDI-Megapro  IP=192.168.4.1  password=Xy7kP4mQ2j
+   [AP] SSID=CDI-Megapro  IP=192.168.4.1  password=ganti-password
    [AP] Connect with above credentials, then open http://192.168.4.1/
    ```
-3. **Catat password** — random per device, regenerable only by NVS erase.
-4. Connect phone WiFi → `CDI-Megapro` → enter password
-5. Open browser → `http://192.168.4.1/` (auto-redirects via captive portal)
+3. Connect phone WiFi → `CDI-Megapro` → enter the password from `platformio.ini`
+4. Open browser → `http://192.168.4.1/` (auto-redirects via captive portal)
 6. Dashboard appears, default mode = IGNITION but spark disarmed
 7. Settings → Motor Preset → pick your motor
 8. Settings → Pickup → "Kalibrasi sekarang" once engine idle (optional, refines magnet width)

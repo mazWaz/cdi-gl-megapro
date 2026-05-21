@@ -5,12 +5,10 @@
 // responsible for serving index.html in response to the various OS
 // captive-portal probe URLs.
 //
-// AP password is stored in NVS under namespace "cdiwifi" / key "pwd".
-// On first boot (no stored value) a random 10-char alphanumeric
-// password is generated, persisted to NVS, and printed to Serial so
-// the user can read it over USB. Subsequent boots reuse the stored
-// password. The user can change it via the WS protocol; the new
-// value persists immediately but only takes effect on the next boot.
+// AP credentials (SSID + password) are compile-time constants from
+// platformio.ini build flags (-D CDI_AP_SSID, -D CDI_AP_PASSWORD).
+// To rotate the password: edit platformio.ini, `pio run -t upload`.
+// setPassword() is kept for API stability but always returns false.
 //
 // `poll()` must be called frequently from loop() to drive DNS reply
 // pump (DNSServer is non-async).
@@ -35,8 +33,8 @@ const char* ssid();
 // Current AP password (loaded from NVS on begin). Lifetime: program.
 const char* password();
 
-// Replace the stored password. Validates min length 8 (WPA2-PSK).
-// Returns false on invalid input. New value takes effect after reboot.
+// Always returns false — password is compile-time. Kept so WS code
+// can call it uniformly without conditional logic.
 bool setPassword(const char* pwd);
 
 } // namespace cdi::net::wifi_ap

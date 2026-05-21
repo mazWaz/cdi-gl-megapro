@@ -177,15 +177,14 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "setWifiPassword")) {
-        const char* pwd = doc["password"] | "";
-        const bool ok = cdi::net::wifi_ap::setPassword(pwd);
+        // Password is compile-time (platformio.ini build flag).
+        // Reject runtime change so the source of truth stays single.
         JsonDocument r;
-        r["type"]    = "wifi";
-        r["ok"]      = ok;
-        r["msg"]     = ok ? "password updated; reboot to apply"
-                          : "invalid password (min 8 chars, printable ASCII)";
-        r["ssid"]    = cdi::net::wifi_ap::ssid();
-        r["password"]= cdi::net::wifi_ap::password();
+        r["type"]     = "wifi";
+        r["ok"]       = false;
+        r["msg"]      = "password is compile-time — edit platformio.ini and rebuild";
+        r["ssid"]     = cdi::net::wifi_ap::ssid();
+        r["password"] = cdi::net::wifi_ap::password();
         String out; serializeJson(r, out);
         client->text(out);
     }
