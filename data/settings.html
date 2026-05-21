@@ -467,6 +467,28 @@ ESP32 GPIO25 ──[ 220 Ω ]──┬── opto LED anode ── │ ── op
   </section>
 
   <section class="panel">
+    <span class="label">[ wifi ap ]</span>
+    <div class="readout-row" style="grid-template-columns:1fr 1fr;background:transparent;border:0;padding:0">
+      <div class="readout"><span class="num" id="wifiSsid" style="font-size:14px">—</span><span class="unit">SSID</span></div>
+      <div class="readout"><span class="num amber" id="wifiPwd" style="font-size:14px;letter-spacing:0.05em">—</span><span class="unit">password</span></div>
+    </div>
+    <p class="note warn" style="margin-top:6px">
+      ⚠ <b>Password baru di-generate otomatis</b> saat first boot (random alphanumeric 10 char,
+      tersimpan di NVS). Pastikan dicatat — kalau hilang harus reset NVS (erase flash).
+      Tanpa password yang benar, tidak bisa connect ke AP — ini melindungi pengapian dari
+      di-set/disabled oleh orang random dalam radius WiFi.
+    </p>
+    <div class="btn-row">
+      <input id="wifiPwdInp" type="text" placeholder="password baru (min 8 char)" maxlength="31" style="flex:1;min-width:120px">
+      <button class="btn green" id="wifiPwdBtn">⚷ Ganti password</button>
+    </div>
+    <p class="note" id="wifiStatus" style="font-size:10px;color:var(--text-dim);margin-top:4px">—</p>
+    <p class="note" style="font-size:10px;color:var(--text-dim)">
+      Setelah ganti password, board harus di-reboot untuk apply (otomatis di-prompt).
+    </p>
+  </section>
+
+  <section class="panel">
     <span class="label">[ roadmap ]</span>
     <dl class="kv">
       <dt class="ok">T0–T4</dt><dd class="ok">skeleton · scope · net · storage · pulser ✓</dd>
@@ -599,7 +621,33 @@ $('presetResetBtn').addEventListener('click', () => {
   cdi.send({cmd:'setPreset', id: presetData.current});
 });
 
-cdi.bus.on('open', () => { cdi.send({cmd:'getPresetList'}); cdi.send({cmd:'getPickup'}); });
+cdi.bus.on('open', () => { cdi.send({cmd:'getPresetList'}); cdi.send({cmd:'getPickup'}); cdi.send({cmd:'getWifi'}); });
+
+// ── WiFi password panel ──
+cdi.bus.on('wifi', m => {
+  if (m.ssid)     $('wifiSsid').textContent = m.ssid;
+  if (m.password) $('wifiPwd').textContent  = m.password;
+  if (typeof m.msg === 'string') {
+    $('wifiStatus').textContent = m.msg;
+    $('wifiStatus').style.color = m.ok ? 'var(--green)' : 'var(--warn)';
+    if (m.ok) {
+      $('wifiPwdInp').value = '';
+      if (confirm('Password tersimpan. Reboot sekarang untuk apply?')) {
+        cdi.send({cmd:'reboot'});
+      }
+    }
+  }
+});
+$('wifiPwdBtn').addEventListener('click', () => {
+  const pwd = $('wifiPwdInp').value;
+  if (!pwd || pwd.length < 8) {
+    $('wifiStatus').textContent = 'Password minimal 8 karakter';
+    $('wifiStatus').style.color = 'var(--warn)';
+    return;
+  }
+  if (!confirm('Ganti password WiFi?\n\nSetelah reboot, HP harus connect dengan password baru. Catat dulu!')) return;
+  cdi.send({cmd:'setWifiPassword', password: pwd});
+});
 cdi.bus.on('presetList', m => { presetData = m; renderCurrent(); });
 cdi.bus.on('preset', m => {
   if (presetData){ presetData.current = m.current; presetData.modified = m.modified; renderCurrent(); }

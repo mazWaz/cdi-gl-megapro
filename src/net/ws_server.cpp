@@ -7,6 +7,7 @@
 #include "config.h"
 #include "pinmap.h"
 #include "net/http_server.h"
+#include "net/wifi_ap.h"
 #include "scope/edge_capture.h"
 #include "scope/edge_snapshot.h"
 #include "core/mode.h"
@@ -166,6 +167,27 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
     else if (!strcmp(cmd, "clearFailsafe")) {
         cdi::core::safety::clearFlags();
         client->text("{\"type\":\"ack\",\"msg\":\"failsafe cleared\"}");
+    }
+    else if (!strcmp(cmd, "getWifi")) {
+        JsonDocument r;
+        r["type"]     = "wifi";
+        r["ssid"]     = cdi::net::wifi_ap::ssid();
+        r["password"] = cdi::net::wifi_ap::password();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setWifiPassword")) {
+        const char* pwd = doc["password"] | "";
+        const bool ok = cdi::net::wifi_ap::setPassword(pwd);
+        JsonDocument r;
+        r["type"]    = "wifi";
+        r["ok"]      = ok;
+        r["msg"]     = ok ? "password updated; reboot to apply"
+                          : "invalid password (min 8 chars, printable ASCII)";
+        r["ssid"]    = cdi::net::wifi_ap::ssid();
+        r["password"]= cdi::net::wifi_ap::password();
+        String out; serializeJson(r, out);
+        client->text(out);
     }
     else if (!strcmp(cmd, "saveSnap")) {
         const String name = cdi::scope::snapshot::sanitize(doc["name"] | "snap");

@@ -45,14 +45,23 @@ constexpr float    ADVANCE_MAX_DEG = 45.0f;
 constexpr uint32_t NO_SIGNAL_TIMEOUT_MS  = 500;   // pulser silent → disarm
 constexpr uint32_t SAFETY_TICK_INTERVAL_MS = 100;
 constexpr uint32_t TASK_WDT_TIMEOUT_S    = 5;
+
+// Absolute RPM ceiling — above this we assume something is broken
+// (multi-tooth pickup mistakenly connected, electrical noise on
+// CH1, math bug, etc) and disarm instantly. 16000 RPM > redline of
+// every single-cylinder bike in the preset library, but still well
+// inside what rpm_calc can sanely report (RPM_MAX_VALID 15000).
+constexpr uint32_t ABSOLUTE_RPM_CEILING = 16000;
 constexpr float    ALVP_DERATE_BELOW_V   = 10.5f;
 constexpr float    ALVP_DISARM_BELOW_V   = 9.0f;
 constexpr uint32_t ALVP_LOW_DURATION_MS  = 2000;  // hysteresis
 
 // ---------- Network ----------
-constexpr const char* AP_SSID    = "CDI-Megapro";
-constexpr const char* AP_PASSWORD = nullptr;       // open
-constexpr uint16_t    AP_DNS_PORT = 53;
+constexpr const char* AP_SSID     = "CDI-Megapro";
+// AP password is generated randomly on first boot and stored in NVS
+// (namespace "cdiwifi"). See src/net/wifi_ap.cpp. Compile-time
+// AP_PASSWORD constant removed — open AP is no longer supported.
+constexpr uint16_t    AP_DNS_PORT  = 53;
 constexpr uint16_t    AP_HTTP_PORT = 80;
 
 // ---------- WebSocket protocol ----------
