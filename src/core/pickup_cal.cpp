@@ -8,6 +8,7 @@
 #include "types.h"
 #include "core/pulser_input.h"
 #include "core/spark_scheduler.h"
+#include "core/rpm_calc.h"
 
 namespace cdi::core::pickup_cal {
 namespace {
@@ -270,6 +271,11 @@ Status status() {
         } else {
             s.confidence_pct = 100.0f;
         }
+    } else {
+        // No good revs yet — report live RPM from the always-running
+        // rpm_calc so the user can see whether the engine is inside
+        // the calibration window and adjust throttle accordingly.
+        s.rpm_mean = (uint16_t)cdi::core::rpm::current();
     }
     return s;
 }
