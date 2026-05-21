@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 #include "core/advance_map.h"
 #include "core/safety.h"
@@ -28,6 +31,55 @@ constexpr uint8_t     SCHEMA_VERSION = 1;
 
 bool     s_dirty       = false;
 uint32_t s_lastDirtyMs = 0;
+
+// ── Dual-core persistence ─────────────────────────────────────────
+// NVS putString takes 10-50ms (flash erase + write). Doing that on
+// the main loop (core 1) blocks pulser event drainage and degrades
+// ignition jitter. We move the actual write to a task pinned on
+// core 0 and use:
+//   * binary semaphore `s_persistTrigger` — signal that work is
+//     queued; the persist task blocks on it
+//   * mutex `s_bufferMutex` — protects the shared pending-JSON
+//     buffer between the main loop (producer) and the persist task
+//     (consumer)
+SemaphoreHandle_t s_persistTrigger = nullptr;
+SemaphoreHandle_t s_bufferMutex    = nullptr;
+String            s_pendingJson;        // protected by s_bufferMutex
+TaskHandle_t      s_persistTask    = nullptr;
+
+void persistTaskFn(void*) {
+    Serial.printf("[config] persist task running on core %d\n", xPortGetCoreID());
+    for (;;) {
+        // Block forever until producer signals work is ready.
+        if (xSemaphoreTake(s_persistTrigger, portMAX_DELAY) != pdTRUE) continue;
+
+        // Snapshot the queued JSON under mutex, then release it
+        // before doing the slow NVS write so producers can queue
+        // the next one (coalesced — last write wins).
+        String local;
+        if (xSemaphoreTake(s_bufferMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            local = s_pendingJson;
+            xSemaphoreGive(s_bufferMutex);
+        } else {
+            Serial.println("[config] persist: mutex timeout, skip");
+            continue;
+        }
+        if (local.length() == 0) continue;
+
+        // The actual long-running work — on core 0, so core 1's
+        // pulser path is undisturbed.
+        const uint32_t t0 = millis();
+        Preferences prefs;
+        if (!prefs.begin(NVS_NS, /*readOnly=*/false)) {
+            Serial.println("[config] persist: NVS open fail (write)");
+            continue;
+        }
+        const size_t n = prefs.putString(NVS_KEY, local);
+        prefs.end();
+        Serial.printf("[config] persist: %u bytes in %u ms (core %d)\n",
+                      (unsigned)n, (unsigned)(millis() - t0), xPortGetCoreID());
+    }
+}
 
 void buildJson(JsonDocument& doc) {
     doc["v"] = SCHEMA_VERSION;
@@ -228,7 +280,28 @@ void applyJson(const JsonDocument& doc) {
 } // anonymous
 
 void begin() {
-    // nothing — load() is called explicitly by main.cpp after modules init
+    // Sync primitives must exist before any saveNow() call.
+    s_persistTrigger = xSemaphoreCreateBinary();
+    s_bufferMutex    = xSemaphoreCreateMutex();
+    if (!s_persistTrigger || !s_bufferMutex) {
+        Serial.println("[config] FATAL: semaphore alloc fail; persistence DISABLED");
+        return;
+    }
+    // Pin persist task to core 0 — opposite of Arduino's loopTask
+    // (core 1), so NVS flash writes never compete with pulser /
+    // spark-scheduler latency on core 1.
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        persistTaskFn, "cdi_persist",
+        /*stack words*/ 4096,
+        /*arg*/         nullptr,
+        /*priority*/    1,         // above idle, below loopTask
+        &s_persistTask,
+        /*core*/        0);
+    if (ok != pdPASS) {
+        Serial.println("[config] FATAL: persist task spawn fail");
+    } else {
+        Serial.println("[config] persist task pinned to core 0");
+    }
 }
 
 void load() {
@@ -273,20 +346,30 @@ void markDirty() {
 }
 
 void saveNow() {
+    // Producer side (main loop / WS callback context, core 1):
+    // build the JSON snapshot from module state, stash into the
+    // shared buffer under mutex, signal the persist task to do the
+    // actual NVS write off-core. Returns immediately even if the
+    // physical write takes 10-50 ms.
+    if (!s_persistTrigger || !s_bufferMutex) {
+        Serial.println("[config] persist not initialized — saveNow skipped");
+        return;
+    }
+
     JsonDocument doc;
     buildJson(doc);
     String json;
     serializeJson(doc, json);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, /*readOnly=*/false)) {
-        Serial.println("[config] NVS open fail (write)");
+    if (xSemaphoreTake(s_bufferMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        s_pendingJson = json;       // last write wins (debounce-coalesce)
+        xSemaphoreGive(s_bufferMutex);
+    } else {
+        Serial.println("[config] saveNow: mutex busy, drop this snapshot");
         return;
     }
-    size_t n = prefs.putString(NVS_KEY, json);
-    prefs.end();
+    xSemaphoreGive(s_persistTrigger);    // wake persist task
     s_dirty = false;
-    Serial.printf("[config] saved %u bytes to NVS\n", (unsigned)n);
 }
 
 void tick() {

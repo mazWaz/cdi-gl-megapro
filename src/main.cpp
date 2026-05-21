@@ -68,6 +68,7 @@ void setup() {
     cdi::core::backfire::begin();                  // (disabled at boot)
     cdi::core::alvp::begin();                      // adc1 init for Vbat
     cdi::core::preset::apply("honda_megapro");     // default preset (overridden by load if NVS)
+    cdi::storage::config::begin();                 // spawn core-0 persist task + sync primitives
     cdi::storage::config::load();                  // load saved settings if any
     cdi::core::mode::begin();                      // default = IGNITION
 
