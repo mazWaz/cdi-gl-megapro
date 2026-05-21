@@ -180,7 +180,135 @@ function decodeBinary(buf){
 
 function send(obj){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
+// ─────── Modal — Pit-Lane Terminal "incoming transmission" ───────
+// API:
+//   cdi.modal.alert({ title, body, severity, okLabel })       → Promise<true>
+//   cdi.modal.confirm({ title, body, severity, okLabel, cancelLabel }) → Promise<bool>
+//   cdi.modal.prompt({ title, body, placeholder, defaultValue, okLabel, cancelLabel }) → Promise<string|null>
+//
+// severity: 'info' (default amber) | 'warn' (orange) | 'danger' (red)
+// All inputs honor \n in title/body for line breaks.
+// Hotkeys: Esc → cancel, Enter → confirm (when no textarea focused).
+const modal = (() => {
+  const PREFIX = { info: 'TX·INFO', warn: 'TX·WARN', danger: 'TX·CRIT' };
+  let openCount = 0;
+
+  function build(opts){
+    const sev   = opts.severity || 'info';
+    const root  = document.createElement('div');
+    root.className = 'cdi-modal-backdrop';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+
+    const card = document.createElement('div');
+    card.className = 'cdi-modal sev-' + sev;
+    card.tabIndex = -1;
+
+    const head = document.createElement('div');
+    head.className = 'cdi-modal-head';
+    const pre  = document.createElement('span');
+    pre.className = 'cdi-modal-prefix';
+    pre.textContent = PREFIX[sev] || PREFIX.info;
+    const title = document.createElement('span');
+    title.className = 'cdi-modal-title';
+    title.textContent = opts.title || 'KONFIRMASI';
+    head.appendChild(pre);
+    head.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'cdi-modal-body';
+    body.textContent = opts.body || '';
+    // Allow <b> formatting if caller passed HTML-flagged content
+    if (opts.html) body.innerHTML = opts.body || '';
+
+    let input = null;
+    if (opts.input){
+      input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'cdi-modal-input';
+      input.placeholder = opts.placeholder || '';
+      input.value = opts.defaultValue || '';
+      input.maxLength = opts.maxLength || 64;
+      body.appendChild(input);
+    }
+
+    const foot = document.createElement('div');
+    foot.className = 'cdi-modal-foot';
+
+    // Cancel button (only for confirm/prompt)
+    let cancelBtn = null;
+    if (opts.cancellable){
+      cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn ghost';
+      cancelBtn.innerHTML = (opts.cancelLabel || '✕ Batal') + '<span class="hk">esc</span>';
+      foot.appendChild(cancelBtn);
+    }
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn' + (sev === 'danger' ? ' crit' : sev === 'info' ? ' green' : '');
+    okBtn.innerHTML = (opts.okLabel || (opts.cancellable ? '✓ Lanjut' : '✓ OK')) + '<span class="hk">↵</span>';
+    foot.appendChild(okBtn);
+
+    card.appendChild(head);
+    card.appendChild(body);
+    card.appendChild(foot);
+    root.appendChild(card);
+
+    return { root, card, okBtn, cancelBtn, input };
+  }
+
+  function open(opts){
+    return new Promise(resolve => {
+      const els = build(opts);
+      const { root, card, okBtn, cancelBtn, input } = els;
+      document.body.appendChild(root);
+      openCount++;
+
+      // Focus management — input first if present, else OK button.
+      const prevFocus = document.activeElement;
+      setTimeout(() => (input || okBtn).focus(), 0);
+
+      let resolved = false;
+      const finish = (value) => {
+        if (resolved) return;
+        resolved = true;
+        root.classList.add('leaving');
+        setTimeout(() => {
+          root.remove();
+          openCount = Math.max(0, openCount - 1);
+          document.removeEventListener('keydown', onKey, true);
+          try { prevFocus && prevFocus.focus(); } catch(e){}
+          resolve(value);
+        }, 140);
+      };
+
+      const cancelValue = opts.input ? null : false;
+      const okValue     = opts.input ? (input.value.trim()) : true;
+      const doOk     = () => finish(opts.input ? input.value.trim() : true);
+      const doCancel = () => finish(cancelValue);
+
+      okBtn.addEventListener('click', doOk);
+      if (cancelBtn) cancelBtn.addEventListener('click', doCancel);
+      // Backdrop click → cancel (or close for alert)
+      root.addEventListener('click', e => { if (e.target === root) doCancel(); });
+
+      function onKey(e){
+        if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); doCancel(); }
+        else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA'){
+          e.preventDefault(); e.stopPropagation(); doOk();
+        }
+      }
+      document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  return {
+    alert:   (opts) => open({ ...opts, cancellable: false }),
+    confirm: (opts) => open({ ...opts, cancellable: true  }),
+    prompt:  (opts) => open({ ...opts, cancellable: true, input: true }),
+  };
+})();
+
 // expose
-window.cdi = { bus, state, send, MODE };
+window.cdi = { bus, state, send, MODE, modal };
 
 connect();

@@ -193,13 +193,25 @@ cdi.bus.on('connection', () => {
 });
 
 $('ignBtn').addEventListener('click',   () => cdi.send({cmd:'setMode', mode:'ignition'}));
-$('safeBtn').addEventListener('click',  () => {
-  if (!confirm('Masuk MODE AMAN? Semua output dimatikan.')) return;
+$('safeBtn').addEventListener('click',  async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'MODE AMAN',
+    severity: 'warn',
+    body: 'Masuk MODE AMAN?\nSemua output dimatikan dan pulser ISR di-detach. Engine tidak akan fire sampai keluar dari mode ini.',
+    okLabel: '⏻ Masuk SAFE_HOLD',
+  });
+  if (!ok) return;
   cdi.send({cmd:'setMode', mode:'safehold'});
 });
 
-$('armBtn').addEventListener('click', () => {
-  if (!confirm('⚠ AKTIFKAN OUTPUT PENGAPIAN?\n\nGPIO25 akan pulse setiap siklus pulser. Dengan HV stage terhubung, ini akan menembakkan koil pengapian.\n\nLanjutkan hanya dengan beban aman (busi lepas, resistor dummy, atau bench test).')) return;
+$('armBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'AKTIFKAN PENGAPIAN',
+    severity: 'danger',
+    body: 'GPIO25 akan pulse setiap siklus pulser. Dengan HV stage terhubung, koil pengapian akan menembak setiap revolusi.\n\nLanjutkan HANYA dengan beban aman:\n• busi lepas dari silinder, atau\n• resistor dummy (1 Ω 100W) di output koil, atau\n• bench test dengan ground secure.',
+    okLabel: '⚡ Aktifkan',
+  });
+  if (!ok) return;
   cdi.send({cmd:'setArmed', armed:true});
 });
 $('disarmBtn').addEventListener('click', () => cdi.send({cmd:'setArmed', armed:false}));
@@ -221,18 +233,29 @@ cdi.bus.on('telemetry', t => {
     autoArmInit = true;
   }
 });
-$('autoArmChk').addEventListener('change', e => {
-  if (e.target.checked && !confirm('Auto-arm ON?\n\nDevice akan langsung aktif spark setiap boot. Pastikan install di motor / safe context — jangan ON di bench dengan koil terhubung.')) {
-    e.target.checked = false;
-    return;
+$('autoArmChk').addEventListener('change', async e => {
+  if (e.target.checked){
+    const ok = await cdi.modal.confirm({
+      title: 'AUTO-ARM',
+      severity: 'warn',
+      body: 'Aktifkan auto-arm?\n\nDevice akan langsung armed setiap power-on, tanpa konfirmasi UI. Cocok untuk install permanen di motor.\n\nJangan aktifkan saat bench-test dengan koil terhubung.',
+      okLabel: '✓ Aktifkan auto-arm',
+    });
+    if (!ok){ e.target.checked = false; return; }
   }
   cdi.send({cmd:'setAutoArm', enabled: e.target.checked});
 });
 
 $('clearFsBtn').addEventListener('click', () => cdi.send({cmd:'clearFailsafe'}));
 
-$('testFireBtn').addEventListener('click', () => {
-  if (!confirm('Tembakkan 1 spark uji SEKARANG?\n\nGPIO25 akan pulse SEKALI selama dwell. Dengan HV stage terhubung, ini menembakkan koil sekali. Pastikan bench-aman (busi lepas / dummy load).')) return;
+$('testFireBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'UJI TEMBAKAN',
+    severity: 'danger',
+    body: 'Tembakkan 1 spark uji sekarang?\n\nGPIO25 akan pulse SEKALI selama durasi dwell. Dengan HV stage terhubung, koil pengapian menembak satu kali — pastikan bench-aman (busi lepas atau dummy load).',
+    okLabel: '⚡ Tembak 1×',
+  });
+  if (!ok) return;
   cdi.send({cmd:'testFire'});
 });
 </script>

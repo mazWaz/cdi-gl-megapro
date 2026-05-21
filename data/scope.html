@@ -269,21 +269,40 @@ function renderSnapList(m){
      </div>`
   ).join('');
   host.querySelectorAll('button').forEach(b => {
-    b.onclick = () => {
+    b.onclick = async () => {
       const n = b.dataset.n, a = b.dataset.act;
       if (a === 'load')      cdi.send({cmd:'loadSnap', name:n});
       else if (a === 'csv')  location.href = '/snapshot.csv?name=' + encodeURIComponent(n);
       else if (a === 'del') {
-        if (!confirm('Hapus snapshot "' + n + '"?')) return;
+        const ok = await cdi.modal.confirm({
+          title: 'HAPUS SNAPSHOT',
+          severity: 'danger',
+          body: 'Hapus snapshot "' + n + '"?\n\nFile akan dihapus permanen dari LittleFS.',
+          okLabel: '× Hapus',
+        });
+        if (!ok) return;
         cdi.send({cmd:'deleteSnap', name:n});
       }
     };
   });
 }
 
-$('snapSaveBtn').addEventListener('click', () => {
-  const name = $('snapName').value.trim();
-  if (!name){ alert('isi nama snapshot dulu'); return; }
+$('snapSaveBtn').addEventListener('click', async () => {
+  let name = $('snapName').value.trim();
+  if (!name){
+    name = await cdi.modal.prompt({
+      title: 'NAMA SNAPSHOT',
+      severity: 'info',
+      body: 'Beri nama untuk snapshot ini (alphanumeric + dash/underscore, max 32 karakter).',
+      placeholder: 'mis. glitch-idle-1500',
+      maxLength: 32,
+      okLabel: '⊕ Simpan',
+    });
+    if (!name) return;
+    name = name.trim();
+    if (!name) return;
+    $('snapName').value = name;
+  }
   cdi.send({cmd:'saveSnap', name});
 });
 $('snapClearBtn').addEventListener('click', () => { snapOverlay = null; });
@@ -294,12 +313,20 @@ cdi.bus.on('snapSaved', m => {
     $('snapName').value = '';
     cdi.send({cmd:'listSnaps'});
   } else {
-    alert('Save gagal — ring buffer kosong? Coba tunggu beberapa detik dengan engine running.');
+    cdi.modal.alert({
+      title: 'SAVE GAGAL',
+      severity: 'warn',
+      body: 'Ring buffer kosong — belum ada edge event yang terekam.\n\nTunggu beberapa detik dengan engine running (atau signal generator aktif), lalu coba lagi.',
+    });
   }
 });
 cdi.bus.on('snapDeleted', m => {
   if (m.ok) cdi.send({cmd:'listSnaps'});
-  else alert('Hapus gagal.');
+  else cdi.modal.alert({
+    title: 'HAPUS GAGAL',
+    severity: 'warn',
+    body: 'Snapshot tidak bisa dihapus. Cek nama / file system.',
+  });
 });
 cdi.bus.on('snapData', m => {
   // Build per-channel sorted arrays for the overlay renderer.

@@ -594,10 +594,16 @@ function openPresetModal(){
   });
   $('presetList').innerHTML = html;
   $('presetList').querySelectorAll('[data-pid]').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', async () => {
       const pid = el.dataset.pid;
       const p = presetData.list.find(x => x.id === pid);
-      if (!confirm('Pilih "' + p.name + '"?\n\nSemua setting (rev limit, advance map, dwell, dll) akan diganti dengan preset ini.')) return;
+      const ok = await cdi.modal.confirm({
+        title: 'GANTI PRESET',
+        severity: 'warn',
+        body: 'Pilih "' + p.name + '"?\n\nSemua setting (rev limit, advance map, dwell, dll) akan ditimpa dengan defaults dari preset ini.',
+        okLabel: '✓ Terapkan',
+      });
+      if (!ok) return;
       cdi.send({cmd:'setPreset', id:pid});
       $('presetModal').style.display = 'none';
     });
@@ -607,8 +613,14 @@ function openPresetModal(){
 
 $('presetChooseBtn').addEventListener('click', openPresetModal);
 $('presetCancelBtn').addEventListener('click', () => $('presetModal').style.display = 'none');
-$('presetResetBtn').addEventListener('click', () => {
-  if (!confirm('Reset ke default preset "' + presetData.current + '"?\n\nSemua modifikasi custom akan hilang.')) return;
+$('presetResetBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'RESET PRESET',
+    severity: 'warn',
+    body: 'Reset ke default preset "' + presetData.current + '"?\n\nSemua modifikasi custom (rev limit, advance map, dll) akan hilang.',
+    okLabel: '⤺ Reset',
+  });
+  if (!ok) return;
   cdi.send({cmd:'setPreset', id: presetData.current});
 });
 
@@ -638,8 +650,14 @@ function renderPickup(m){
   $('pickupResetBtn').style.display = isOverride ? '' : 'none';
 }
 cdi.bus.on('pickup', renderPickup);
-$('pickupResetBtn').addEventListener('click', () => {
-  if (!confirm('Reset geometri pickup ke nilai preset?\n\nNilai kalibrasi custom akan hilang.')) return;
+$('pickupResetBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'RESET PICKUP',
+    severity: 'warn',
+    body: 'Reset geometri pickup ke nilai preset?\n\nNilai magnet width hasil kalibrasi custom akan hilang.',
+    okLabel: '⤺ Reset',
+  });
+  if (!ok) return;
   cdi.send({cmd:'resetPickup'});
 });
 
@@ -665,8 +683,14 @@ function closeCalModal(){
 }
 $('calBtn').addEventListener('click', openCalModal);
 $('calCloseBtn').addEventListener('click', closeCalModal);
-$('calStartBtn').addEventListener('click', () => {
-  if (!confirm('Mulai kalibrasi?\n\nPengapian akan dimatikan. Pastikan engine sudah idle stabil 1500-2500 RPM.')) return;
+$('calStartBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'KALIBRASI PICKUP',
+    severity: 'warn',
+    body: 'Mulai kalibrasi sekarang?\n\nPengapian akan disarm otomatis selama proses. Pastikan engine sudah idle stabil di rentang 1500-2500 RPM sebelum lanjut — kalibrasi butuh ~50 putaran clean.',
+    okLabel: '▶ Mulai',
+  });
+  if (!ok) return;
   cdi.send({cmd:'startCal', revs:50, rpmMin:800, rpmMax:3000, jitterPct:5});
   $('calStartBtn').style.display = 'none';
   $('calStopBtn').style.display  = '';
@@ -726,12 +750,20 @@ cdi.bus.on('cal', m => {
     if (calPoll){ clearInterval(calPoll); calPoll = null; }
     $('calStopBtn').style.display  = 'none';
     $('calStartBtn').style.display = '';
-    alert('Timeout — RPM idle tidak stabil cukup, atau di luar window 800-3000 RPM. Coba lagi setelah engine warm-up.');
+    cdi.modal.alert({
+      title: 'KALIBRASI TIMEOUT',
+      severity: 'warn',
+      body: 'RPM idle tidak stabil cukup, atau berada di luar window 800-3000 RPM untuk durasi yang dibutuhkan.\n\nSaran:\n• Tunggu engine warm-up dulu (idle baru steady setelah ~30 detik)\n• Cek choke / karburator\n• Coba lagi dengan throttle stops kalau perlu',
+    });
   } else if (m.state === 'ERR_MULTI_TOOTH'){
     if (calPoll){ clearInterval(calPoll); calPoll = null; }
     $('calStopBtn').style.display  = 'none';
     $('calStartBtn').style.display = '';
-    alert('Multi-tooth pickup terdeteksi (motor FI dengan toothed crank wheel). CDI ini tidak kompatibel.');
+    cdi.modal.alert({
+      title: 'MOTOR TIDAK KOMPATIBEL',
+      severity: 'danger',
+      body: 'Multi-tooth pickup terdeteksi — motor ini kemungkinan injection (FI) dengan toothed crank wheel (CB150R FI / Vario FI / R15 / dll).\n\nCDI ini DIRANCANG untuk single-magnet 2-edge pickup (karbu single-cyl 4T). Tidak kompatibel dengan motor Anda. Disarm dan lepas wiring sebelum ada kerusakan.',
+    });
   }
 });
 
@@ -1020,10 +1052,16 @@ $('otaBtn').addEventListener('click', () => {
 });
 $('otaCancelBtn').addEventListener('click', () => { $('otaPanel').style.display = 'none'; });
 
-$('otaUploadBtn').addEventListener('click', () => {
+$('otaUploadBtn').addEventListener('click', async () => {
   const f = $('otaFile').files[0];
   if (!f){ $('otaStatus').textContent = '› pilih file dulu'; return; }
-  if (!confirm('Upload ' + f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)?\n\nESP32 akan reboot setelah selesai.\nPastikan device dalam mode SCOPE.')) return;
+  const ok = await cdi.modal.confirm({
+    title: 'UPLOAD FIRMWARE OTA',
+    severity: 'danger',
+    body: 'Upload ' + f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)?\n\nESP32 akan reboot setelah file diterima dan verified. Pastikan pengapian sudah disarm sebelum lanjut — OTA refuse kalau armed.\n\nJangan disconnect WiFi selama upload.',
+    okLabel: '⬆ Upload',
+  });
+  if (!ok) return;
 
   const fd = new FormData();
   fd.append('firmware', f);
@@ -1058,8 +1096,14 @@ $('otaUploadBtn').addEventListener('click', () => {
   xhr.send(fd);
 });
 
-$('rebootBtn').addEventListener('click', () => {
-  if (!confirm('Restart ESP32 sekarang?')) return;
+$('rebootBtn').addEventListener('click', async () => {
+  const ok = await cdi.modal.confirm({
+    title: 'RESTART ESP32',
+    severity: 'warn',
+    body: 'Reboot board sekarang?\n\nWiFi akan disconnect ~5 detik. Setting yang belum di-save (kalau ada) akan flush sebelum reboot.',
+    okLabel: '↻ Reboot',
+  });
+  if (!ok) return;
   cdi.send({cmd:'reboot'});
   setTimeout(() => location.reload(), 1500);
 });

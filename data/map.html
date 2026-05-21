@@ -597,23 +597,47 @@ document.getElementById('cmpBtn').addEventListener('click', () => {
   b.style.color = showCompare ? 'var(--cyan)' : '';
   renderCurve();
 });
-document.getElementById('reloadBtn').addEventListener('click', () => {
-  if (dirty && !confirm('Buang perubahan yang belum disimpan?')) return;
+document.getElementById('reloadBtn').addEventListener('click', async () => {
+  if (dirty){
+    const ok = await cdi.modal.confirm({
+      title: 'BUANG PERUBAHAN',
+      severity: 'warn',
+      body: 'Map editor memiliki perubahan yang belum di-Terapkan.\n\nMuat ulang dari perangkat akan membuang perubahan tersebut.',
+      okLabel: '↺ Buang & muat',
+    });
+    if (!ok) return;
+  }
   cdi.send({ cmd: 'getMap' });
 });
 document.getElementById('applyBtn').addEventListener('click', applyChanges);
-document.getElementById('loadStockBtn').addEventListener('click', () => {
-  if (dirty && !confirm('Buang perubahan dan muat stok?')) return;
+document.getElementById('loadStockBtn').addEventListener('click', async () => {
+  if (dirty){
+    const ok = await cdi.modal.confirm({
+      title: 'BUANG PERUBAHAN',
+      severity: 'warn',
+      body: 'Muat kurva stok akan membuang perubahan editor yang belum di-Terapkan.',
+      okLabel: '↺ Buang & muat stok',
+    });
+    if (!ok) return;
+  }
   cdi.send({ cmd: 'loadDefaultMap' });
 });
 
 // profile slot taps
 document.querySelectorAll('.slot').forEach(el => {
-  el.addEventListener('click', () => {
+  el.addEventListener('click', async () => {
     const slot = +el.dataset.slot;
     if (slot === 0) return;                          // P1 = live (already active)
     if (slot === 1){                                 // P2 = stock megapro (preview to editor)
-      if (dirty && !confirm('Buang perubahan dan muat stok ke editor?')) return;
+      if (dirty){
+        const ok = await cdi.modal.confirm({
+          title: 'BUANG PERUBAHAN',
+          severity: 'warn',
+          body: 'Muat stok ke editor akan menimpa perubahan yang belum di-Terapkan.',
+          okLabel: '↺ Buang & muat',
+        });
+        if (!ok) return;
+      }
       points = STOCK_MEGAPRO.map(p => [...p]);
       selected = -1; markDirty(); renderCurve();
       flash('stok dimuat ke editor — klik Terapkan untuk kirim');

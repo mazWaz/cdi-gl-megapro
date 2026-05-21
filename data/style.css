@@ -438,3 +438,205 @@ hr.tech {
   .topbar { gap: 8px; padding: 8px 10px; }
   .topbar .brand .ver { display: none; }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   MODAL — pit-lane terminal "incoming transmission" overlay
+   Replaces native alert()/confirm()/prompt() across the app.
+   ───────────────────────────────────────────────────────────── */
+
+.cdi-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5, 7, 10, 0.78);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  /* Scan-line bias + radial vignette so it feels like a CRT pop-up */
+  background-image:
+    radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.55) 100%),
+    repeating-linear-gradient(180deg,
+      rgba(255,184,77,0.025) 0px,
+      rgba(255,184,77,0.025) 1px,
+      transparent 1px,
+      transparent 3px);
+  animation: cdi-modal-fade-in 0.18s ease-out;
+}
+@keyframes cdi-modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.cdi-modal {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  width: 100%;
+  max-width: 440px;
+  /* severity stripe — 3px left bar */
+  border-left: 3px solid var(--amber);
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.55),
+    0 0 0 1px rgba(255,184,77,0.08),
+    inset 0 0 80px rgba(255,184,77,0.025);
+  animation: cdi-modal-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cdi-modal-slide-in {
+  from { transform: translateY(12px) scale(0.985); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* Corner ticks like .panel */
+.cdi-modal::before,
+.cdi-modal::after {
+  content: "";
+  position: absolute;
+  width: 10px; height: 10px;
+  border-color: var(--amber);
+  border-style: solid;
+  pointer-events: none;
+}
+.cdi-modal::before { top: -1px; left: -1px;  border-width: 1px 0 0 1px; }
+.cdi-modal::after  { top: -1px; right: -1px; border-width: 1px 1px 0 0; }
+
+/* severity variants — adjust stripe + corner-tick color */
+.cdi-modal.sev-warn   { border-left-color: var(--warn); }
+.cdi-modal.sev-danger { border-left-color: var(--red);  }
+.cdi-modal.sev-warn::before,
+.cdi-modal.sev-warn::after   { border-color: var(--warn); }
+.cdi-modal.sev-danger::before,
+.cdi-modal.sev-danger::after { border-color: var(--red); }
+
+/* Header — telegraph-style title bar */
+.cdi-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  background:
+    linear-gradient(90deg,
+      rgba(255,184,77,0.06) 0%,
+      transparent 60%);
+}
+.cdi-modal.sev-warn .cdi-modal-head {
+  background: linear-gradient(90deg, rgba(244,160,0,0.08) 0%, transparent 60%);
+}
+.cdi-modal.sev-danger .cdi-modal-head {
+  background: linear-gradient(90deg, rgba(230,57,70,0.10) 0%, transparent 60%);
+}
+
+.cdi-modal-prefix {
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--text-faint);
+  padding: 2px 6px;
+  border: 1px solid var(--border-hi);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.cdi-modal.sev-warn   .cdi-modal-prefix { color: var(--warn); border-color: var(--warn); }
+.cdi-modal.sev-danger .cdi-modal-prefix { color: var(--red);  border-color: var(--red); }
+
+.cdi-modal-title {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: var(--amber);
+  text-transform: uppercase;
+  font-weight: 700;
+  flex: 1;
+}
+.cdi-modal.sev-warn   .cdi-modal-title { color: var(--warn); }
+.cdi-modal.sev-danger .cdi-modal-title { color: var(--red); }
+/* Blinking terminal cursor next to title */
+.cdi-modal-title::after {
+  content: "▎";
+  margin-left: 6px;
+  color: inherit;
+  opacity: 0.7;
+  animation: cdi-modal-caret 1.05s steps(2, end) infinite;
+}
+@keyframes cdi-modal-caret {
+  0%, 50%   { opacity: 0.7; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Body */
+.cdi-modal-body {
+  padding: 14px 16px 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;          /* honor \n in caller strings */
+  word-break: break-word;
+}
+.cdi-modal-body b { color: var(--amber); }
+.cdi-modal.sev-warn   .cdi-modal-body b { color: var(--warn); }
+.cdi-modal.sev-danger .cdi-modal-body b { color: var(--red); }
+
+/* Decorative side rule — like instrument-panel ruling */
+.cdi-modal-body::before {
+  content: "▮ TX";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  vertical-align: middle;
+}
+
+/* Prompt input */
+.cdi-modal-input {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px !important;
+  font-size: 13px !important;
+  letter-spacing: 0.04em;
+  background: var(--bg) !important;
+  border: 1px solid var(--border-hi) !important;
+}
+.cdi-modal-input:focus {
+  border-color: var(--amber) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--amber-soft),
+    0 0 12px rgba(255,184,77,0.18) !important;
+}
+
+/* Footer — buttons row with hotkey hints */
+.cdi-modal-foot {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+  background: rgba(0,0,0,0.18);
+}
+.cdi-modal-foot .btn {
+  position: relative;
+  padding: 7px 14px;
+  font-size: 10px;
+}
+.cdi-modal-foot .btn .hk {
+  margin-left: 8px;
+  padding: 0 5px;
+  font-size: 9px;
+  color: var(--text-faint);
+  border: 1px solid var(--border-hi);
+  border-radius: 2px;
+  font-weight: 400;
+  letter-spacing: 0;
+  background: var(--bg);
+}
+.cdi-modal-foot .btn:hover .hk { color: var(--text-dim); }
+
+/* Modal exit (used by JS before removing element) */
+.cdi-modal-backdrop.leaving { animation: cdi-modal-fade-out 0.12s ease-in forwards; }
+.cdi-modal-backdrop.leaving .cdi-modal { animation: cdi-modal-slide-out 0.14s ease-in forwards; }
+@keyframes cdi-modal-fade-out  { to { opacity: 0; } }
+@keyframes cdi-modal-slide-out { to { transform: translateY(6px) scale(0.99); opacity: 0; } }
+
+@media (max-width: 480px) {
+  .cdi-modal { max-width: 100%; }
+  .cdi-modal-title { font-size: 11px; }
+  .cdi-modal-body  { font-size: 12px; }
+}
