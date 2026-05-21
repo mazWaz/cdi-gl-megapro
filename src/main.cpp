@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <esp_system.h>
 
 #include "config.h"
 #include "pinmap.h"
@@ -21,6 +22,7 @@
 #include "core/engine_preset.h"
 #include "core/pickup.h"
 #include "core/pickup_cal.h"
+#include "core/panic_button.h"
 #include "core/rpm_calc.h"
 #include "scope/edge_snapshot.h"
 #include "net/wifi_ap.h"
@@ -40,11 +42,38 @@ static uint32_t s_lastSafetyMs     = 0;
 
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 200;   // 5 fps
 
+// Human-readable reset cause for the boot banner.
+const char* resetReasonStr(esp_reset_reason_t r) {
+    switch (r) {
+        case ESP_RST_POWERON:   return "power-on";
+        case ESP_RST_EXT:       return "external reset";
+        case ESP_RST_SW:        return "ESP.restart()";
+        case ESP_RST_PANIC:     return "panic (crash)";
+        case ESP_RST_INT_WDT:   return "INTERRUPT WDT";
+        case ESP_RST_TASK_WDT:  return "TASK WDT";
+        case ESP_RST_WDT:       return "other WDT";
+        case ESP_RST_DEEPSLEEP: return "deep-sleep wake";
+        case ESP_RST_BROWNOUT:  return "BROWN-OUT";
+        case ESP_RST_SDIO:      return "SDIO";
+        default:                return "unknown";
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(100);
-    Serial.printf("\n[CDI] firmware v%u.%u.%u booting\n",
-                  cfg::FW_VERSION_MAJOR, cfg::FW_VERSION_MINOR, cfg::FW_VERSION_PATCH);
+
+    const esp_reset_reason_t rr = esp_reset_reason();
+    Serial.printf("\n[CDI] firmware v%u.%u.%u booting (reset: %s, heap=%u)\n",
+                  cfg::FW_VERSION_MAJOR, cfg::FW_VERSION_MINOR, cfg::FW_VERSION_PATCH,
+                  resetReasonStr(rr), (unsigned)ESP.getFreeHeap());
+    if (rr == ESP_RST_TASK_WDT || rr == ESP_RST_INT_WDT || rr == ESP_RST_WDT) {
+        Serial.println("[CDI] ⚠ previous boot was killed by WATCHDOG — review serial logs");
+    } else if (rr == ESP_RST_BROWNOUT) {
+        Serial.println("[CDI] ⚠ previous boot was killed by BROWN-OUT — check battery / wiring");
+    } else if (rr == ESP_RST_PANIC) {
+        Serial.println("[CDI] ⚠ previous boot crashed — investigate before riding");
+    }
 
     pinMode(pin::STATUS_LED, OUTPUT);
     digitalWrite(pin::STATUS_LED, LOW);
@@ -67,6 +96,7 @@ void setup() {
     cdi::core::quickshift::begin();                // GPIO14 INPUT_PULLUP (ISR off)
     cdi::core::backfire::begin();                  // (disabled at boot)
     cdi::core::alvp::begin();                      // adc1 init for Vbat
+    cdi::core::panic::begin();                     // hardware emergency kill on GPIO0
     cdi::core::preset::apply("honda_megapro");     // default preset (overridden by load if NVS)
     cdi::storage::config::begin();                 // spawn core-0 persist task + sync primitives
     cdi::storage::config::load();                  // load saved settings if any
@@ -78,6 +108,10 @@ void setup() {
         cdi::core::spark::setArmed(true);
         Serial.println("[spark] auto-armed from boot preference");
     }
+
+    Serial.printf("[CDI] setup() complete · heap=%u · uptime=%lu ms\n",
+                  (unsigned)ESP.getFreeHeap(), (unsigned long)millis());
+    Serial.println("[CDI] ready — connect to WiFi AP, open http://192.168.4.1/");
 }
 
 void loop() {
@@ -98,6 +132,7 @@ void loop() {
         cdi::core::safety::tick();
     }
     cdi::core::shift_light::tick();          // cheap, can run every loop
+    cdi::core::panic::poll();                // boot-button long-press → SAFE_HOLD
     cdi::core::launch::poll();               // debounced digital read
     cdi::core::backfire::tick(cdi::core::rpm::current());
     cdi::core::alvp::tick();                   // sampled every 500ms internally
