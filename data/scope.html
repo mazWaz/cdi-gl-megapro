@@ -47,6 +47,22 @@
       <label class="chk"><input type="checkbox" id="inv2">balik ch2</label>
     </div>
   </section>
+
+  <section class="panel">
+    <span class="label">[ snapshot ]</span>
+    <p class="note" style="font-size:10px;color:var(--text-dim);margin:4px 0 8px">
+      Firmware terus merekam event terbaru ke ring RAM (kapasitas ~2000 event ≈ 5 detik di idle).
+      Klik <b>Simpan</b> untuk freeze ring saat ini ke LittleFS — survive reboot, bisa di-load
+      sebagai overlay kuning (perbandingan dengan live) atau download CSV.
+    </p>
+    <div class="btn-row">
+      <input id="snapName" type="text" placeholder="nama (alnum -_)" maxlength="32" style="flex:1;min-width:120px">
+      <button class="btn green" id="snapSaveBtn">⊕ Simpan</button>
+      <button class="btn ghost" id="snapClearBtn">⊘ Hapus overlay</button>
+    </div>
+    <p class="note" id="snapBufInfo" style="font-size:10px;margin-top:4px;color:var(--text-faint)">Ring: 0/2000 event</p>
+    <div id="snapHost" class="snap-list" style="margin-top:8px"></div>
+  </section>
 </main>
 
 <nav class="bottom-nav">
@@ -77,6 +93,9 @@ let running  = true;
 // Each entry: { ts, level } (ts in µs, device-side micros low32).
 const edgeBuf = { 0: [], 1: [] };
 const MAX_EVENTS_PER_CH = 4096;
+
+// Loaded snapshot overlay (rendered behind live in dim color)
+let snapOverlay = null;   // { 0: [{ts,level}], 1: [...] } or null
 
 function fmtTime(s){
   if (s >= 1)    return s.toFixed(2)+' s';
@@ -180,12 +199,23 @@ function render(){
   grid(w, h);
 
   const inv1 = $('inv1').checked, inv2 = $('inv2').checked;
-  const nowUs    = nowMicrosLow32();
   const windowUs = windowMs * 1000;
-  pruneOlderThan(nowUs - windowUs * 2);
-
   const m = 10 * DPR;
   const half = h / 2;
+
+  // Snapshot overlay first (dim, behind live trace).
+  if (snapOverlay){
+    const snapLatest = Math.max(
+      snapOverlay[0].length ? snapOverlay[0][snapOverlay[0].length-1].ts : 0,
+      snapOverlay[1].length ? snapOverlay[1][snapOverlay[1].length-1].ts : 0
+    );
+    drawStep(snapOverlay[0], '#7a5a26', m,        half - m, w, snapLatest, windowUs, inv1);
+    drawStep(snapOverlay[1], '#2d5673', half + m, h - m,    w, snapLatest, windowUs, inv2);
+  }
+
+  // Live trace on top
+  const nowUs = nowMicrosLow32();
+  pruneOlderThan(nowUs - windowUs * 2);
   drawStep(edgeBuf[0], '#ffb84d', m,        half - m, w, nowUs, windowUs, inv1);  // CH1
   drawStep(edgeBuf[1], '#5dade2', half + m, h - m,    w, nowUs, windowUs, inv2);  // CH2
 
@@ -220,6 +250,67 @@ $('runBtn').addEventListener('click', () => {
   running = !running;
   $('runBtn').textContent = running ? '⏸ Jeda' : '▶ Jalan';
 });
+
+// ── Snapshot UI ──
+function renderSnapList(m){
+  $('snapBufInfo').textContent = `Ring: ${m.buffered}/${m.capacity} event`;
+  const host = $('snapHost');
+  if (!m.snaps || !m.snaps.length){
+    host.innerHTML = '<div class="note" style="font-size:10px;color:var(--text-faint)">— belum ada snapshot tersimpan —</div>';
+    return;
+  }
+  host.innerHTML = m.snaps.map(s =>
+    `<div class="snap-item" style="display:flex;gap:6px;align-items:center;padding:6px;border:1px solid var(--border);margin-bottom:4px">
+       <span style="flex:1;color:var(--amber);font-size:12px"><b>${s.name}</b></span>
+       <span style="font-size:10px;color:var(--text-faint)">${s.count} ev · ${s.size} B</span>
+       <button class="btn ghost" style="padding:2px 8px;font-size:11px" data-act="load" data-n="${s.name}">muat</button>
+       <button class="btn ghost" style="padding:2px 8px;font-size:11px" data-act="csv"  data-n="${s.name}">csv</button>
+       <button class="btn crit"  style="padding:2px 8px;font-size:11px" data-act="del"  data-n="${s.name}">×</button>
+     </div>`
+  ).join('');
+  host.querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      const n = b.dataset.n, a = b.dataset.act;
+      if (a === 'load')      cdi.send({cmd:'loadSnap', name:n});
+      else if (a === 'csv')  location.href = '/snapshot.csv?name=' + encodeURIComponent(n);
+      else if (a === 'del') {
+        if (!confirm('Hapus snapshot "' + n + '"?')) return;
+        cdi.send({cmd:'deleteSnap', name:n});
+      }
+    };
+  });
+}
+
+$('snapSaveBtn').addEventListener('click', () => {
+  const name = $('snapName').value.trim();
+  if (!name){ alert('isi nama snapshot dulu'); return; }
+  cdi.send({cmd:'saveSnap', name});
+});
+$('snapClearBtn').addEventListener('click', () => { snapOverlay = null; });
+
+cdi.bus.on('snapList', renderSnapList);
+cdi.bus.on('snapSaved', m => {
+  if (m.ok){
+    $('snapName').value = '';
+    cdi.send({cmd:'listSnaps'});
+  } else {
+    alert('Save gagal — ring buffer kosong? Coba tunggu beberapa detik dengan engine running.');
+  }
+});
+cdi.bus.on('snapDeleted', m => {
+  if (m.ok) cdi.send({cmd:'listSnaps'});
+  else alert('Hapus gagal.');
+});
+cdi.bus.on('snapData', m => {
+  // Build per-channel sorted arrays for the overlay renderer.
+  const buf = { 0: [], 1: [] };
+  for (const e of m.events){
+    if (buf[e.ch]) buf[e.ch].push({ ts: e.ts, level: e.level });
+  }
+  snapOverlay = buf;
+});
+
+cdi.bus.on('open', () => cdi.send({cmd:'listSnaps'}));
 
 updateTimeLabel();
 requestAnimationFrame(render);

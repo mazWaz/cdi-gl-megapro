@@ -99,6 +99,10 @@ function connect(){
         else if (m.type === 'preset'){ bus.emit('preset', m); }
         else if (m.type === 'pickup'){ bus.emit('pickup', m); }
         else if (m.type === 'cal'){ bus.emit('cal', m); }
+        else if (m.type === 'snapList'){ bus.emit('snapList', m); }
+        else if (m.type === 'snapData'){ bus.emit('snapData', m); }
+        else if (m.type === 'snapSaved'){ bus.emit('snapSaved', m); }
+        else if (m.type === 'snapDeleted'){ bus.emit('snapDeleted', m); }
         else if (m.type === 'mode'){ bus.emit('modeChanged', m.mode); }
         else if (m.type === 'err'){ bus.emit('err', m.msg); }
       } catch (e) { console.warn('bad json', e); }
