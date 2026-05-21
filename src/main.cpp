@@ -22,6 +22,7 @@
 #include "core/pickup.h"
 #include "core/pickup_cal.h"
 #include "core/rpm_calc.h"
+#include "scope/edge_snapshot.h"
 #include "net/wifi_ap.h"
 #include "net/http_server.h"
 #include "net/ws_server.h"
@@ -51,6 +52,7 @@ void setup() {
     if (!LittleFS.begin(false)) {
         Serial.println("[fs] LittleFS mount failed — UI assets will 404");
     }
+    cdi::scope::snapshot::begin();
 
     cdi::core::advance::active().loadDefaultMegapro();
     cdi::net::wifi_ap::begin();

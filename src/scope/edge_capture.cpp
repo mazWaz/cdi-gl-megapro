@@ -6,6 +6,7 @@
 #include "config.h"
 #include "types.h"
 #include "core/pulser_input.h"
+#include "scope/edge_snapshot.h"
 
 namespace cdi::scope::edge {
 namespace {
@@ -49,6 +50,10 @@ const uint8_t* buildFrame(size_t& out_len) {
         // Use low 32 bits of micros — wraps every ~71 minutes, fine for
         // a ~30 ms frame window.
         const uint32_t ts_lo = (uint32_t)(ev.ts_us & 0xFFFFFFFFu);
+
+        // Tap into the rolling snapshot ring — every event the WS sees
+        // also lands in RAM, so user can "freeze" it at any moment.
+        cdi::scope::snapshot::record(ts_lo, (uint8_t)ev.channel, ev.level);
 
         if (n == 0) {
             first_ts_lo = ts_lo;
