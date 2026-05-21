@@ -20,12 +20,25 @@ function highlightNav(){
 }
 document.addEventListener('DOMContentLoaded', highlightNav);
 
-// Tiny event bus
+// Tiny event bus with sticky 'open' replay — late subscribers (inline
+// scripts that register listeners AFTER the WebSocket has already
+// connected) get the open event fired immediately so they don't miss
+// initial-data requests like getPresetList / getPickup.
 const bus = (() => {
   const listeners = {};
+  let openFired = false;
   return {
-    on(name, fn) { (listeners[name] = listeners[name] || []).push(fn); },
-    emit(name, payload) { (listeners[name] || []).forEach(fn => { try { fn(payload); } catch (e) { console.error(e); } }); }
+    on(name, fn) {
+      (listeners[name] = listeners[name] || []).push(fn);
+      if (name === 'open' && openFired) {
+        try { fn(); } catch (e) { console.error(e); }
+      }
+    },
+    emit(name, payload) {
+      if (name === 'open')  openFired = true;
+      if (name === 'close') openFired = false;
+      (listeners[name] || []).forEach(fn => { try { fn(payload); } catch (e) { console.error(e); } });
+    }
   };
 })();
 
@@ -69,6 +82,7 @@ function connect(){
   ws.onclose = () => {
     state.connected = false;
     bus.emit('connection', state.telemetry);
+    bus.emit('close');
     setTimeout(connect, 1000);
   };
   ws.onerror = () => { try { ws.close(); } catch (e) {} };
