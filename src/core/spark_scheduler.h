@@ -62,6 +62,21 @@ float advanceOffsetDeg();
 // long-dwell test to confirm the MOSFET path is alive visually).
 void manualFire(uint32_t dwell_override_us = 0);
 
+// ── Output polarity ──
+// false (default): ACTIVE-HIGH. Idle LOW, charge phase HIGH, fall
+//                  edge fires spark. Matches direct N-MOSFET / NPN
+//                  gate drive.
+// true           : ACTIVE-LOW.  Idle HIGH, charge phase LOW, rise
+//                  edge fires spark. Matches P-MOSFET / PNP gate
+//                  drive, opto-isolated drivers wired LED-cathode-
+//                  to-GPIO, or pre-built CDI modules with active-
+//                  LOW trigger input.
+// Changing this flips: idle state, manualFire pulse polarity, and
+// the spark scheduler ISR writes. Hardware pull-resistor MUST
+// match — pull-down for ACTIVE-HIGH, pull-up to 3V3 for ACTIVE-LOW.
+void setActiveLow(bool en);
+bool activeLow();
+
 // ─── ISR entry — called from pulser CH1 falling-edge ISR ───
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead);
 

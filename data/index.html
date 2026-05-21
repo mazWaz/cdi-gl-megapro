@@ -79,6 +79,10 @@
       <button class="btn ghost" id="testFireLongBtn">⚡ Uji 1× (10ms long-dwell)</button>
     </div>
     <label class="chk" style="margin-top:8px">
+      <input type="checkbox" id="sparkPolChk">
+      <span>Polaritas <b>ACTIVE-LOW</b> (idle HIGH, fire on rising edge) — pakai kalau pakai PNP/PMOS atau CDI module trigger LOW</span>
+    </label>
+    <label class="chk" style="margin-top:8px">
       <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
     </label>
     <p class="note crit">
@@ -258,6 +262,36 @@ $('testFireBtn').addEventListener('click', async () => {
   });
   if (!ok) return;
   cdi.send({cmd:'testFire'});
+});
+
+// Spark polarity toggle
+cdi.bus.on('open', () => cdi.send({cmd:'getSparkPolarity'}));
+cdi.bus.on('hello', () => cdi.send({cmd:'getSparkPolarity'}));
+window.addEventListener('message', () => {});  // no-op, keep handler list
+cdi.bus.on('telemetry', () => {}); // already wired elsewhere
+// Custom listener for sparkPolarity messages
+const _origDispatch = null;
+function _onSparkPol(m){
+  $('sparkPolChk').checked = !!m.active_low;
+}
+// Patch bus to listen for sparkPolarity dispatched via app.js generic route
+// app.js doesn't route 'sparkPolarity' yet — handle via direct WS message hook below
+// (we'll add the route in app.js too)
+cdi.bus.on('sparkPolarity', _onSparkPol);
+
+$('sparkPolChk').addEventListener('change', async e => {
+  const al = e.target.checked;
+  const ok = await cdi.modal.confirm({
+    title: 'GANTI POLARITAS SPARK',
+    severity: 'warn',
+    body: 'Set output GPIO25 jadi ' + (al ? 'ACTIVE-LOW' : 'ACTIVE-HIGH') + '?\n\n' +
+          (al
+            ? 'Idle: GPIO25 HIGH (3.3V). Fire: pulse ke LOW selama dwell, lalu HIGH lagi (rising edge fires spark).\nUntuk PNP / P-MOSFET / CDI module yang trigger LOW.\nPasang pull-UP 10 kΩ ke 3V3 di GPIO25.'
+            : 'Idle: GPIO25 LOW (0V). Fire: pulse ke HIGH selama dwell, lalu LOW lagi (falling edge fires spark).\nUntuk NPN / N-MOSFET direct drive.\nPasang pull-DOWN 10 kΩ ke GND di GPIO25.'),
+    okLabel: '✓ Apply',
+  });
+  if (!ok){ e.target.checked = !al; return; }
+  cdi.send({cmd:'setSparkPolarity', active_low: al});
 });
 
 $('testFireLongBtn').addEventListener('click', async () => {

@@ -156,6 +156,23 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         cdi::core::spark::manualFire(override_dwell);
         client->text("{\"type\":\"ack\",\"msg\":\"fired\"}");
     }
+    else if (!strcmp(cmd, "setSparkPolarity")) {
+        const bool al = doc["active_low"] | false;
+        cdi::core::spark::setActiveLow(al);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]       = "sparkPolarity";
+        r["active_low"] = cdi::core::spark::activeLow();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getSparkPolarity")) {
+        JsonDocument r;
+        r["type"]       = "sparkPolarity";
+        r["active_low"] = cdi::core::spark::activeLow();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
     else if (!strcmp(cmd, "setRevLimit")) {
         uint32_t main = doc["main"]    | cdi::core::safety::mainLimitRpm();
         uint32_t over = doc["overrev"] | cdi::core::safety::overrevLimitRpm();

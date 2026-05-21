@@ -17,6 +17,7 @@ hw_timer_t* s_fireOffTimer = nullptr;
 
 volatile bool     s_armed         = false;
 volatile bool     s_autoArm       = false;
+volatile bool     s_activeLow     = false;   // false=active-HIGH (default)
 volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop
 volatile uint32_t s_dwellUs       = cdi::config::DEFAULT_DWELL_US;
 volatile float    s_advanceOffsetDeg = 0.0f;
@@ -31,12 +32,22 @@ constexpr uint32_t MAX_DELAY_US = 50000;    // 50 ms ceiling
 inline void gpioHigh(uint8_t pin) { GPIO.out_w1ts = (1U << pin); }
 inline void gpioLow(uint8_t pin)  { GPIO.out_w1tc = (1U << pin); }
 
+// Logical "fire active" / "fire idle" — flipped by s_activeLow.
+inline void IRAM_ATTR sparkActive(uint8_t pin) {
+    if (s_activeLow) gpioLow(pin); else gpioHigh(pin);
+}
+inline void IRAM_ATTR sparkIdle(uint8_t pin) {
+    if (s_activeLow) gpioHigh(pin); else gpioLow(pin);
+}
+
 void IRAM_ATTR isrFireOn() {
     cdi::micros_t now = (cdi::micros_t)micros();
     s_lastJitterUs = (int32_t)(now - s_scheduledFireUs);
 
-    gpioHigh(cdi::pins::SPARK_OUT);
-    gpioHigh(cdi::pins::MODE_LED);
+    // Start charge phase. ACTIVE-HIGH: GPIO25 → 3V3, MOSFET ON.
+    // ACTIVE-LOW:  GPIO25 → 0V,  PNP/PMOS ON.
+    sparkActive(cdi::pins::SPARK_OUT);
+    gpioHigh(cdi::pins::MODE_LED);    // visible LED stays active-HIGH
 
     // Arm fire-off timer for now + dwell.
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -55,7 +66,8 @@ void IRAM_ATTR isrFireOn() {
 }
 
 void IRAM_ATTR isrFireOff() {
-    gpioLow(cdi::pins::SPARK_OUT);
+    // End charge phase → coil collapse → spark on this edge.
+    sparkIdle(cdi::pins::SPARK_OUT);
     gpioLow(cdi::pins::MODE_LED);
     s_fireCount++;
 
@@ -69,7 +81,7 @@ void IRAM_ATTR isrFireOff() {
 void begin() {
     pinMode(cdi::pins::SPARK_OUT, OUTPUT);
     pinMode(cdi::pins::MODE_LED,  OUTPUT);
-    gpioLow(cdi::pins::SPARK_OUT);
+    sparkIdle(cdi::pins::SPARK_OUT);
     gpioLow(cdi::pins::MODE_LED);
 
     if (!s_fireOnTimer) {
@@ -195,8 +207,20 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
 uint32_t totalFires()    { return s_fireCount; }
 int32_t  lastJitterUs()  { return s_lastJitterUs; }
 
+void setActiveLow(bool en) {
+    s_activeLow = en;
+    // Re-drive pin to the new idle state immediately so the line
+    // doesn't sit in the wrong logical state between calls.
+    sparkIdle(cdi::pins::SPARK_OUT);
+    Serial.printf("[spark] polarity = ACTIVE-%s\n", en ? "LOW" : "HIGH");
+}
+bool activeLow() { return s_activeLow; }
+
 void forceLow() {
-    gpioLow(cdi::pins::SPARK_OUT);
+    // Drive the spark pin to its IDLE-SAFE state (LOW for active-HIGH,
+    // HIGH for active-LOW). Keeping the legacy function name so safety
+    // callers don't need to change.
+    sparkIdle(cdi::pins::SPARK_OUT);
     gpioLow(cdi::pins::MODE_LED);
 #if ESP_ARDUINO_VERSION_MAJOR < 3
     if (s_fireOnTimer)  timerAlarmDisable(s_fireOnTimer);
