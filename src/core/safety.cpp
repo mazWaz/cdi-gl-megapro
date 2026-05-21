@@ -71,6 +71,24 @@ void tick() {
     // ─── Rev limiter ───
     cdi::rpm_t rpm = cdi::core::rpm::current();
 
+    // ─── Absolute RPM ceiling (catches multi-tooth pickup, noise) ───
+    // Bypass all configurable limits — this is a "something is broken"
+    // condition, not a "rider asked for high revs" one.
+    if (rpm > cdi::config::ABSOLUTE_RPM_CEILING) {
+        if (cdi::core::spark::isArmed()) {
+            cdi::core::spark::setArmed(false);
+            Serial.printf("[safety] RPM RUNAWAY %u rpm (> ceiling %u) → DISARM. "
+                          "Cek pickup wiring / pilih preset benar (motor FI multi-tooth tidak kompatibel).\n",
+                          (unsigned)rpm, (unsigned)cdi::config::ABSOLUTE_RPM_CEILING);
+        }
+        s_overRevCut = true;
+        s_revLimited = true;
+        s_activeCutMode   = cdi::CutMode::HARD_CUT;
+        s_activeRetardDeg = 0.0f;
+        s_progressivePct  = 100;
+        return;   // skip the rest of the normal rev-limit ladder
+    }
+
     // Effective limit determined by stacked overrides:
     //   - launch active → launch_rpm + HARD_CUT (highest priority, drag start)
     //   - ALVP derate → derate_rpm + SOFT_RETARD (low-voltage protection)
