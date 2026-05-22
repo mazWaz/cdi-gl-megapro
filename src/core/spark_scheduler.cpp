@@ -18,6 +18,7 @@ hw_timer_t* s_fireOffTimer = nullptr;
 volatile bool     s_armed         = false;
 volatile bool     s_autoArm       = false;
 volatile bool     s_activeLow     = false;   // false=active-HIGH (default)
+volatile bool     s_inductive     = true;    // true=TCI (default), false=CDI/SCR
 volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop
 volatile uint32_t s_dwellUs       = cdi::config::DEFAULT_DWELL_US;
 volatile float    s_advanceOffsetDeg = 0.0f;
@@ -219,6 +220,14 @@ void setActiveLow(bool en) {
     Serial.printf("[spark] polarity = ACTIVE-%s\n", en ? "LOW" : "HIGH");
 }
 bool activeLow() { return s_activeLow; }
+
+void setInductive(bool en) {
+    s_inductive = en;
+    Serial.printf("[spark] ignition = %s (spark fires on %s edge)\n",
+                  en ? "INDUCTIVE/TCI" : "CAPACITIVE/CDI",
+                  en ? "FALL"          : "RISE");
+}
+bool inductive() { return s_inductive; }
 
 void forceLow() {
     // Drive the spark pin to its IDLE-SAFE state (LOW for active-HIGH,

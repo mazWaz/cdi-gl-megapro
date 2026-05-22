@@ -83,6 +83,10 @@
       <span>Polaritas <b>ACTIVE-LOW</b> (idle HIGH, fire on rising edge) — pakai kalau pakai PNP/PMOS atau CDI module trigger LOW</span>
     </label>
     <label class="chk" style="margin-top:6px">
+      <input type="checkbox" id="ignTypeChk" checked>
+      <span>Tipe <b>INDUCTIVE/TCI</b> (GPIO HIGH charge primary, spark di fall edge) — uncheck kalau pakai SCR/CDI module yang fire di rising edge</span>
+    </label>
+    <label class="chk" style="margin-top:6px">
       <input type="checkbox" id="noSigChk">
       <span>Aktifkan <b>no-signal failsafe</b> (auto-disarm kalau pulser signal hilang setelah engine running) — wajib ON saat riding, OFF di bench</span>
     </label>
@@ -300,7 +304,25 @@ function _onSparkPol(m){
 // Patch bus to listen for sparkPolarity dispatched via app.js generic route
 // app.js doesn't route 'sparkPolarity' yet — handle via direct WS message hook below
 // (we'll add the route in app.js too)
-cdi.bus.on('sparkPolarity', _onSparkPol);
+cdi.bus.on('sparkPolarity', m => {
+  _onSparkPol(m);
+  if (typeof m.inductive !== 'undefined') $('ignTypeChk').checked = !!m.inductive;
+});
+
+$('ignTypeChk').addEventListener('change', async e => {
+  const ind = e.target.checked;
+  const ok = await cdi.modal.confirm({
+    title: 'TIPE PENGAPIAN',
+    severity: 'warn',
+    body: 'Set ke ' + (ind ? 'INDUCTIVE / TCI' : 'CAPACITIVE / CDI / SCR') + '?\n\n' +
+          (ind
+            ? 'Spark fire di FALL edge (akhir dwell).\nFirmware akan KURANGI dwell_us dari delay sebelum jadwalkan timer — supaya spark beneran fire di crank angle yang dimaksud advance map.\nUntuk wiring MOSFET/transistor direct ke coil primary.'
+            : 'Spark fire di RISING edge (awal trigger pulse).\nFirmware TIDAK kurangi dwell — schedule delay = full target.\nUntuk module CDI dengan SCR trigger input.'),
+    okLabel: '✓ Apply',
+  });
+  if (!ok){ e.target.checked = !ind; return; }
+  cdi.send({cmd:'setIgnitionType', inductive: ind});
+});
 
 $('sparkPolChk').addEventListener('change', async e => {
   const al = e.target.checked;

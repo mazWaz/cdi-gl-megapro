@@ -116,6 +116,7 @@ void buildJson(JsonDocument& doc) {
     sp["advance_offset"] = cdi::core::spark::advanceOffsetDeg();
     sp["auto_arm"]       = cdi::core::spark::autoArm();
     sp["active_low"]     = cdi::core::spark::activeLow();
+    sp["inductive"]      = cdi::core::spark::inductive();
 
     // shift light
     JsonObject sh = doc["shift"].to<JsonObject>();
@@ -219,6 +220,7 @@ void applyJson(const JsonDocument& doc) {
             cdi::core::spark::setAdvanceOffsetDeg(sp["advance_offset"] | 0.0f);
             cdi::core::spark::setAutoArm(sp["auto_arm"] | false);
             cdi::core::spark::setActiveLow(sp["active_low"] | false);
+            cdi::core::spark::setInductive(sp["inductive"]  | true);
         }
     }
     // shift light

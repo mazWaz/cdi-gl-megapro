@@ -34,13 +34,31 @@ void tick() {
     }
     cdi::core::rpm::tick((cdi::micros_t)micros());
 
-    // Update spark fire delay from latest RPM × advance map.
-    // CH1 fires at MAX_ADVANCE_FROM_CH1_DEG (e.g. 32° BTDC) reference.
-    // Target advance < 32 → delay from CH1 to fire.
-    cdi::rpm_t    r       = cdi::core::rpm::current();
+    // Update spark fire delay from latest period + advance map.
+    //
+    // IMPORTANT: use the INSTANTANEOUS RPM derived from the latest
+    // valid period (not the EMA-smoothed RPM). Smoothing has a lag
+    // of several CH1 cycles, which on a fast deceleration (e.g. kick
+    // ends, RPM drops 3000 → 500) leaves the advance lookup believing
+    // we're still at high RPM. The advance map returns the
+    // high-RPM value (~21° BTDC) for a now-cranking engine that
+    // wants ~8° BTDC — too advanced at low RPM → kickback during
+    // compression. Instantaneous tracking eliminates the lag.
+    //
+    // IMPORTANT: when ignition is INDUCTIVE (default), the actual
+    // spark fires on the FALL edge after dwell. The scheduler delay
+    // points to the RISING edge (start of dwell), so we must
+    // subtract dwell_us from the CH1→spark delay before sending it
+    // to the scheduler. Otherwise the fall transition lands
+    // dwell_us LATE → effective spark is retarded by dwell_deg
+    // (e.g. 22° at 1500 RPM with 2.5 ms dwell — engine cannot run).
     cdi::micros_t periodU = cdi::core::rpm::lastPeriodUs();
-    if (r > 0 && periodU > 0) {
-        float adv = cdi::core::advance::active().lookup(r);
+    if (periodU > 0) {
+        // Instantaneous RPM from the most recent valid period.
+        cdi::rpm_t r_inst = (cdi::rpm_t)(60000000ULL / periodU);
+        if (r_inst > 65535) r_inst = 65535;
+
+        float adv = cdi::core::advance::active().lookup(r_inst);
         // Cut-mode retard (T9 — configurable per active cut mode).
         adv -= cdi::core::safety::currentRetardDeg();
         adv -= cdi::core::backfire::currentRetardDeg();
@@ -55,12 +73,30 @@ void tick() {
         float delayDeg = cdi::core::pickup::maxAdvanceRef() - adv;
         if (delayDeg < 0)   delayDeg = 0;
         if (delayDeg > 360) delayDeg = 360;
-        uint32_t delay_us = (uint32_t)((delayDeg / 360.0f) * (float)periodU);
-        cdi::core::spark::setNextDelayUs(delay_us);
+
+        // Time from CH1 to the moment we want the spark to actually fire.
+        const uint32_t spark_delay_us = (uint32_t)((delayDeg / 360.0f) * (float)periodU);
+
+        // For inductive ignition, the GPIO HIGH→LOW transition (end
+        // of dwell) is when the spark fires. Schedule fire-on so the
+        // fire-off lands at spark_delay_us.
+        const uint32_t dwell_us = cdi::core::spark::dwellUs();
+        uint32_t scheduler_delay_us;
+        if (cdi::core::spark::inductive()) {
+            scheduler_delay_us = (spark_delay_us > dwell_us)
+                               ? (spark_delay_us - dwell_us)
+                               : 0;
+        } else {
+            // Capacitive / CDI / SCR — spark fires on the rising
+            // edge; dwell is just the trigger-pulse width, no
+            // subtraction.
+            scheduler_delay_us = spark_delay_us;
+        }
+        cdi::core::spark::setNextDelayUs(scheduler_delay_us);
 
         // T10: dwell compensation by RPM curve.
         if (cdi::core::dwell::isEnabled()) {
-            uint16_t dwell = cdi::core::dwell::lookup(r);
+            uint16_t dwell = cdi::core::dwell::lookup(r_inst);
             cdi::core::spark::setDwellUs(dwell);
         }
     }

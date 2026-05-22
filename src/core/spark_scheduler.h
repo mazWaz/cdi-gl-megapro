@@ -77,23 +77,19 @@ void manualFire(uint32_t dwell_override_us = 0);
 void setActiveLow(bool en);
 bool activeLow();
 
-// ── 2-pin CDI mode (separate charge enable + spark trigger) ──
-// When enabled, the scheduler drives CHARGE_OUT (GPIO16) LOW for
-// `dwell_us` BEFORE the fire moment to charge the boost-converter
-// capacitor, then at the fire moment releases CHARGE_OUT HIGH AND
-// pulses SPARK_OUT (GPIO25) HIGH for `spark_pulse_us` to trigger
-// the SCR gate. See pinmap.h for the wiring diagram.
-//
-// Charge pin is hardcoded ACTIVE-LOW (matches the typical "pull
-// the step-up MOSFET LOW to enable" topology). Spark pin polarity
-// still respects setActiveLow() — usually HIGH-pulse for SCR gates.
-void setUseChargePin(bool en);
-bool useChargePin();
-
-// SCR trigger pulse width in microseconds. Default 200 µs — most
-// SCR gates latch in <50 µs. Configurable 50-2000.
-void setSparkPulseUs(uint32_t us);
-uint32_t sparkPulseUs();
+// ── Ignition topology ──
+// true  (default) = inductive / TCI — GPIO HIGH charges primary
+//                   coil through MOSFET; spark fires on the FALL
+//                   edge at end of dwell. live_stats must subtract
+//                   dwell_us from the CH1-to-spark delay so the
+//                   actual fire-off transition lands at the desired
+//                   crank angle.
+// false           = capacitive / CDI / SCR — GPIO HIGH triggers an
+//                   SCR gate; spark fires on the RISING edge.
+//                   Dwell here is just the trigger-pulse width and
+//                   should NOT be subtracted.
+void setInductive(bool en);
+bool inductive();
 
 // ─── ISR entry — called from pulser CH1 falling-edge ISR ───
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead);
