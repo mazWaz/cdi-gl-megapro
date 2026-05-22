@@ -22,6 +22,13 @@ bool s_overRevCut  = false;
 uint32_t s_overrevHits = 0;
 constexpr uint32_t OVERREV_CONFIRM = 3;
 
+// Latches once we've seen genuinely valid RPM since the last arm.
+// Reset by clearFlags(). The no-signal failsafe only trips after this
+// is true — otherwise edge noise on floating GPIO34/35 (no internal
+// pull-up on input-only pins) could spuriously set lastCh1Us and
+// auto-disarm a bench test where no real engine is attached.
+bool s_haveSeenValidRpm = false;
+
 // Cut-mode configuration (main band only).
 volatile cdi::CutMode s_mainCutMode = cdi::CutMode::SOFT_RETARD;
 volatile float        s_mainRetardDeg = 10.0f;
@@ -56,23 +63,32 @@ void tick() {
     const cdi::micros_t now_us = (cdi::micros_t)micros();
 
     // ─── No-signal failsafe ───
-    // Trip ONLY when we previously HAD pulser signal and then lost it
-    // (cable cut mid-ride, pulser failed, etc). We do NOT trip when
-    // `last == 0` — that just means the engine has never been cranked
-    // yet since boot. Tripping in that case prevented bench-arming
-    // for test-fire workflows: user clicks Arm, has 500 ms to react,
-    // then is auto-disarmed before they can press Test Fire.
-    if (cdi::core::spark::isArmed()) {
+    // Trip ONLY when we previously had VALID engine RPM and then lost
+    // it (cable cut mid-ride, pulser failed, etc). Edge-only timestamps
+    // can't be trusted as "signal present" — GPIO34/35 are input-only
+    // and have NO internal pull-up, so a disconnected pulser pin
+    // floating from noise could spuriously update lastCh1Us and
+    // trigger a false failsafe at bench.
+    //
+    // rpm::current() applies sanity bounds (RPM_MIN_VALID..MAX_VALID)
+    // and exponential smoothing, so it stays at 0 under noise. Use it
+    // as the latch: once we've seen real RPM we know the engine ran;
+    // after that, signal staleness == genuine fault.
+    {
+        cdi::rpm_t rpm_now = cdi::core::rpm::current();
+        if (rpm_now >= (cdi::rpm_t)cdi::config::RPM_MIN_VALID) {
+            s_haveSeenValidRpm = true;
+        }
+    }
+    if (cdi::core::spark::isArmed() && s_haveSeenValidRpm) {
         cdi::micros_t last = cdi::core::rpm::lastCh1Us();
         if (last != 0 &&
             (now_us - last) > (cdi::micros_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000ULL) {
             cdi::core::spark::setArmed(false);
             s_noSignal = true;
             Serial.println("[safety] NO-SIGNAL failsafe → auto disarm "
-                           "(pulser signal lost after being active)");
+                           "(valid RPM lost after being seen)");
         }
-    } else {
-        // Don't clear no_signal automatically — sticky until re-arm.
     }
 
     // ─── Rev limiter ───
@@ -240,9 +256,10 @@ bool IRAM_ATTR shouldFire() {
 }
 
 void clearFlags() {
-    s_noSignal    = false;
-    s_overRevCut  = false;
-    s_overrevHits = 0;
+    s_noSignal         = false;
+    s_overRevCut       = false;
+    s_overrevHits      = 0;
+    s_haveSeenValidRpm = false;   // fresh arm — wait for real signal again
 }
 
 } // namespace cdi::core::safety
