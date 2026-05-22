@@ -8,11 +8,16 @@
 namespace cdi::core::quickshift {
 namespace {
 
-bool       s_enabled    = false;
-bool       s_attached   = false;
-uint16_t   s_cutMs      = 65;
-cdi::rpm_t s_minRpm     = 4000;
-cdi::rpm_t s_maxRpm     = 12000;
+// Cross-core: WS handlers on core 0 toggle s_enabled and set the
+// thresholds; the GPIO ISR on core 1 and shouldCut() called from
+// the spark ISR (also core 1) read them. Mark volatile so the
+// compiler can't cache stale values past a function-call boundary.
+// 16/32-bit aligned writes on Xtensa are atomic at the word level.
+volatile bool       s_enabled    = false;
+bool                s_attached   = false;   // touched only from main task
+volatile uint16_t   s_cutMs      = 65;
+volatile cdi::rpm_t s_minRpm     = 4000;
+volatile cdi::rpm_t s_maxRpm     = 12000;
 
 volatile uint32_t s_cutUntilMs = 0;
 volatile uint32_t s_shiftCount = 0;
@@ -78,11 +83,16 @@ bool IRAM_ATTR shouldCut() {
     if (!s_enabled) return false;
     uint32_t until = s_cutUntilMs;
     if (until == 0) return false;
-    return millis() < until;
+    // Signed-difference comparison is wrap-safe across the 49.7-day
+    // millis() rollover. `millis() < until` would latch true for an
+    // entire wrap period if `until` straddles the boundary, holding
+    // ignition cut for ~49 days.
+    return (int32_t)(millis() - until) < 0;
 }
 
 bool isActive() {
-    return s_cutUntilMs > 0 && millis() < s_cutUntilMs;
+    if (s_cutUntilMs == 0) return false;
+    return (int32_t)(millis() - s_cutUntilMs) < 0;
 }
 
 uint32_t totalShifts() { return s_shiftCount; }
