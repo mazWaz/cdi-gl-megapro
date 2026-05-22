@@ -75,8 +75,6 @@ void setup() {
     // gap between power and the first instruction.
     pinMode(pin::SPARK_OUT, OUTPUT);
     digitalWrite(pin::SPARK_OUT, LOW);
-    pinMode(pin::CHARGE_OUT, OUTPUT);
-    digitalWrite(pin::CHARGE_OUT, HIGH);   // active-LOW → idle HIGH (step-up OFF)
     pinMode(pin::MODE_LED, OUTPUT);
     digitalWrite(pin::MODE_LED, LOW);
 
@@ -154,7 +152,7 @@ void loop() {
     cdi::core::shift_light::tick();          // cheap, can run every loop
     cdi::core::panic::poll();                // boot-button long-press → SAFE_HOLD
     cdi::core::launch::poll();               // debounced digital read
-    cdi::core::backfire::tick(cdi::core::rpm::current());
+    cdi::core::backfire::tick(cdi::core::rpm::raw());   // raw RPM for fast decel-edge detection
     cdi::core::alvp::tick();                   // sampled every 500ms internally
     cdi::telemetry::datalog::tick();           // sampled every 20ms internally
     cdi::core::pickup_cal::tick();             // auto-cal (drains scope ring when active)

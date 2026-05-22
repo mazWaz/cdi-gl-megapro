@@ -118,7 +118,22 @@ void tick() {
     }
 
     // ─── Rev limiter ───
-    cdi::rpm_t rpm = cdi::core::rpm::current();
+    // Use INSTANTANEOUS RPM (from latest period), not EMA-smoothed.
+    // At high RPM and rapid acceleration the smoothed value lags 5-8
+    // samples behind reality — a real overrev could exceed the limit
+    // by 200-500 rpm before the smoothed reading catches up. For an
+    // engine-protection limiter that's the wrong direction to err.
+    cdi::rpm_t rpm;
+    {
+        const cdi::micros_t period = cdi::core::rpm::lastPeriodUs();
+        if (period > 0) {
+            uint32_t inst = (uint32_t)(60000000ULL / period);
+            if (inst > 65535) inst = 65535;
+            rpm = (cdi::rpm_t)inst;
+        } else {
+            rpm = cdi::core::rpm::current();   // fallback before first period
+        }
+    }
 
     // ─── Absolute RPM ceiling (catches multi-tooth pickup, noise) ───
     // Bypass all configurable limits — this is a "something is broken"
@@ -183,8 +198,13 @@ void tick() {
                 s_progressivePct  = 0;
                 break;
             case cdi::CutMode::HARD_CUT:
-                // Force disarm immediately like overrev.
-                if (cdi::core::spark::isArmed()) cdi::core::spark::setArmed(false);
+                // PULSE-cut (shouldFire returns false) — do NOT
+                // setArmed(false). For 2-step launch the rider holds
+                // the clutch, expects spark to RESUME when rpm drops
+                // back below launch_rpm. Permanent disarm here would
+                // kill the engine after one launch attempt.
+                // OVER-REV path above is the only place a sticky
+                // disarm is appropriate (genuine fault, not a feature).
                 s_activeRetardDeg = 0.0f;
                 s_progressivePct  = 100;
                 break;

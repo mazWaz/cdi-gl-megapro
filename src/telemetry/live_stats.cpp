@@ -155,10 +155,20 @@ void tick() {
                           (unsigned)dwell_us, (unsigned)configured_dwell);
         }
 
-        // T10: dwell compensation by RPM curve.
+        // T10: dwell-compensation curve.
+        // Write to EFFECTIVE only — leaves the user-configured value
+        // (s_dwellUs, persisted in NVS) untouched so toggling the curve
+        // off restores the user's intent. Curve values are clamped by
+        // setEffectiveDwellUs to ≤ configured anyway, so the rider can
+        // never accidentally exceed their own dwell cap through the
+        // curve.
         if (cdi::core::dwell::isEnabled()) {
-            uint16_t dwell = cdi::core::dwell::lookup(r_inst);
-            cdi::core::spark::setDwellUs(dwell);
+            uint16_t curve_dwell = cdi::core::dwell::lookup(r_inst);
+            // Take the SMALLER of (live cap dwell_us we already computed
+            // above) and (curve value) so all three constraints —
+            // thermal cap, advance budget, RPM curve — compose safely.
+            uint16_t composed = (curve_dwell < dwell_us) ? curve_dwell : (uint16_t)dwell_us;
+            cdi::core::spark::setEffectiveDwellUs(composed);
         }
     }
 }

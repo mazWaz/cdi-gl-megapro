@@ -19,12 +19,18 @@ void onPulseCh1(cdi::micros_t ts) {
     if (s_lastCh1 == 0) { s_lastCh1 = ts; return; }
 
     cdi::micros_t period = ts - s_lastCh1;
-    s_lastCh1 = ts;
 
     if (period < MIN_PERIOD_US || period > MAX_PERIOD_US) {
-        // Noise / hiccup — keep previous smoothed value.
+        // Noise / hiccup — keep previous timestamp AND smoothed value.
+        // Critical: do NOT advance s_lastCh1 to a noise event, otherwise
+        // the next real edge computes period from the noise timestamp
+        // (short period → also rejected) and the cascade poisons every
+        // subsequent edge until rpm decays to zero. Keeping s_lastCh1
+        // anchored to the last KNOWN-GOOD edge lets a single noise spike
+        // self-recover on the next real pulse.
         return;
     }
+    s_lastCh1 = ts;
     s_lastPeriod = period;
 
     uint32_t inst = (uint32_t)(60000000ULL / period);
