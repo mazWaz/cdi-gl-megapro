@@ -49,4 +49,12 @@ State    state();
 // Used by safety to clamp main limit when DERATE active.
 bool isDerated();
 
+// Multiplier applied to spark dwell when DERATE active. At low
+// supply voltage, the coil takes longer to saturate to a given
+// primary current — extending dwell partially compensates so the
+// spark energy stays above misfire threshold. Returns 1.0 normal,
+// 1.3 when derated. live_stats applies this to the configured
+// dwell before passing it to the scheduler.
+float dwellMultiplier();
+
 } // namespace cdi::core::alvp

@@ -96,15 +96,40 @@ void tick(cdi::rpm_t rpm) {
     bool should_active = false;
 
     switch (s_trigger) {
-        case cdi::BackfireTrigger::BURBLE:
-            should_active = in_range;
+        case cdi::BackfireTrigger::BURBLE: {
+            // Random-pattern crackle: short bursts of retard interspersed
+            // with normal fires. Previous implementation kept retard
+            // active continuously across the entire RPM band, which
+            // made the engine unrideable (constant power loss).
+            //
+            // Algorithm: every 100 ms re-roll the window. With ~25 %
+            // probability open a `s_duration` retard window. Outside
+            // that window engine runs normally. Result: irregular pops
+            // at musical cadence while throttle is in the burble band.
+            if (in_range) {
+                if (now - s_lastSampMs >= 100) {
+                    s_lcg = s_lcg * 1664525U + 1013904223U;
+                    if (((s_lcg >> 24) & 0xFF) < 64) {   // 64/256 ≈ 25 %
+                        s_activeUntilMs = now + s_duration;
+                    }
+                    s_lastSampMs = now;
+                }
+                should_active = (int32_t)(now - s_activeUntilMs) < 0;
+            }
             break;
+        }
         case cdi::BackfireTrigger::LAUNCH:
             should_active = in_range && cdi::core::launch::isActive();
             break;
         case cdi::BackfireTrigger::DECEL: {
-            // sample RPM ~every 100ms; if drop > 500 → open window
-            if (now - s_lastSampMs >= 100) {
+            // sample RPM ~every 100ms; if drop > 500 → open window.
+            // millis() rolls over every 49.7 days. Comparing absolute
+            // timestamps (`now < s_activeUntilMs`) breaks at the
+            // wrap boundary — once `now` rolls past UINT32_MAX/2 from
+            // s_activeUntilMs the condition latches permanently true
+            // or permanently false. Use signed-difference comparison
+            // which stays correct across the wrap.
+            if ((int32_t)(now - s_lastSampMs) >= 100) {
                 int32_t drop = (int32_t)s_lastRpm - (int32_t)rpm;
                 if (drop > 500 && in_range) {
                     s_activeUntilMs = now + s_duration;
@@ -114,7 +139,7 @@ void tick(cdi::rpm_t rpm) {
                 s_lastRpm    = rpm;
                 s_lastSampMs = now;
             }
-            should_active = in_range && (now < s_activeUntilMs);
+            should_active = in_range && ((int32_t)(now - s_activeUntilMs) < 0);
             break;
         }
         default: should_active = false; break;

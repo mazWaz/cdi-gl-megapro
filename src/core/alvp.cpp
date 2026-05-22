@@ -9,21 +9,28 @@
 namespace cdi::core::alvp {
 namespace {
 
-bool       s_enabled       = false;   // default off — needs divider wired
-float      s_derateV       = 10.5f;
-float      s_disarmV       =  9.0f;
-cdi::rpm_t s_derateLimit   = 4000;
+// Cross-core: tick() runs on core 1, getters called from WS handlers
+// on core 0. volatile keeps the compiler from caching values in
+// registers past a function boundary so a state change observed in
+// tick is visible to safety::tick / live_stats::tick consumers on
+// the next iteration. 32-bit aligned single-word writes on Xtensa
+// are atomic at the word level so no additional locking is needed
+// for these primitives (the enum + bool + uint16/float all fit).
+volatile bool       s_enabled       = false;   // default off — needs divider wired
+volatile float      s_derateV       = 10.5f;
+volatile float      s_disarmV       =  9.0f;
+volatile cdi::rpm_t s_derateLimit   = 4000;
 
-uint32_t   s_lastSampleMs  = 0;
-uint32_t   s_stateSinceMs  = 0;
-State      s_state         = State::NORMAL;
-State      s_pendingState  = State::NORMAL;
+uint32_t            s_lastSampleMs  = 0;       // touched only by tick (core 1)
+uint32_t            s_stateSinceMs  = 0;       // touched only by tick (core 1)
+volatile State      s_state         = State::NORMAL;
+State               s_pendingState  = State::NORMAL;   // tick-local
 
 // 8-sample moving average of raw ADC.
 static constexpr size_t WIN = 8;
-uint16_t   s_buf[WIN] = {0};
-uint8_t    s_idx      = 0;
-uint16_t   s_lastMv   = 0;
+uint16_t            s_buf[WIN] = {0};          // tick-local
+uint8_t             s_idx      = 0;            // tick-local
+volatile uint16_t   s_lastMv   = 0;            // published to UI getter
 
 constexpr uint32_t SAMPLE_INTERVAL_MS = 500;
 constexpr uint32_t HYSTERESIS_MS      = 2000;
@@ -84,6 +91,13 @@ cdi::rpm_t derateLimitRpm() { return s_derateLimit; }
 uint16_t vbatMv()  { return s_lastMv; }
 State    state()   { return s_state; }
 bool     isDerated(){ return s_enabled && s_state == State::DERATE; }
+
+float dwellMultiplier() {
+    // 30% extension when derated, matching the plan's voltage
+    // compensation target. Bounded at the source so a future
+    // change can't introduce a runaway multiplier.
+    return isDerated() ? 1.30f : 1.0f;
+}
 
 void tick() {
     uint32_t now = millis();

@@ -100,7 +100,14 @@ void tick() {
         const uint32_t safe_dwell_cap   = (uint32_t)((float)periodU * 0.4f);
         constexpr uint32_t MIN_USEFUL_DWELL = 200;   // µs
 
-        uint32_t dwell_us = configured_dwell;
+        // ALVP boost: at low supply voltage the coil needs longer to
+        // saturate to a given primary current — extend dwell to keep
+        // spark energy above the misfire floor. Multiplier is 1.0 when
+        // ALVP is disabled or vbat is normal, 1.3 when derated. The
+        // thermal cap below still bounds the result, so this can never
+        // run the coil hotter than the duty-cycle ceiling.
+        uint32_t dwell_us = (uint32_t)((float)configured_dwell *
+                                       cdi::core::alvp::dwellMultiplier());
         if (dwell_us > safe_dwell_cap) dwell_us = safe_dwell_cap;
 
         if (cdi::core::spark::inductive()) {
