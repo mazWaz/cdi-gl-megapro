@@ -22,18 +22,20 @@ bool s_overRevCut  = false;
 uint32_t s_overrevHits = 0;
 constexpr uint32_t OVERREV_CONFIRM = 3;
 
-// Latches once we've seen genuinely valid RPM SUSTAINED across
-// `VALID_RPM_STREAK_TICKS` consecutive 100 ms safety ticks (=1 s
-// of continuous engine signal). A single noisy spike where rpm_calc
-// briefly outputs >100 RPM — e.g. from coil EM coupling onto the
-// pulser pins — does NOT flip the latch and therefore can't arm
-// the no-signal failsafe spuriously.
+// Latches once we've seen a genuinely RUNNING engine — defined as
+// RPM ≥ RPM_LATCH_THRESHOLD sustained across `VALID_RPM_STREAK_TICKS`
+// consecutive 100 ms safety ticks. Threshold is set above kick-start
+// transient territory (300-400 RPM peaks during cranking) so failed
+// start attempts don't latch and therefore don't engage the no-signal
+// failsafe. A real idling engine (≥500 RPM sustained 3 s) does latch.
 //
 // Reset by clearFlags(). The no-signal failsafe only trips after
 // this is true.
+constexpr uint16_t RPM_LATCH_THRESHOLD     = 500;  // above kick transient
+constexpr uint8_t  VALID_RPM_STREAK_TICKS  = 30;   // 30 × 100 ms = 3 s
+
 bool     s_haveSeenValidRpm  = false;
 uint8_t  s_validRpmStreak    = 0;
-constexpr uint8_t VALID_RPM_STREAK_TICKS = 10;   // 10 × 100 ms = 1 s
 
 // Cut-mode configuration (main band only).
 volatile cdi::CutMode s_mainCutMode = cdi::CutMode::SOFT_RETARD;
@@ -82,16 +84,22 @@ void tick() {
     // after that, signal staleness == genuine fault.
     {
         cdi::rpm_t rpm_now = cdi::core::rpm::current();
-        if (rpm_now >= (cdi::rpm_t)cdi::config::RPM_MIN_VALID) {
+        if (rpm_now >= RPM_LATCH_THRESHOLD) {
             if (s_validRpmStreak < 255) s_validRpmStreak++;
-            if (s_validRpmStreak >= VALID_RPM_STREAK_TICKS) {
+            if (s_validRpmStreak >= VALID_RPM_STREAK_TICKS && !s_haveSeenValidRpm) {
                 s_haveSeenValidRpm = true;
+                Serial.printf("[safety] engine latched as RUNNING "
+                              "(%u rpm sustained %u ticks) — no-signal failsafe now armed\n",
+                              (unsigned)rpm_now, (unsigned)s_validRpmStreak);
             }
         } else {
-            // RPM dropped below valid threshold — reset streak. The
-            // latch itself stays set if it was already set; only a
-            // fresh arm (clearFlags) drops it again. That way the
-            // genuine "engine ran and now stalled" case still trips.
+            // RPM dropped below the running threshold. Reset the
+            // streak counter so a future re-run has to qualify again
+            // from scratch. The latch itself stays set if it was
+            // already set; only a fresh arm (clearFlags) drops it
+            // again. That way the genuine "engine ran then stalled"
+            // case still trips the no-signal failsafe at the next
+            // safety tick.
             s_validRpmStreak = 0;
         }
     }
