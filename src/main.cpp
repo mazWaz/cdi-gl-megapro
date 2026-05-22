@@ -102,9 +102,14 @@ void setup() {
     cdi::scope::snapshot::begin();
 
     cdi::core::advance::active().loadDefaultMegapro();
+    // Network bring-up (WiFi + HTTP only). WebSocket handler is
+    // deliberately deferred to AFTER all engine modules are
+    // initialized — otherwise a phone that re-associates within the
+    // ~10 ms window between ws_server::begin and spark::begin could
+    // hit setArmed / manualFire while s_fireOnTimer is still null,
+    // crashing the firmware on the first reboot of the day.
     cdi::net::wifi_ap::begin();
     cdi::net::http_server::begin();
-    cdi::net::ws_server::begin();
     cdi::net::ota::registerRoutes(cdi::net::http_server::server());
     cdi::core::spark::begin();                     // claim GPIO + hw timers (disarmed)
     cdi::core::safety::begin();                    // register WDT, init rev limits
@@ -119,6 +124,8 @@ void setup() {
     cdi::storage::config::begin();                 // spawn core-0 persist task + sync primitives
     cdi::storage::config::load();                  // load saved settings if any
     cdi::core::mode::begin();                      // default = IGNITION
+    // All engine state is now consistent — open the WebSocket door.
+    cdi::net::ws_server::begin();
 
     // Honor auto-arm preference (loaded from NVS).
     if (cdi::core::spark::autoArm() &&

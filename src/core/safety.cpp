@@ -12,15 +12,20 @@
 namespace cdi::core::safety {
 namespace {
 
-uint32_t s_mainLimit    = cdi::config::DEFAULT_REV_LIMIT_MAIN_RPM;
-uint32_t s_overrevLimit = cdi::config::DEFAULT_REV_LIMIT_OVERREV_RPM;
+// Cross-core access: setRevLimits called from WS handlers (core 0)
+// writes these; safety::tick on core 1 reads. Word-aligned 32-bit
+// writes are atomic on Xtensa, but `volatile` is needed so the
+// compiler does not cache stale values in a register past a
+// context switch / function boundary.
+volatile uint32_t s_mainLimit    = cdi::config::DEFAULT_REV_LIMIT_MAIN_RPM;
+volatile uint32_t s_overrevLimit = cdi::config::DEFAULT_REV_LIMIT_OVERREV_RPM;
 
-bool s_revLimited        = false;
-bool s_noSignal          = false;
-bool s_overRevCut        = false;
+volatile bool s_revLimited        = false;
+volatile bool s_noSignal          = false;
+volatile bool s_overRevCut        = false;
 // No-signal failsafe is OFF by default. Rev limiter + absolute RPM
 // ceiling are still active. Enable explicitly via UI when riding.
-bool s_noSignalEnabled   = false;
+volatile bool s_noSignalEnabled   = false;
 
 uint32_t s_overrevHits = 0;
 constexpr uint32_t OVERREV_CONFIRM = 3;

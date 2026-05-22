@@ -48,6 +48,15 @@ public:
     //   * Points monotonically non-decreasing in RPM
     static const char* validateForSafety(const Point* pts, size_t n);
 
+    // Atomic copy assignment — protected by the module's portMUX
+    // spinlock so a concurrent lookup on the other core can't read
+    // a half-updated points_ array. Required because the WS handler
+    // (core 0) often does `active() = fresh;` while live_stats on
+    // core 1 reads the same instance every spark cycle.
+    Map& operator=(const Map& other);
+    Map() = default;
+    Map(const Map&) = default;   // construction is always single-thread
+
 private:
     Point  points_[cdi::config::MAX_ADVANCE_POINTS];
     size_t count_ = 0;

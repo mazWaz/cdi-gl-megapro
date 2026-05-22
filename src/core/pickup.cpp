@@ -8,10 +8,18 @@ namespace {
 // Defaults from compile-time constants — overwritten as soon as
 // preset::apply runs in setup(). These remain a safe fallback if
 // preset application fails for any reason.
-float       s_max_advance_ref_deg = cdi::config::MAX_ADVANCE_FROM_CH1_DEG;
-float       s_magnet_width_deg    = cdi::config::MAGNET_ANGULAR_WIDTH_DEG;
-bool        s_override            = false;
-const char* s_source              = "preset";
+//
+// `volatile` is required because these are read by live_stats on
+// core 1 every spark cycle and written by WS handlers (setPickup*)
+// on core 0. Without volatile the compiler is free to cache the
+// register value, so a UI-side calibration change wouldn't take
+// effect until the next context switch or function-boundary spill.
+// 32-bit aligned writes on Xtensa are atomic at the word level, so
+// no additional locking is needed for these primitives.
+volatile float       s_max_advance_ref_deg = cdi::config::MAX_ADVANCE_FROM_CH1_DEG;
+volatile float       s_magnet_width_deg    = cdi::config::MAGNET_ANGULAR_WIDTH_DEG;
+volatile bool        s_override            = false;
+const char* volatile s_source              = "preset";
 
 } // anonymous
 

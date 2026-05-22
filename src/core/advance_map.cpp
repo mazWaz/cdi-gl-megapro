@@ -2,11 +2,22 @@
 
 #include <Arduino.h>
 #include <algorithm>
+#include <freertos/FreeRTOS.h>
+#include <freertos/portmacro.h>
 
 namespace cdi::core::advance {
 namespace {
 
 Map s_active;
+
+// Spinlock — protects s_active across cores. WS handlers on core 0
+// modify the map via Map::set/loadFromJson/loadDefaultMegapro while
+// live_stats::tick on core 1 reads via Map::lookup per spark cycle.
+// portMUX gives mutual exclusion across cores AND against same-core
+// preemption, with near-zero overhead (~100 cycles when uncontended).
+// Critical section length: ~100 µs for full 32-point copy, ~400 ns
+// for one lookup — utilisation negligible.
+portMUX_TYPE s_mapMux = portMUX_INITIALIZER_UNLOCKED;
 
 bool inRange(cdi::rpm_t rpm, float deg) {
     return rpm >= cdi::config::RPM_MIN_VALID && rpm <= cdi::config::RPM_MAX_VALID
@@ -54,11 +65,16 @@ bool Map::set(const Point* pts, size_t n) {
         if (!inRange(pts[i].rpm, pts[i].deg)) return false;
     }
     // Engine-safety validation — reject obviously dangerous maps.
-    // Logs reason to Serial so caller can see why apply was rejected.
     if (const char* err = validateForSafety(pts, n)) {
         Serial.printf("[advance] map rejected: %s\n", err);
         return false;
     }
+    // Cross-core critical section: live_stats::tick (core 1) reads
+    // points_/count_ via lookup() concurrently with this write
+    // (called from WS handler on core 0). Without the spinlock the
+    // reader could see a torn copy mid-update and fire spark at a
+    // wrong crank angle for one cycle.
+    portENTER_CRITICAL(&s_mapMux);
     for (size_t i = 0; i < n; i++) points_[i] = pts[i];
     count_ = n;
     // sort by rpm ascending (insertion-sort is plenty for n <= 32)
@@ -71,13 +87,14 @@ bool Map::set(const Point* pts, size_t n) {
         }
         points_[j] = key;
     }
+    portEXIT_CRITICAL(&s_mapMux);
     return true;
 }
 
 bool Map::addPoint(cdi::rpm_t rpm, float deg) {
     if (count_ >= cdi::config::MAX_ADVANCE_POINTS) return false;
     if (!inRange(rpm, deg)) return false;
-    // insert sorted
+    portENTER_CRITICAL(&s_mapMux);
     size_t i = count_;
     while (i > 0 && points_[i - 1].rpm > rpm) {
         points_[i] = points_[i - 1];
@@ -85,22 +102,35 @@ bool Map::addPoint(cdi::rpm_t rpm, float deg) {
     }
     points_[i] = { rpm, deg };
     count_++;
+    portEXIT_CRITICAL(&s_mapMux);
     return true;
 }
 
 float Map::lookup(cdi::rpm_t rpm) const {
-    if (count_ == 0) return cdi::config::BASE_ADVANCE_FROM_CH2_DEG; // safe default
-    if (rpm <= points_[0].rpm)               return points_[0].deg;
-    if (rpm >= points_[count_ - 1].rpm)      return points_[count_ - 1].deg;
-    // find segment [i, i+1] containing rpm
-    for (size_t i = 0; i + 1 < count_; i++) {
-        if (rpm >= points_[i].rpm && rpm <= points_[i + 1].rpm) {
-            float t = (float)(rpm - points_[i].rpm) /
-                      (float)(points_[i + 1].rpm - points_[i].rpm);
-            return points_[i].deg + t * (points_[i + 1].deg - points_[i].deg);
+    // Brief spinlock against concurrent map mutation on core 0.
+    // Critical section is just a few interpolation operations
+    // (~400 ns @ 240 MHz) — overhead per fire is negligible.
+    portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&s_mapMux));
+    float result;
+    if (count_ == 0) {
+        result = cdi::config::BASE_ADVANCE_FROM_CH2_DEG;
+    } else if (rpm <= points_[0].rpm) {
+        result = points_[0].deg;
+    } else if (rpm >= points_[count_ - 1].rpm) {
+        result = points_[count_ - 1].deg;
+    } else {
+        result = points_[count_ - 1].deg;
+        for (size_t i = 0; i + 1 < count_; i++) {
+            if (rpm >= points_[i].rpm && rpm <= points_[i + 1].rpm) {
+                float t = (float)(rpm - points_[i].rpm) /
+                          (float)(points_[i + 1].rpm - points_[i].rpm);
+                result = points_[i].deg + t * (points_[i + 1].deg - points_[i].deg);
+                break;
+            }
         }
     }
-    return points_[count_ - 1].deg;
+    portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&s_mapMux));
+    return result;
 }
 
 bool Map::loadFromJson(const JsonArrayConst& arr) {
@@ -139,6 +169,17 @@ void Map::loadDefaultMegapro() {
         {10000, 32.0f },
     };
     set(megapro, sizeof(megapro) / sizeof(megapro[0]));
+}
+
+Map& Map::operator=(const Map& other) {
+    if (this == &other) return *this;
+    portENTER_CRITICAL(&s_mapMux);
+    for (size_t i = 0; i < other.count_; i++) {
+        points_[i] = other.points_[i];
+    }
+    count_ = other.count_;
+    portEXIT_CRITICAL(&s_mapMux);
+    return *this;
 }
 
 Map& active() { return s_active; }
