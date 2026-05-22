@@ -206,6 +206,13 @@ void manualFire(uint32_t dwell_override_us) {
 // before disarm). Period below this floor → RPM above ceiling →
 // refuse to schedule.
 constexpr uint32_t MIN_PERIOD_HARD_US = 60000000UL / 16000;  // 16000 rpm ceiling
+// 2-second period = ~30 rpm. If the gap since the last CH1 exceeds
+// this, the engine has either stalled or never started, and any
+// cached s_nextDelayUs from a previous run is meaningless. Treat
+// the new edge as a fresh session: re-anchor s_lastCh1IsrTs and
+// skip this fire (live_stats will compute a valid delay on the
+// next cycle once a fresh period is available).
+constexpr uint32_t MAX_PERIOD_HARD_US = 2000000UL;
 
 static cdi::micros_t s_lastCh1IsrTs = 0;   // for ISR-local period check
 
@@ -222,17 +229,39 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     // above the absolute ceiling — catches noise-induced or
     // mechanically-impossible RPM spikes before they ever drive
     // GPIO25 or charge the primary.
-    if (s_lastCh1IsrTs != 0) {
-        // 32-bit modular subtraction — wraps correctly when the
-        // underlying Arduino micros() counter rolls over every
-        // ~71 minutes. See rpm_calc.cpp for the long-form explanation.
-        const uint32_t inst_period = (uint32_t)t_lead - (uint32_t)s_lastCh1IsrTs;
-        if (inst_period < MIN_PERIOD_HARD_US) {
-            // RPM exceeds ceiling — skip this fire. Don't update
-            // s_lastCh1IsrTs so the NEXT real CH1 (longer period
-            // from us) reads correctly.
-            return;
-        }
+    // ─── First-pulse-after-arm safe skip ───
+    // s_lastCh1IsrTs == 0 means this is the very first CH1 since
+    // begin() or since the engine fully stopped (no period info
+    // available, and s_nextDelayUs is whatever stale value loop
+    // last computed — possibly 0). Firing now would land at
+    // delay=0 → fire-on at t_lead = 32° BTDC at cranking RPM, a
+    // textbook kickback geometry. Skip this one fire, record the
+    // timestamp, and let the next CH1 fire with a known period.
+    // One missed spark on first crank is invisible; a 32° fire at
+    // 200 rpm during compression can break the user's ankle.
+    if (s_lastCh1IsrTs == 0) {
+        s_lastCh1IsrTs = t_lead;
+        return;
+    }
+    // 32-bit modular subtraction — wraps correctly when the
+    // underlying Arduino micros() counter rolls over every
+    // ~71 minutes. See rpm_calc.cpp for the long-form explanation.
+    const uint32_t inst_period = (uint32_t)t_lead - (uint32_t)s_lastCh1IsrTs;
+    if (inst_period < MIN_PERIOD_HARD_US) {
+        // RPM exceeds ceiling — skip this fire. Don't update
+        // s_lastCh1IsrTs so the NEXT real CH1 (longer period
+        // from us) reads correctly.
+        return;
+    }
+    if (inst_period > MAX_PERIOD_HARD_US) {
+        // Engine restarted after a long pause (stall / kickstart
+        // pause / power-cycle of mechanical system but not the
+        // ESP). Cached s_nextDelayUs reflects a previous RPM
+        // regime — applying it now would fire at a wrong angle.
+        // Re-anchor and skip this fire; next cycle has a valid
+        // fresh period.
+        s_lastCh1IsrTs = t_lead;
+        return;
     }
     s_lastCh1IsrTs = t_lead;
 
