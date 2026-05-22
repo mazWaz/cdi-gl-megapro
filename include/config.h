@@ -35,8 +35,11 @@ constexpr uint32_t DEFAULT_REV_LIMIT_OVERREV_RPM = 11500;
 constexpr uint32_t DEFAULT_REV_LIMIT_LAUNCH_RPM  = 5000;
 constexpr uint32_t DEFAULT_DWELL_US              = 2500;
 
-// Sanity bounds — anything outside is rejected as noise/error
-constexpr uint32_t RPM_MIN_VALID = 100;
+// Sanity bounds — anything outside is rejected as noise/error.
+// MIN must be low enough to accept kick / electric-start cranking
+// (typical 50-300 rpm). Anything below 30 rpm is almost certainly
+// a stuck pulser line.
+constexpr uint32_t RPM_MIN_VALID = 30;
 constexpr uint32_t RPM_MAX_VALID = 15000;
 constexpr float    ADVANCE_MIN_DEG = 0.0f;
 constexpr float    ADVANCE_MAX_DEG = 45.0f;
