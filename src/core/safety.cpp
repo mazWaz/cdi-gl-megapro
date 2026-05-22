@@ -15,9 +15,12 @@ namespace {
 uint32_t s_mainLimit    = cdi::config::DEFAULT_REV_LIMIT_MAIN_RPM;
 uint32_t s_overrevLimit = cdi::config::DEFAULT_REV_LIMIT_OVERREV_RPM;
 
-bool s_revLimited  = false;
-bool s_noSignal    = false;
-bool s_overRevCut  = false;
+bool s_revLimited        = false;
+bool s_noSignal          = false;
+bool s_overRevCut        = false;
+// No-signal failsafe is OFF by default. Rev limiter + absolute RPM
+// ceiling are still active. Enable explicitly via UI when riding.
+bool s_noSignalEnabled   = false;
 
 uint32_t s_overrevHits = 0;
 constexpr uint32_t OVERREV_CONFIRM = 3;
@@ -103,7 +106,7 @@ void tick() {
             s_validRpmStreak = 0;
         }
     }
-    if (cdi::core::spark::isArmed() && s_haveSeenValidRpm) {
+    if (s_noSignalEnabled && cdi::core::spark::isArmed() && s_haveSeenValidRpm) {
         cdi::micros_t last = cdi::core::rpm::lastCh1Us();
         if (last != 0 &&
             (now_us - last) > (cdi::micros_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000ULL) {
@@ -285,5 +288,15 @@ void clearFlags() {
     s_haveSeenValidRpm = false;   // fresh arm — wait for real signal again
     s_validRpmStreak   = 0;
 }
+
+void setNoSignalEnabled(bool en) {
+    s_noSignalEnabled = en;
+    if (!en) {
+        // Drop sticky flag too so UI immediately reflects disabled state.
+        s_noSignal = false;
+    }
+    Serial.printf("[safety] no-signal failsafe = %s\n", en ? "ENABLED" : "DISABLED");
+}
+bool noSignalEnabled() { return s_noSignalEnabled; }
 
 } // namespace cdi::core::safety

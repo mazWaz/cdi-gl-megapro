@@ -59,4 +59,13 @@ float currentRetardDeg();
 // re-arms after a failsafe).
 void clearFlags();
 
+// ── No-signal failsafe toggle ──
+// When disabled, the safety supervisor no longer auto-disarms on
+// pulser signal loss. Rev limiter (main + overrev) and the absolute
+// RPM ceiling guard stay active. Default: DISABLED — bench testing
+// without a real pulser was the recurring frustration. Enable for
+// real-road use so a mid-ride cable cut still stops firing.
+void setNoSignalEnabled(bool en);
+bool noSignalEnabled();
+
 } // namespace cdi::core::safety
