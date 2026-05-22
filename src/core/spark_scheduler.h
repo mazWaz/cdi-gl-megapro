@@ -43,8 +43,12 @@ bool autoArm();
 
 // Set the next-cycle fire delay (microseconds from CH1 falling edge to
 // spark fire). Updated by live_stats every loop tick from the latest
-// RPM + advance map lookup. Safe to call from any context.
-void setNextDelayUs(uint32_t delay_us);
+// RPM + advance map lookup. `basis_period_us` is the period used to
+// compute that delay — the ISR compares it against the instantaneous
+// period of the next CH1 and rejects the fire if RPM has changed by
+// more than 2× since the delay was computed. Safe to call from any
+// context.
+void setNextDelayUs(uint32_t delay_us, uint32_t basis_period_us);
 
 // Configure spark pulse width / primary charge time. This is the
 // user-intended value persisted to NVS; live_stats may apply a

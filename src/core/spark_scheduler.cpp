@@ -29,6 +29,16 @@ volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop
 // Cleared on long-stall re-anchor so a stalled-then-restarted engine
 // also re-primes before firing.
 volatile bool     s_delayPrimed   = false;
+// Period that live_stats used to compute s_nextDelayUs. The ISR
+// compares its measured inst_period against this and rejects the
+// fire if they differ by more than 2× — meaning RPM swung enough
+// in one cycle that the cached delay is meaningfully wrong for the
+// current crank position. This matters during kickstart (where
+// CH1-to-CH1 RPM can drop 825 → 33 between strokes) and during
+// hard decel. Real-world data: kick CSV showed period 72ms → 1.8s
+// in one cycle, which would have fired at 32° BTDC at 33 rpm with
+// a delay computed for 825 rpm.
+volatile uint32_t s_delayBasisPeriodUs = 0;
 volatile uint32_t s_dwellUs            = cdi::config::DEFAULT_DWELL_US;  // configured (user)
 volatile uint32_t s_effectiveDwellUs   = cdi::config::DEFAULT_DWELL_US;  // ISR-side actual
 volatile float    s_advanceOffsetDeg = 0.0f;
@@ -155,13 +165,14 @@ void setAutoArm(bool en) {
 }
 bool autoArm() { return s_autoArm; }
 
-void setNextDelayUs(uint32_t d) {
+void setNextDelayUs(uint32_t d, uint32_t basis_period_us) {
     if (d < MIN_DELAY_US) d = MIN_DELAY_US;
     if (d > MAX_DELAY_US) d = MAX_DELAY_US;
-    s_nextDelayUs = d;
+    s_nextDelayUs        = d;
+    s_delayBasisPeriodUs = basis_period_us;
     // Live_stats called us, which means it has a valid period. From
     // here on the ISR is allowed to fire on s_nextDelayUs.
-    s_delayPrimed = true;
+    s_delayPrimed        = true;
 }
 
 void setDwellUs(uint32_t d) {
@@ -312,6 +323,33 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     // user's ankle.
     if (!s_delayPrimed) {
         return;
+    }
+
+    // ─── Period-drift gate ───
+    // Analysis of real kick-crank captures (.temp/data_cek.csv)
+    // showed period swinging 72 ms → 1.8 s between consecutive CH1
+    // falls during kickstart. Even within the "valid" cranking
+    // window (< MAX_PERIOD_HARD_US), an RPM swing of >2× in one
+    // cycle means s_nextDelayUs was computed against a now-very-
+    // wrong period — applying that delay to the new period places
+    // the fire at an arbitrary crank angle. Skipping this fire and
+    // letting live_stats recompute on the next iteration costs one
+    // missed spark; firing on stale delay risks kickback when the
+    // user gets the busi reinstalled.
+    //
+    // Guard against divide-by-zero / first-prime case where the
+    // basis hasn't been written yet (still 0 from cold init).
+    if (s_delayBasisPeriodUs > 0) {
+        // ratio = inst_period / basis × 100, integer math
+        // 50 < ratio < 200 ⇒ within 2× either direction
+        const uint64_t ratio_x100 =
+            (uint64_t)inst_period * 100ULL / (uint64_t)s_delayBasisPeriodUs;
+        if (ratio_x100 < 50 || ratio_x100 > 200) {
+            // Force re-prime so live_stats computes a fresh delay
+            // for the new period before any further fire.
+            s_delayPrimed = false;
+            return;
+        }
     }
 
     uint32_t delay = s_nextDelayUs;

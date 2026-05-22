@@ -144,7 +144,11 @@ void tick() {
             // subtraction.
             scheduler_delay_us = spark_delay_us;
         }
-        cdi::core::spark::setNextDelayUs(scheduler_delay_us);
+        // Pass periodU so the spark ISR's period-drift gate can
+        // reject this delay if the next CH1's instantaneous period
+        // is dramatically different — cranking RPM is unstable and
+        // CH1-to-CH1 RPM can swing >2× during kickstart.
+        cdi::core::spark::setNextDelayUs(scheduler_delay_us, (uint32_t)periodU);
 
         // ── Diagnostic: print effective spark angle to Serial once per
         // second so a USB-connected user can verify the firmware is
