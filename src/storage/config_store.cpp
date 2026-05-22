@@ -367,7 +367,13 @@ void saveNow() {
     String json;
     serializeJson(doc, json);
 
-    if (xSemaphoreTake(s_bufferMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    // 5 ms is a generous 50× safety margin over the actual contended
+    // critical section (~100 µs String copy in the persist task).
+    // Originally 50 ms, which was wrong for a hot-loop caller — at
+    // worst it would block the main loop for nearly a full safety
+    // tick. If somehow contended longer than 5 ms, drop the snapshot
+    // (debounce will re-fire on the next tick anyway).
+    if (xSemaphoreTake(s_bufferMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
         s_pendingJson = json;       // last write wins (debounce-coalesce)
         xSemaphoreGive(s_bufferMutex);
     } else {
