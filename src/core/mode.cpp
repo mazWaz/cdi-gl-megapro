@@ -9,7 +9,14 @@
 namespace cdi::core::mode {
 namespace {
 
-OperatingMode s_mode = OperatingMode::BOOT;
+// Written by mode::set (called from main loop / panic on core 1, and
+// from WS handlers on core 0). Read by main loop, live_stats,
+// ws_server, and the WS broadcast path. Volatile prevents the
+// compiler from caching across function boundaries — a UI toggle
+// to SAFE_HOLD must become visible to the IGNITION-gated loop
+// branches on the next iteration. Enum + uint8 backing is atomic
+// at the word level on Xtensa.
+volatile OperatingMode s_mode = OperatingMode::BOOT;
 
 void enterIgnition() {
     cdi::core::pulser::begin();

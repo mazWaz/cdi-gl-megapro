@@ -35,11 +35,19 @@ void IRAM_ATTR isrCh1() {
     ev.ts_us   = t;
     ev.channel = cdi::PulserChannel::CH1;
     ev.level   = lvl;
-    s_ignRing.pushFromIsr(ev);
+    // Ignition ring carries only CH1 falling edges — the single
+    // event class live_stats actually consumes for RPM/timing. CH1
+    // rising edges and all CH2 events go only to the scope ring
+    // (which the diagnostic UI drains). This keeps the hot-path
+    // ring small enough that a few-ms loop pause can't overflow it
+    // at high RPM (was ~1000 ev/s with all four edges, now ~270 ev/s
+    // at 16k rpm — 8× headroom on the 32-entry ring).
+    if (lvl == 0) {
+        s_ignRing.pushFromIsr(ev);
+        cdi::core::spark::onPulseCh1FromIsr(t);
+    }
     if (!s_scopeRing.pushFromIsr(ev)) s_scopeOverruns++;
     s_total++;
-    // Spark scheduler only acts on FALLING (lvl==0).
-    if (lvl == 0) cdi::core::spark::onPulseCh1FromIsr(t);
 }
 
 void IRAM_ATTR isrCh2() {
@@ -49,7 +57,8 @@ void IRAM_ATTR isrCh2() {
     ev.ts_us   = t;
     ev.channel = cdi::PulserChannel::CH2;
     ev.level   = lvl;
-    s_ignRing.pushFromIsr(ev);
+    // CH2 is reference-only for scope/pickup-cal — never feeds the
+    // ignition consumer.
     if (!s_scopeRing.pushFromIsr(ev)) s_scopeOverruns++;
     s_total++;
 }

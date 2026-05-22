@@ -153,9 +153,18 @@ uint32_t configuredDwellUs() { return s_dwellUs; }
 void setEffectiveDwellUs(uint32_t d) {
     // Floor at 200µs (below which inductive saturation is too weak).
     if (d < 200) d = 200;
-    // Ceiling at configured value — live cap can only make dwell
-    // SHORTER, never longer than the user requested.
-    if (d > s_dwellUs) d = s_dwellUs;
+    // Absolute hardware ceiling matching setDwellUs() — protects the
+    // coil regardless of caller intent. Previously this clamped to
+    // s_dwellUs (the user-configured value) on the principle that
+    // live caps should only shorten, never extend. That principle
+    // silently nullified ALVP's dwell-boost: at low supply voltage
+    // the system needs to extend dwell beyond configured to keep
+    // spark energy above misfire floor, exactly the opposite of
+    // "only shorten." live_stats already enforces the real safety
+    // bounds upstream (40 % period thermal cap, advance-budget cap,
+    // useful-spark floor), so the absolute ceiling here is the only
+    // remaining backstop.
+    if (d > 8000) d = 8000;
     s_effectiveDwellUs = d;
 }
 uint32_t effectiveDwellUs() { return s_effectiveDwellUs; }
