@@ -20,12 +20,14 @@ volatile bool     s_autoArm       = false;
 volatile bool     s_activeLow     = false;   // false=active-HIGH (default)
 volatile bool     s_inductive     = true;    // true=TCI (default), false=CDI/SCR
 volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop
-volatile uint32_t s_dwellUs       = cdi::config::DEFAULT_DWELL_US;
+volatile uint32_t s_dwellUs            = cdi::config::DEFAULT_DWELL_US;  // configured (user)
+volatile uint32_t s_effectiveDwellUs   = cdi::config::DEFAULT_DWELL_US;  // ISR-side actual
 volatile float    s_advanceOffsetDeg = 0.0f;
 
 volatile uint32_t s_fireCount     = 0;
 volatile int32_t  s_lastJitterUs  = 0;
 volatile cdi::micros_t s_scheduledFireUs = 0;
+volatile bool     s_dwellInProgress = false;   // GPIO is in active (charging) state
 
 constexpr uint32_t MIN_DELAY_US = 50;        // safety floor
 // Ceiling must accommodate cranking RPM. At 30 rpm (period 2 s) a
@@ -53,14 +55,15 @@ void IRAM_ATTR isrFireOn() {
     // ACTIVE-LOW:  GPIO25 → 0V,  PNP/PMOS ON.
     sparkActive(cdi::pins::SPARK_OUT);
     gpioHigh(cdi::pins::MODE_LED);    // visible LED stays active-HIGH
+    s_dwellInProgress = true;
 
     // Arm fire-off timer for now + dwell.
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    timerAlarm(s_fireOffTimer, s_dwellUs, false, 0);
+    timerAlarm(s_fireOffTimer, s_effectiveDwellUs, false, 0);
 #else
     timerAlarmDisable(s_fireOffTimer);
     timerRestart(s_fireOffTimer);
-    timerAlarmWrite(s_fireOffTimer, s_dwellUs, false);
+    timerAlarmWrite(s_fireOffTimer, s_effectiveDwellUs, false);
     timerAlarmEnable(s_fireOffTimer);
 #endif
 
@@ -74,6 +77,7 @@ void IRAM_ATTR isrFireOff() {
     // End charge phase → coil collapse → spark on this edge.
     sparkIdle(cdi::pins::SPARK_OUT);
     gpioLow(cdi::pins::MODE_LED);
+    s_dwellInProgress = false;
     s_fireCount++;
 
 #if ESP_ARDUINO_VERSION_MAJOR < 3
@@ -140,9 +144,21 @@ void setDwellUs(uint32_t d) {
     if (d < 500)  d = 500;
     if (d > 8000) d = 8000;
     s_dwellUs = d;
-    // no log — called every loop tick when dwell curve enabled.
+    // Effective tracks configured when no live cap is active.
+    s_effectiveDwellUs = d;
 }
-uint32_t dwellUs() { return s_dwellUs; }
+uint32_t dwellUs()           { return s_dwellUs; }
+uint32_t configuredDwellUs() { return s_dwellUs; }
+
+void setEffectiveDwellUs(uint32_t d) {
+    // Floor at 200µs (below which inductive saturation is too weak).
+    if (d < 200) d = 200;
+    // Ceiling at configured value — live cap can only make dwell
+    // SHORTER, never longer than the user requested.
+    if (d > s_dwellUs) d = s_dwellUs;
+    s_effectiveDwellUs = d;
+}
+uint32_t effectiveDwellUs() { return s_effectiveDwellUs; }
 
 void setAdvanceOffsetDeg(float deg) {
     if (deg < -10.0f) deg = -10.0f;
@@ -156,15 +172,16 @@ void manualFire(uint32_t dwell_override_us) {
     // Optional dwell override for bench diagnostic — temporarily
     // swap s_dwellUs, schedule fire, restore after the fire-off ISR
     // would have completed. (Worst-case dwell + safety margin.)
-    const uint32_t saved_dwell = s_dwellUs;
+    const uint32_t saved_effective = s_effectiveDwellUs;
     if (dwell_override_us > 0) {
         uint32_t d = dwell_override_us;
         if (d < 500)    d = 500;
         if (d > 20000)  d = 20000;     // allow up to 20 ms for diag
-        s_dwellUs = d;
+        s_effectiveDwellUs = d;
         Serial.printf("[spark] manual test fire (override dwell=%u us)\n", (unsigned)d);
     } else {
-        Serial.printf("[spark] manual test fire (dwell=%u us)\n", (unsigned)s_dwellUs);
+        // Use the same effective value the running pulser path uses.
+        Serial.printf("[spark] manual test fire (dwell=%u us)\n", (unsigned)s_effectiveDwellUs);
     }
 
     s_scheduledFireUs = (cdi::micros_t)micros() + 100;
@@ -177,15 +194,20 @@ void manualFire(uint32_t dwell_override_us) {
     timerAlarmEnable(s_fireOnTimer);
 #endif
 
-    // Restore configured dwell after the fire window has closed.
-    // (Crude — relies on the timer-based ISR completing within
-    // override+safety. Acceptable since this is a manual single-shot
-    // diagnostic path, not the hot pulser path.)
     if (dwell_override_us > 0) {
         delay((dwell_override_us / 1000) + 5);
-        s_dwellUs = saved_dwell;
+        s_effectiveDwellUs = saved_effective;
     }
 }
+
+// ISR-side absolute RPM ceiling — same value as safety::tick guard,
+// but checked in ISR context for per-fire protection (safety::tick
+// runs every 100 ms; at 15000 rpm that's ~25 cycles of latency
+// before disarm). Period below this floor → RPM above ceiling →
+// refuse to schedule.
+constexpr uint32_t MIN_PERIOD_HARD_US = 60000000UL / 16000;  // 16000 rpm ceiling
+
+static cdi::micros_t s_lastCh1IsrTs = 0;   // for ISR-local period check
 
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     if (!s_armed) return;
@@ -194,8 +216,64 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     // Cut-mode gate: pattern / progressive skip this cycle.
     if (!cdi::core::safety::shouldFire()) return;
 
+    // ─── ISR-level absolute RPM ceiling guard ───
+    // Tighter than safety::tick (100 ms cadence). Refuses to even
+    // schedule a fire when the instantaneous period suggests we're
+    // above the absolute ceiling — catches noise-induced or
+    // mechanically-impossible RPM spikes before they ever drive
+    // GPIO25 or charge the primary.
+    if (s_lastCh1IsrTs != 0) {
+        cdi::micros_t inst_period = t_lead - s_lastCh1IsrTs;
+        if (inst_period < MIN_PERIOD_HARD_US) {
+            // RPM exceeds ceiling — skip this fire. Don't update
+            // s_lastCh1IsrTs so the NEXT real CH1 (longer period
+            // from us) reads correctly.
+            return;
+        }
+    }
+    s_lastCh1IsrTs = t_lead;
+
     uint32_t delay = s_nextDelayUs;
-    if (delay < MIN_DELAY_US) return;
+    // 0 is a legitimate value — fire-on must happen right at CH1
+    // (used when spark_delay ≤ dwell on TCI). Cap at MIN_DELAY_US
+    // only as a hardware-timer minimum, not as a "skip this fire"
+    // trigger. If delay == 0, fire-on directly here without the
+    // timer round-trip.
+    // ─── Skip if a previous cycle's dwell is still in progress ───
+    // Forcing GPIO to idle here would cause an unintended fall edge
+    // (= spark fires for TCI) at the wrong crank angle. Instead we
+    // SKIP this fire entirely and let the previous fire-off complete
+    // naturally. Engine sees a misfire on this cycle but no chaotic
+    // timing — far less harmful than wrong-angle fire that could
+    // detonate or burn valves.
+    //
+    // This should only happen when configured dwell > 40% of period
+    // (despite the auto-cap in live_stats). Rare in normal use.
+    if (s_dwellInProgress) {
+        return;
+    }
+
+    if (delay == 0) {
+        // Fire-on must happen RIGHT at CH1 (used when spark_delay
+        // ≤ dwell on TCI at high advance). Drive GPIO directly and
+        // arm fire-off timer for the dwell duration.
+        cdi::micros_t now = (cdi::micros_t)micros();
+        s_lastJitterUs = (int32_t)(now - t_lead);
+        s_scheduledFireUs = t_lead;
+        sparkActive(cdi::pins::SPARK_OUT);
+        gpioHigh(cdi::pins::MODE_LED);
+        s_dwellInProgress = true;
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        timerAlarm(s_fireOffTimer, s_effectiveDwellUs, false, 0);
+#else
+        timerAlarmDisable(s_fireOffTimer);
+        timerRestart(s_fireOffTimer);
+        timerAlarmWrite(s_fireOffTimer, s_effectiveDwellUs, false);
+        timerAlarmEnable(s_fireOffTimer);
+#endif
+        return;
+    }
+    if (delay < MIN_DELAY_US) delay = MIN_DELAY_US;
 
     s_scheduledFireUs = t_lead + delay;
 
@@ -235,6 +313,7 @@ void forceLow() {
     // callers don't need to change.
     sparkIdle(cdi::pins::SPARK_OUT);
     gpioLow(cdi::pins::MODE_LED);
+    s_dwellInProgress = false;
 #if ESP_ARDUINO_VERSION_MAJOR < 3
     if (s_fireOnTimer)  timerAlarmDisable(s_fireOnTimer);
     if (s_fireOffTimer) timerAlarmDisable(s_fireOffTimer);

@@ -47,7 +47,12 @@ constexpr float    ADVANCE_MAX_DEG = 45.0f;
 // ---------- Safety ----------
 constexpr uint32_t NO_SIGNAL_TIMEOUT_MS  = 500;   // pulser silent → disarm
 constexpr uint32_t SAFETY_TICK_INTERVAL_MS = 100;
-constexpr uint32_t TASK_WDT_TIMEOUT_S    = 5;
+// Tightened from 5 s to 2 s: if firmware crashes mid-dwell (GPIO
+// stuck HIGH = primary coil energized continuously), 5 s of full
+// primary current would noticeably heat the coil. 2 s is still long
+// enough for legitimate loop work (heavy NVS / LittleFS ops run on
+// core 0 anyway), short enough that coil thermal damage is minimal.
+constexpr uint32_t TASK_WDT_TIMEOUT_S    = 2;
 
 // Absolute RPM ceiling — above this we assume something is broken
 // (multi-tooth pickup mistakenly connected, electrical noise on

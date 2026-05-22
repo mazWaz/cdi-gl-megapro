@@ -46,9 +46,20 @@ bool autoArm();
 // RPM + advance map lookup. Safe to call from any context.
 void setNextDelayUs(uint32_t delay_us);
 
-// Configure spark pulse width sent to the SCR gate driver / coil.
-void setDwellUs(uint32_t dwell_us);
-uint32_t dwellUs();
+// Configure spark pulse width / primary charge time. This is the
+// user-intended value persisted to NVS; live_stats may apply a
+// smaller "effective" value at high RPM via setEffectiveDwellUs to
+// prevent fire-off overlap with the next cycle (see comment in
+// live_stats::tick).
+void     setDwellUs(uint32_t dwell_us);
+uint32_t dwellUs();          // user-configured
+uint32_t configuredDwellUs(); // same — explicit name for clarity
+
+// ISR-side effective dwell — set per cycle by live_stats. Capped
+// against the configured value so user can never get LONGER dwell
+// than they asked for, only equal or shorter.
+void     setEffectiveDwellUs(uint32_t dwell_us);
+uint32_t effectiveDwellUs();
 
 // Global advance trim — added to every map lookup. Compensates for
 // optocoupler/cable propagation delay. Range typically ±5°.

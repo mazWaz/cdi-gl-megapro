@@ -77,10 +77,26 @@ void tick() {
         // Time from CH1 to the moment we want the spark to actually fire.
         const uint32_t spark_delay_us = (uint32_t)((delayDeg / 360.0f) * (float)periodU);
 
+        // ── Auto-cap dwell to a safe fraction of period ──
+        // At high RPM the configured dwell can exceed the time
+        // available between CH1 events, which causes fire-off of
+        // cycle N to overlap with fire-on of cycle N+1 — primary
+        // coil ends up energized continuously, generates heat well
+        // above its rated dissipation, and spark timing drifts
+        // unpredictably. Cap effective dwell at 40% of period so
+        // there's always headroom for the next charge cycle. The
+        // user-configured value is preserved (in s_dwellUs) and
+        // restored automatically when RPM drops.
+        const uint32_t configured_dwell = cdi::core::spark::configuredDwellUs();
+        const uint32_t safe_dwell_cap   = (uint32_t)((float)periodU * 0.4f);
+        const uint32_t dwell_us         = (configured_dwell < safe_dwell_cap)
+                                        ? configured_dwell
+                                        : safe_dwell_cap;
+        cdi::core::spark::setEffectiveDwellUs(dwell_us);
+
         // For inductive ignition, the GPIO HIGH→LOW transition (end
         // of dwell) is when the spark fires. Schedule fire-on so the
         // fire-off lands at spark_delay_us.
-        const uint32_t dwell_us = cdi::core::spark::dwellUs();
         uint32_t scheduler_delay_us;
         if (cdi::core::spark::inductive()) {
             scheduler_delay_us = (spark_delay_us > dwell_us)
