@@ -80,7 +80,15 @@
     </div>
     <label class="chk" style="margin-top:8px">
       <input type="checkbox" id="sparkPolChk">
-      <span>Polaritas <b>ACTIVE-LOW</b> (idle HIGH, fire on rising edge) — pakai kalau pakai PNP/PMOS atau CDI module trigger LOW</span>
+      <span>Polaritas spark <b>ACTIVE-LOW</b> (idle HIGH, fire on rising edge) — pakai kalau pakai PNP/PMOS atau CDI module trigger LOW</span>
+    </label>
+    <label class="chk" style="margin-top:6px">
+      <input type="checkbox" id="useChargePinChk">
+      <span>Mode <b>2-pin CDI</b> — pakai GPIO16 sebagai charge enable (active-LOW), GPIO25 sebagai SCR trigger pulse</span>
+    </label>
+    <label class="field" id="sparkPulseField" style="display:none;margin-top:4px">
+      Lebar pulse SCR <input id="sparkPulseInp" type="number" min="50" max="2000" step="50" value="200" style="width:80px">
+      <span class="val">µs (50-2000)</span>
     </label>
     <label class="chk" style="margin-top:8px">
       <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
@@ -264,20 +272,14 @@ $('testFireBtn').addEventListener('click', async () => {
   cdi.send({cmd:'testFire'});
 });
 
-// Spark polarity toggle
+// Spark polarity + 2-pin mode + pulse width
 cdi.bus.on('open', () => cdi.send({cmd:'getSparkPolarity'}));
-cdi.bus.on('hello', () => cdi.send({cmd:'getSparkPolarity'}));
-window.addEventListener('message', () => {});  // no-op, keep handler list
-cdi.bus.on('telemetry', () => {}); // already wired elsewhere
-// Custom listener for sparkPolarity messages
-const _origDispatch = null;
-function _onSparkPol(m){
-  $('sparkPolChk').checked = !!m.active_low;
-}
-// Patch bus to listen for sparkPolarity dispatched via app.js generic route
-// app.js doesn't route 'sparkPolarity' yet — handle via direct WS message hook below
-// (we'll add the route in app.js too)
-cdi.bus.on('sparkPolarity', _onSparkPol);
+cdi.bus.on('sparkPolarity', m => {
+  $('sparkPolChk').checked      = !!m.active_low;
+  $('useChargePinChk').checked  = !!m.use_charge_pin;
+  if (m.spark_pulse_us) $('sparkPulseInp').value = m.spark_pulse_us;
+  $('sparkPulseField').style.display = m.use_charge_pin ? '' : 'none';
+});
 
 $('sparkPolChk').addEventListener('change', async e => {
   const al = e.target.checked;
@@ -286,12 +288,35 @@ $('sparkPolChk').addEventListener('change', async e => {
     severity: 'warn',
     body: 'Set output GPIO25 jadi ' + (al ? 'ACTIVE-LOW' : 'ACTIVE-HIGH') + '?\n\n' +
           (al
-            ? 'Idle: GPIO25 HIGH (3.3V). Fire: pulse ke LOW selama dwell, lalu HIGH lagi (rising edge fires spark).\nUntuk PNP / P-MOSFET / CDI module yang trigger LOW.\nPasang pull-UP 10 kΩ ke 3V3 di GPIO25.'
-            : 'Idle: GPIO25 LOW (0V). Fire: pulse ke HIGH selama dwell, lalu LOW lagi (falling edge fires spark).\nUntuk NPN / N-MOSFET direct drive.\nPasang pull-DOWN 10 kΩ ke GND di GPIO25.'),
+            ? 'Idle: GPIO25 HIGH (3.3V). Fire pulse ke LOW.\nUntuk PNP / P-MOSFET / CDI active-LOW trigger.\nPull-UP 10 kΩ ke 3V3.'
+            : 'Idle: GPIO25 LOW (0V). Fire pulse ke HIGH.\nUntuk NPN / N-MOSFET / SCR gate active-HIGH.\nPull-DOWN 10 kΩ ke GND.'),
     okLabel: '✓ Apply',
   });
   if (!ok){ e.target.checked = !al; return; }
   cdi.send({cmd:'setSparkPolarity', active_low: al});
+});
+
+$('useChargePinChk').addEventListener('change', async e => {
+  const en = e.target.checked;
+  const ok = await cdi.modal.confirm({
+    title: en ? 'AKTIFKAN 2-PIN MODE' : 'KEMBALI KE 1-PIN MODE',
+    severity: 'warn',
+    body: en
+      ? 'Aktifkan 2-pin CDI?\n\nCHARGE (GPIO16) → LOW selama dwell = step-up MOSFET ON, cap charge, suara high-freq sebentar.\nSPARK (GPIO25) → brief HIGH pulse di akhir dwell = trigger SCR → spark.\n\nWiring wajib: GPIO16 ke gate step-up MOSFET, GPIO25 ke gate SCR (via resistor).\nPasang pull-UP 10 kΩ di GPIO16 ke 3V3 (idle safe = HIGH).'
+      : 'Kembali ke 1-pin mode?\n\nHanya GPIO25 yang dipakai. Sesuai untuk TCI/inductive direct drive atau CDI single-pin module.',
+    okLabel: '✓ Apply',
+  });
+  if (!ok){ e.target.checked = !en; return; }
+  const pulse = parseInt($('sparkPulseInp').value, 10) || 200;
+  cdi.send({cmd:'setSparkMode', use_charge_pin: en, spark_pulse_us: pulse});
+  $('sparkPulseField').style.display = en ? '' : 'none';
+});
+
+$('sparkPulseInp').addEventListener('change', () => {
+  const pulse = parseInt($('sparkPulseInp').value, 10) || 200;
+  cdi.send({cmd:'setSparkMode',
+    use_charge_pin: $('useChargePinChk').checked,
+    spark_pulse_us: pulse});
 });
 
 $('testFireLongBtn').addEventListener('click', async () => {

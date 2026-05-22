@@ -168,8 +168,24 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
     }
     else if (!strcmp(cmd, "getSparkPolarity")) {
         JsonDocument r;
-        r["type"]       = "sparkPolarity";
-        r["active_low"] = cdi::core::spark::activeLow();
+        r["type"]           = "sparkPolarity";
+        r["active_low"]     = cdi::core::spark::activeLow();
+        r["use_charge_pin"] = cdi::core::spark::useChargePin();
+        r["spark_pulse_us"] = cdi::core::spark::sparkPulseUs();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setSparkMode")) {
+        const bool     use_charge = doc["use_charge_pin"] | false;
+        const uint32_t pulse_us   = doc["spark_pulse_us"] | 200;
+        cdi::core::spark::setUseChargePin(use_charge);
+        cdi::core::spark::setSparkPulseUs(pulse_us);
+        cdi::storage::config::markDirty();
+        JsonDocument r;
+        r["type"]           = "sparkPolarity";
+        r["active_low"]     = cdi::core::spark::activeLow();
+        r["use_charge_pin"] = cdi::core::spark::useChargePin();
+        r["spark_pulse_us"] = cdi::core::spark::sparkPulseUs();
         String out; serializeJson(r, out);
         client->text(out);
     }

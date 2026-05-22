@@ -75,6 +75,8 @@ void setup() {
     // gap between power and the first instruction.
     pinMode(pin::SPARK_OUT, OUTPUT);
     digitalWrite(pin::SPARK_OUT, LOW);
+    pinMode(pin::CHARGE_OUT, OUTPUT);
+    digitalWrite(pin::CHARGE_OUT, HIGH);   // active-LOW → idle HIGH (step-up OFF)
     pinMode(pin::MODE_LED, OUTPUT);
     digitalWrite(pin::MODE_LED, LOW);
 
