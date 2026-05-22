@@ -389,6 +389,37 @@ void setInductive(bool en) {
 bool inductive() { return s_inductive; }
 
 void forceLow() {
+    // ─── TCI mid-dwell safety: do NOT force GPIO idle right now ───
+    //
+    // On inductive (TCI) ignition the HIGH→LOW transition on the
+    // spark output is exactly what fires the spark — the coil
+    // collapses on that edge. If forceLow runs in the middle of a
+    // dwell (caller path: setArmed(false), reached via panic
+    // button, overrev hard cut, ALVP DISARM_LOW, manual disarm,
+    // SAFE_HOLD mode switch...), driving the pin idle right now
+    // would fire the spark at the wrong crank angle — typically
+    // somewhere arbitrary between t_lead and t_lead + dwell. On a
+    // high-compression engine that wrong-angle spark near TDC can
+    // detonate.
+    //
+    // Safe path: disable the fire-on timer so NO further dwell
+    // cycles start, but leave GPIO and fire-off timer alone. The
+    // already-armed fire-off ISR will land at its correctly-
+    // computed angle, fire one final spark at the intended advance
+    // for THIS cycle, then s_armed=false on the next CH1 prevents
+    // any new fire. One correctly-timed parting spark is benign;
+    // an arbitrary-angle interruption is not.
+    //
+    // For CDI / capacitive (s_inductive=false) the rising edge is
+    // the spark, so GPIO HIGH→LOW is harmless idle return. Drop
+    // through to the normal path.
+    if (s_inductive && s_dwellInProgress) {
+#if ESP_ARDUINO_VERSION_MAJOR < 3
+        if (s_fireOnTimer) timerAlarmDisable(s_fireOnTimer);
+#endif
+        return;
+    }
+
     // Drive the spark pin to its IDLE-SAFE state (LOW for active-HIGH,
     // HIGH for active-LOW). Keeping the legacy function name so safety
     // callers don't need to change.
