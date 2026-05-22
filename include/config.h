@@ -43,8 +43,16 @@ constexpr uint32_t DEFAULT_DWELL_US              = 5000;
 // MIN must be low enough to accept kick / electric-start cranking
 // (typical 50-300 rpm). Anything below 30 rpm is almost certainly
 // a stuck pulser line.
+// MAX_VALID was 15000 but live log on real engine showed EMI bursts
+// from coil firing producing spurious CH1 events at 4000-4500 µs
+// periods (= 13-15k phantom RPM) that lay above any realistic Honda
+// Megapro / GL Pro / commuter-4T physical ceiling (stock redline
+// 10500, modified ~13000). 13000 rpm = 4615 µs period gives:
+//   - clean reject of all observed EMI bursts (>= 4000 µs threshold)
+//   - margin above OEM overrev cut at 11500 rpm (= 5217 µs)
+//   - 13 % headroom for the most aggressive aftermarket builds
 constexpr uint32_t RPM_MIN_VALID = 30;
-constexpr uint32_t RPM_MAX_VALID = 15000;
+constexpr uint32_t RPM_MAX_VALID = 13000;
 constexpr float    ADVANCE_MIN_DEG = 0.0f;
 constexpr float    ADVANCE_MAX_DEG = 45.0f;
 
@@ -63,7 +71,7 @@ constexpr uint32_t TASK_WDT_TIMEOUT_S    = 2;
 // CH1, math bug, etc) and disarm instantly. 16000 RPM > redline of
 // every single-cylinder bike in the preset library, but still well
 // inside what rpm_calc can sanely report (RPM_MAX_VALID 15000).
-constexpr uint32_t ABSOLUTE_RPM_CEILING = 16000;
+constexpr uint32_t ABSOLUTE_RPM_CEILING = 13000;
 constexpr float    ALVP_DERATE_BELOW_V   = 10.5f;
 constexpr float    ALVP_DISARM_BELOW_V   = 9.0f;
 constexpr uint32_t ALVP_LOW_DURATION_MS  = 2000;  // hysteresis

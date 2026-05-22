@@ -246,10 +246,16 @@ void manualFire(uint32_t dwell_override_us) {
 
 // ISR-side absolute RPM ceiling — same value as safety::tick guard,
 // but checked in ISR context for per-fire protection (safety::tick
-// runs every 100 ms; at 15000 rpm that's ~25 cycles of latency
+// runs every 100 ms; at 13000 rpm that's ~22 cycles of latency
 // before disarm). Period below this floor → RPM above ceiling →
 // refuse to schedule.
-constexpr uint32_t MIN_PERIOD_HARD_US = 60000000UL / 16000;  // 16000 rpm ceiling
+//
+// Lowered 16k → 13k after live engine log showed EMI bursts from
+// coil firing producing spurious CH1 events at 4000-4500 µs periods
+// (= 13-15k phantom RPM). 13000 rpm = 4615 µs threshold rejects
+// those bursts cleanly while leaving 13 % margin above realistic
+// commuter-4T mechanical ceiling (~11500 rpm overrev cut).
+constexpr uint32_t MIN_PERIOD_HARD_US = 60000000UL / 13000;  // 13000 rpm ceiling
 // 2-second period = ~30 rpm. If the gap since the last CH1 exceeds
 // this, the engine has either stalled or never started, and any
 // cached s_nextDelayUs from a previous run is meaningless. Treat
