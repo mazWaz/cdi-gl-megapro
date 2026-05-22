@@ -38,6 +38,16 @@ public:
     // Pre-baked Honda Megapro stock curve (15° idle → 32° max @ 6000+).
     void loadDefaultMegapro();
 
+    // Validate that the points form a reasonable advance curve for
+    // engine safety. Returns nullptr if OK, else a static error
+    // message describing the violation. Checks:
+    //   * First point ≤ 8° BTDC at any RPM ≤ 500 (cranking safety)
+    //   * No point in idle band (1000-1800 rpm) > 18° BTDC
+    //   * No two consecutive points differ by > 8° (engine stumble)
+    //   * Max value never exceeds 45° BTDC (extreme detonation guard)
+    //   * Points monotonically non-decreasing in RPM
+    static const char* validateForSafety(const Point* pts, size_t n);
+
 private:
     Point  points_[cdi::config::MAX_ADVANCE_POINTS];
     size_t count_ = 0;

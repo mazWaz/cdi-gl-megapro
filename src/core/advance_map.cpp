@@ -1,5 +1,6 @@
 #include "core/advance_map.h"
 
+#include <Arduino.h>
 #include <algorithm>
 
 namespace cdi::core::advance {
@@ -14,12 +15,49 @@ bool inRange(cdi::rpm_t rpm, float deg) {
 
 } // anonymous
 
+const char* Map::validateForSafety(const Point* pts, size_t n) {
+    if (!pts || n == 0) return "empty map";
+    // First point should be conservative at cranking
+    if (pts[0].rpm <= 500 && pts[0].deg > 8.0f) {
+        return "first point >8° BTDC at low RPM — kickback risk";
+    }
+    // Hard cap on extreme advance
+    for (size_t i = 0; i < n; i++) {
+        if (pts[i].deg > 45.0f) return "advance >45° BTDC — detonation guaranteed";
+        if (pts[i].deg < 0.0f)  return "advance <0° (post-TDC) — combustion fail";
+    }
+    // Monotonic RPM
+    for (size_t i = 1; i < n; i++) {
+        if (pts[i].rpm <= pts[i-1].rpm) return "RPM not monotonically increasing";
+    }
+    // Idle band sanity (1000-1800 rpm should be ≤ 18° BTDC for stock fuel)
+    for (size_t i = 0; i < n; i++) {
+        if (pts[i].rpm >= 1000 && pts[i].rpm <= 1800 && pts[i].deg > 18.0f) {
+            return "idle-band advance >18° — detonation risk at stock fuel";
+        }
+    }
+    // No huge jumps between consecutive points (engine stumble)
+    for (size_t i = 1; i < n; i++) {
+        const float jump = pts[i].deg - pts[i-1].deg;
+        if (jump > 8.0f || jump < -10.0f) {
+            return "consecutive points differ >8° — uneven curve, engine stumble";
+        }
+    }
+    return nullptr;   // all clear
+}
+
 void Map::clear() { count_ = 0; }
 
 bool Map::set(const Point* pts, size_t n) {
     if (n == 0 || n > cdi::config::MAX_ADVANCE_POINTS) return false;
     for (size_t i = 0; i < n; i++) {
         if (!inRange(pts[i].rpm, pts[i].deg)) return false;
+    }
+    // Engine-safety validation — reject obviously dangerous maps.
+    // Logs reason to Serial so caller can see why apply was rejected.
+    if (const char* err = validateForSafety(pts, n)) {
+        Serial.printf("[advance] map rejected: %s\n", err);
+        return false;
     }
     for (size_t i = 0; i < n; i++) points_[i] = pts[i];
     count_ = n;

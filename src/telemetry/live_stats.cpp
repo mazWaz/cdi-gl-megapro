@@ -139,6 +139,22 @@ void tick() {
         }
         cdi::core::spark::setNextDelayUs(scheduler_delay_us);
 
+        // ── Diagnostic: print effective spark angle to Serial once per
+        // second so a USB-connected user can verify the firmware is
+        // actually firing where the map says it should. Disable in
+        // release by setting CORE_DEBUG_LEVEL=0 in platformio.ini.
+        static uint32_t s_lastDiagMs = 0;
+        const uint32_t now_ms = millis();
+        if (now_ms - s_lastDiagMs >= 1000) {
+            s_lastDiagMs = now_ms;
+            // Actual spark angle that will land = max_ref - (sched_delay+effective_dwell)/period × 360
+            const float fired_angle = cdi::core::pickup::maxAdvanceRef() -
+                ((float)(scheduler_delay_us + dwell_us) / (float)periodU) * 360.0f;
+            Serial.printf("[ign] rpm=%u target=%.1f° actual=%.1f° dwell=%uµs(cfg=%u)\n",
+                          (unsigned)r_inst, adv, fired_angle,
+                          (unsigned)dwell_us, (unsigned)configured_dwell);
+        }
+
         // T10: dwell compensation by RPM curve.
         if (cdi::core::dwell::isEnabled()) {
             uint16_t dwell = cdi::core::dwell::lookup(r_inst);
