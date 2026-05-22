@@ -223,7 +223,10 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     // mechanically-impossible RPM spikes before they ever drive
     // GPIO25 or charge the primary.
     if (s_lastCh1IsrTs != 0) {
-        cdi::micros_t inst_period = t_lead - s_lastCh1IsrTs;
+        // 32-bit modular subtraction — wraps correctly when the
+        // underlying Arduino micros() counter rolls over every
+        // ~71 minutes. See rpm_calc.cpp for the long-form explanation.
+        const uint32_t inst_period = (uint32_t)t_lead - (uint32_t)s_lastCh1IsrTs;
         if (inst_period < MIN_PERIOD_HARD_US) {
             // RPM exceeds ceiling — skip this fire. Don't update
             // s_lastCh1IsrTs so the NEXT real CH1 (longer period

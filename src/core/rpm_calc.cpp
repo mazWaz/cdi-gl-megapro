@@ -18,16 +18,31 @@ cdi::rpm_t    s_smooth      = 0;
 void onPulseCh1(cdi::micros_t ts) {
     if (s_lastCh1 == 0) { s_lastCh1 = ts; return; }
 
-    cdi::micros_t period = ts - s_lastCh1;
+    // Do the diff in uint32 modular arithmetic.
+    //
+    // Why: Arduino `micros()` returns uint32_t and wraps every
+    // ~71 minutes. The ISR stuffs that into cdi::micros_t (uint64)
+    // by zero-extension. Subtracting two zero-extended values in
+    // uint64 underflows to ~1.8e19 µs across a wrap-boundary, even
+    // though the true elapsed time is tiny. Casting both back to
+    // uint32 before the subtraction lets the natural unsigned wrap
+    // produce the correct small delta. This means we lose at most
+    // one bad period per 71-minute mark, instead of permanently
+    // freezing the RPM reading.
+    const uint32_t period = (uint32_t)ts - (uint32_t)s_lastCh1;
 
-    if (period < MIN_PERIOD_US || period > MAX_PERIOD_US) {
-        // Noise / hiccup — keep previous timestamp AND smoothed value.
-        // Critical: do NOT advance s_lastCh1 to a noise event, otherwise
-        // the next real edge computes period from the noise timestamp
-        // (short period → also rejected) and the cascade poisons every
-        // subsequent edge until rpm decays to zero. Keeping s_lastCh1
-        // anchored to the last KNOWN-GOOD edge lets a single noise spike
-        // self-recover on the next real pulse.
+    if (period < (uint32_t)MIN_PERIOD_US) {
+        // Noise — short period. Keep s_lastCh1 anchored so a single
+        // glitch doesn't poison the next real edge's period calc.
+        return;
+    }
+    if (period > (uint32_t)MAX_PERIOD_US) {
+        // Either engine timeout (kickstart pause, stall) or the
+        // micros() rollover anomaly described above. In both cases
+        // re-anchor s_lastCh1 to the current edge so the next pulse
+        // measures a fresh, valid period. tick() will zero s_raw /
+        // s_smooth if the gap persists.
+        s_lastCh1 = ts;
         return;
     }
     s_lastCh1 = ts;
@@ -44,7 +59,9 @@ void onPulseCh1(cdi::micros_t ts) {
 
 void tick(cdi::micros_t now_us) {
     if (s_lastCh1 == 0) return;
-    if (now_us - s_lastCh1 > MAX_PERIOD_US * 2) {
+    // 32-bit modular diff — see comment in onPulseCh1.
+    const uint32_t gap = (uint32_t)now_us - (uint32_t)s_lastCh1;
+    if (gap > (uint32_t)(MAX_PERIOD_US * 2)) {
         s_raw    = 0;
         s_smooth = 0;
     }
