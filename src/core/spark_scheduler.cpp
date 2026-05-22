@@ -32,6 +32,14 @@ volatile uint32_t s_fireCount     = 0;
 volatile int32_t  s_lastJitterUs  = 0;
 volatile cdi::micros_t s_scheduledFireUs = 0;
 
+// Previous CH1 timestamp (volatile because written in ISR). Used by
+// 2-pin mode to predict next-fire timing and pre-charge cap in
+// advance — so dwell can fit into the inter-fire gap instead of
+// having to fit between THIS CH1 and THIS fire (which is too short
+// at high RPM with target ~= max_advance_ref).
+volatile cdi::micros_t s_prevCh1Ts = 0;
+constexpr uint32_t PERIOD_STALE_US = 200000;   // > this = stalled, treat as cold start
+
 constexpr uint32_t MIN_DELAY_US = 50;       // safety floor
 constexpr uint32_t MAX_DELAY_US = 50000;    // 50 ms ceiling
 
@@ -167,6 +175,9 @@ void end() {
 bool setArmed(bool a) {
     if (!a) forceLow();
     s_armed = a;
+    // Reset predictive-charge history so re-arm doesn't try to use a
+    // stale period. First fire after re-arm will cold-start the cap.
+    s_prevCh1Ts = 0;
     Serial.printf("[spark] armed = %s\n", a ? "TRUE" : "FALSE");
     return s_armed;
 }
@@ -255,27 +266,50 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
 
     s_scheduledFireUs = t_lead + delay;
 
-    // 2-pin mode: schedule chargeOn at (delay - dwell). If dwell
-    // exceeds delay we'd be scheduling in the past — fall back to
-    // charging immediately (cap partially filled, spark weaker but
-    // engine still fires).
+    // ── 2-pin CDI charge logic ──
+    //
+    // Goal: cap MUST be full at fire moment, AT ALL RPM, but module
+    // MUST stay cool (no continuous charging).
+    //
+    // Strategy: PREDICTIVE pre-charge — when CH1 arrives, we know the
+    // period (CH1 to prev CH1). The NEXT fire will happen at
+    // (t_lead + period + delay). We schedule the chargeOn for that
+    // next fire to start at (next_fire - dwell), which falls into
+    // the IDLE gap between current fire and next fire.
+    //
+    // Duty cycle = dwell / period. At 11000 RPM (period 5454 µs)
+    // and dwell 2500 µs → 46% duty — module sees half-time charging.
+    // At idle 1500 RPM (period 40000 µs) → 6% duty. Cap full at fire
+    // moment, module dingin between cycles.
+    //
+    // Special cases:
+    //   * First fire since arm (prev_ts==0) — no period known yet.
+    //     Best-effort: charge immediately (cap may be partial for
+    //     THIS fire, full from fire #2 onwards).
+    //   * Period stale (>200ms — engine stalled then re-fired) — same
+    //     as first-fire, treat as cold start.
+    //   * Period too short (<dwell+gap) — RPM beyond realistic;
+    //     skip predictive (engine wouldn't sustain anyway).
     if (s_useChargePin) {
-        uint32_t charge_delay;
-        if (delay > s_dwellUs) {
-            charge_delay = delay - s_dwellUs;
-        } else {
+        if (s_prevCh1Ts == 0 ||
+            (uint32_t)(t_lead - s_prevCh1Ts) > PERIOD_STALE_US) {
+            // Cold start — charge cap now (best-effort for this fire)
             chargeActive();
-            charge_delay = 0;
-        }
-        if (charge_delay > 0) {
+        } else {
+            // Predictive schedule for NEXT fire
+            const uint32_t period = (uint32_t)(t_lead - s_prevCh1Ts);
+            if (period > s_dwellUs + 300) {       // need room for dwell + spark pulse + gap
+                const uint32_t next_charge_delay = period + delay - s_dwellUs;
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-            timerAlarm(s_chargeOnTimer, charge_delay, false, 0);
+                timerAlarm(s_chargeOnTimer, next_charge_delay, false, 0);
 #else
-            timerAlarmDisable(s_chargeOnTimer);
-            timerRestart(s_chargeOnTimer);
-            timerAlarmWrite(s_chargeOnTimer, charge_delay, false);
-            timerAlarmEnable(s_chargeOnTimer);
+                timerAlarmDisable(s_chargeOnTimer);
+                timerRestart(s_chargeOnTimer);
+                timerAlarmWrite(s_chargeOnTimer, next_charge_delay, false);
+                timerAlarmEnable(s_chargeOnTimer);
 #endif
+            }
+            // else: period too short for dwell, cap stays partial
         }
     }
 
@@ -287,6 +321,8 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     timerAlarmWrite(s_fireOnTimer, delay, false);
     timerAlarmEnable(s_fireOnTimer);
 #endif
+
+    s_prevCh1Ts = t_lead;
 }
 
 uint32_t totalFires()    { return s_fireCount; }
