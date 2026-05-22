@@ -20,6 +20,15 @@ volatile bool     s_autoArm       = false;
 volatile bool     s_activeLow     = false;   // false=active-HIGH (default)
 volatile bool     s_inductive     = true;    // true=TCI (default), false=CDI/SCR
 volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop
+// True only after live_stats has computed a delay from at least one
+// valid period. Distinguishes "delay = 0 by computation (legitimate
+// max-advance case)" from "delay = 0 because no computation has run
+// yet (uninitialized)". Without this flag, the second CH1 ever in a
+// session reads s_nextDelayUs == 0 and takes the direct-fire branch
+// → spark lands at t_lead = 32° BTDC at cranking RPM → kickback.
+// Cleared on long-stall re-anchor so a stalled-then-restarted engine
+// also re-primes before firing.
+volatile bool     s_delayPrimed   = false;
 volatile uint32_t s_dwellUs            = cdi::config::DEFAULT_DWELL_US;  // configured (user)
 volatile uint32_t s_effectiveDwellUs   = cdi::config::DEFAULT_DWELL_US;  // ISR-side actual
 volatile float    s_advanceOffsetDeg = 0.0f;
@@ -121,7 +130,19 @@ void end() {
 }
 
 bool setArmed(bool a) {
-    if (!a) forceLow();
+    if (!a) {
+        forceLow();
+        // Force re-prime on next arm cycle. If the user disarms
+        // mid-ride and re-arms while the engine is cranking, we
+        // want the same cold-start safety (no fire until a fresh
+        // delay computation lands) rather than firing on whatever
+        // stale value s_nextDelayUs holds from before disarm.
+        // s_lastCh1IsrTs is reset by the ISR's own long-stall
+        // branch the next time a CH1 arrives — the s_delayPrimed
+        // gate below is sufficient to block any wrong-angle fire
+        // in the meantime.
+        s_delayPrimed = false;
+    }
     s_armed = a;
     Serial.printf("[spark] armed = %s\n", a ? "TRUE" : "FALSE");
     return s_armed;
@@ -138,6 +159,9 @@ void setNextDelayUs(uint32_t d) {
     if (d < MIN_DELAY_US) d = MIN_DELAY_US;
     if (d > MAX_DELAY_US) d = MAX_DELAY_US;
     s_nextDelayUs = d;
+    // Live_stats called us, which means it has a valid period. From
+    // here on the ISR is allowed to fire on s_nextDelayUs.
+    s_delayPrimed = true;
 }
 
 void setDwellUs(uint32_t d) {
@@ -267,12 +291,28 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
         // pause / power-cycle of mechanical system but not the
         // ESP). Cached s_nextDelayUs reflects a previous RPM
         // regime — applying it now would fire at a wrong angle.
-        // Re-anchor and skip this fire; next cycle has a valid
-        // fresh period.
+        // Re-anchor, force re-prime, and skip this fire; the next
+        // live_stats iteration will set s_nextDelayUs based on the
+        // new period and only then will the ISR be allowed to fire.
         s_lastCh1IsrTs = t_lead;
+        s_delayPrimed  = false;
         return;
     }
     s_lastCh1IsrTs = t_lead;
+
+    // ─── No fire until live_stats has primed a valid delay ───
+    // setNextDelayUs() is only called when periodU > 0 in live_stats
+    // (i.e. rpm_calc has computed at least one valid period). On a
+    // fresh cold-crank that takes 2 CH1 events (1st = no period,
+    // 2nd = first period). Without this gate the 2nd CH1 reads
+    // s_nextDelayUs == 0 (the cold-init value) and the delay==0
+    // branch below fires the coil at t_lead = 32° BTDC. At cranking
+    // RPM that's a textbook kickback geometry. Cost of the gate is
+    // one extra missed spark at startup; the saved cost is the
+    // user's ankle.
+    if (!s_delayPrimed) {
+        return;
+    }
 
     uint32_t delay = s_nextDelayUs;
     // 0 is a legitimate value — fire-on must happen right at CH1

@@ -38,11 +38,15 @@ void onPulseCh1(cdi::micros_t ts) {
     }
     if (period > (uint32_t)MAX_PERIOD_US) {
         // Either engine timeout (kickstart pause, stall) or the
-        // micros() rollover anomaly described above. In both cases
-        // re-anchor s_lastCh1 to the current edge so the next pulse
-        // measures a fresh, valid period. tick() will zero s_raw /
-        // s_smooth if the gap persists.
-        s_lastCh1 = ts;
+        // micros() rollover anomaly described above. Re-anchor
+        // s_lastCh1 to the current edge so the next pulse measures
+        // a fresh valid period. Clear s_lastPeriod too — otherwise
+        // live_stats reads the stale value (from before the stall),
+        // computes a delay based on the previous RPM regime, and
+        // primes the spark ISR with a wrong-angle fire on the
+        // second post-restart pulse.
+        s_lastCh1    = ts;
+        s_lastPeriod = 0;
         return;
     }
     s_lastCh1 = ts;
@@ -62,8 +66,9 @@ void tick(cdi::micros_t now_us) {
     // 32-bit modular diff — see comment in onPulseCh1.
     const uint32_t gap = (uint32_t)now_us - (uint32_t)s_lastCh1;
     if (gap > (uint32_t)(MAX_PERIOD_US * 2)) {
-        s_raw    = 0;
-        s_smooth = 0;
+        s_raw        = 0;
+        s_smooth     = 0;
+        s_lastPeriod = 0;   // gates live_stats delay computation
     }
 }
 
