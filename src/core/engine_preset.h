@@ -15,7 +15,11 @@
 
 namespace cdi::core::preset {
 
-constexpr size_t MAX_POINTS_PER_PRESET = 16;
+// 32 step matches the runtime advance map ceiling (config::MAX_ADVANCE_POINTS)
+// and exceeds commercial aftermarket CDIs (BRT I-Max Neo 16, BRT Pro 24,
+// Rextor Pro Drag 2 16). Each preset can now describe a smooth curve
+// with ~200-500 rpm resolution across the full operating band.
+constexpr size_t MAX_POINTS_PER_PRESET = 32;
 
 struct Point {
     uint16_t rpm;
