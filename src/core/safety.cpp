@@ -22,12 +22,18 @@ bool s_overRevCut  = false;
 uint32_t s_overrevHits = 0;
 constexpr uint32_t OVERREV_CONFIRM = 3;
 
-// Latches once we've seen genuinely valid RPM since the last arm.
-// Reset by clearFlags(). The no-signal failsafe only trips after this
-// is true — otherwise edge noise on floating GPIO34/35 (no internal
-// pull-up on input-only pins) could spuriously set lastCh1Us and
-// auto-disarm a bench test where no real engine is attached.
-bool s_haveSeenValidRpm = false;
+// Latches once we've seen genuinely valid RPM SUSTAINED across
+// `VALID_RPM_STREAK_TICKS` consecutive 100 ms safety ticks (=1 s
+// of continuous engine signal). A single noisy spike where rpm_calc
+// briefly outputs >100 RPM — e.g. from coil EM coupling onto the
+// pulser pins — does NOT flip the latch and therefore can't arm
+// the no-signal failsafe spuriously.
+//
+// Reset by clearFlags(). The no-signal failsafe only trips after
+// this is true.
+bool     s_haveSeenValidRpm  = false;
+uint8_t  s_validRpmStreak    = 0;
+constexpr uint8_t VALID_RPM_STREAK_TICKS = 10;   // 10 × 100 ms = 1 s
 
 // Cut-mode configuration (main band only).
 volatile cdi::CutMode s_mainCutMode = cdi::CutMode::SOFT_RETARD;
@@ -77,7 +83,16 @@ void tick() {
     {
         cdi::rpm_t rpm_now = cdi::core::rpm::current();
         if (rpm_now >= (cdi::rpm_t)cdi::config::RPM_MIN_VALID) {
-            s_haveSeenValidRpm = true;
+            if (s_validRpmStreak < 255) s_validRpmStreak++;
+            if (s_validRpmStreak >= VALID_RPM_STREAK_TICKS) {
+                s_haveSeenValidRpm = true;
+            }
+        } else {
+            // RPM dropped below valid threshold — reset streak. The
+            // latch itself stays set if it was already set; only a
+            // fresh arm (clearFlags) drops it again. That way the
+            // genuine "engine ran and now stalled" case still trips.
+            s_validRpmStreak = 0;
         }
     }
     if (cdi::core::spark::isArmed() && s_haveSeenValidRpm) {
@@ -260,6 +275,7 @@ void clearFlags() {
     s_overRevCut       = false;
     s_overrevHits      = 0;
     s_haveSeenValidRpm = false;   // fresh arm — wait for real signal again
+    s_validRpmStreak   = 0;
 }
 
 } // namespace cdi::core::safety
