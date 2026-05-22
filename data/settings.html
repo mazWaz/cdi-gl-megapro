@@ -622,11 +622,39 @@ function openPresetModal(){
     el.addEventListener('click', async () => {
       const pid = el.dataset.pid;
       const p = presetData.list.find(x => x.id === pid);
+      const isRacing = (p.cat === 'Racing') || pid.startsWith('drag_');
+      const isPulserNegatif = /pulser NEGATIF/i.test(p.notes || '');
+      let body, severity, okLabel;
+      if (isRacing){
+        body = '⚠ PRESET RACING — bahaya untuk engine STOCK\n\n' +
+               'Preset "' + p.name + '" pakai advance map agresif (max ' +
+               (p.max_adv ? p.max_adv.toFixed(0) : '38') + '° BTDC) yang DIRANCANG untuk:\n' +
+               '  • Engine bore-up / high-compression piston\n' +
+               '  • Ported cylinder + race exhaust\n' +
+               '  • Race fuel (oktan tinggi)\n\n' +
+               'Apply ke engine STOCK = detonation = kerusakan piston/valve dalam hitungan detik.\n\n' +
+               'Yakin engine sudah dimodifikasi sesuai spec?';
+        severity = 'danger';
+        okLabel = '⚠ Saya paham — terapkan';
+      } else if (isPulserNegatif){
+        body = '⚠ PULSER NEGATIF\n\n' +
+               'Preset "' + p.name + '" untuk motor dengan polaritas pulser terbalik (trailing edge first).\n\n' +
+               'WAJIB tukar kabel pulser fisik sebelum apply:\n' +
+               '  • Leading-edge opto → GPIO34 (CH1)\n' +
+               '  • Trailing-edge opto → GPIO35 (CH2)\n\n' +
+               'Tanpa swap fisik, spark fire di timing salah → kickback / no combustion.';
+        severity = 'warn';
+        okLabel = '✓ Kabel sudah ditukar, terapkan';
+      } else {
+        body = 'Pilih "' + p.name + '"?\n\nSemua setting (rev limit, advance map, dwell, dll) akan ditimpa dengan defaults dari preset ini.';
+        severity = 'warn';
+        okLabel = '✓ Terapkan';
+      }
       const ok = await cdi.modal.confirm({
-        title: 'GANTI PRESET',
-        severity: 'warn',
-        body: 'Pilih "' + p.name + '"?\n\nSemua setting (rev limit, advance map, dwell, dll) akan ditimpa dengan defaults dari preset ini.',
-        okLabel: '✓ Terapkan',
+        title: isRacing ? 'PRESET RACING' : (isPulserNegatif ? 'PULSER NEGATIF' : 'GANTI PRESET'),
+        severity,
+        body,
+        okLabel,
       });
       if (!ok) return;
       cdi.send({cmd:'setPreset', id:pid});
