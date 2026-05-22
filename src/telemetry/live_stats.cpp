@@ -77,21 +77,50 @@ void tick() {
         // Time from CH1 to the moment we want the spark to actually fire.
         const uint32_t spark_delay_us = (uint32_t)((delayDeg / 360.0f) * (float)periodU);
 
-        // ── Auto-cap dwell to a safe fraction of period ──
-        // At high RPM the configured dwell can exceed the time
-        // available between CH1 events, which causes fire-off of
-        // cycle N to overlap with fire-on of cycle N+1 — primary
-        // coil ends up energized continuously, generates heat well
-        // above its rated dissipation, and spark timing drifts
-        // unpredictably. Cap effective dwell at 40% of period so
-        // there's always headroom for the next charge cycle. The
-        // user-configured value is preserved (in s_dwellUs) and
-        // restored automatically when RPM drops.
+        // ── Effective dwell selection ──
+        //
+        // Three constraints on dwell for an inductive ignition stage:
+        //   1. Thermal: dwell ≤ 40 % of period so primary coil never
+        //      stays energized between cycles.
+        //   2. Advance preservation: spark fires at end of dwell;
+        //      we need dwell ≤ spark_delay_us so the fire-off lands
+        //      at the intended crank angle. If dwell > spark_delay,
+        //      spark would land AFTER target → retarded (or even
+        //      post-TDC) at higher RPM, which is exactly the regime
+        //      where TCI dwell exceeds the (max_ref − target_advance)
+        //      angular budget on a Honda-style 32 ° BTDC pulser.
+        //   3. Spark energy floor: below ~200 µs primary doesn't
+        //      charge enough for a useful spark. Honor the floor even
+        //      if it means slightly retarded timing.
+        //
+        // For capacitive (CDI/SCR) ignition, constraint #2 doesn't
+        // apply — spark fires on the rising edge, dwell is just the
+        // trigger pulse width.
         const uint32_t configured_dwell = cdi::core::spark::configuredDwellUs();
         const uint32_t safe_dwell_cap   = (uint32_t)((float)periodU * 0.4f);
-        const uint32_t dwell_us         = (configured_dwell < safe_dwell_cap)
-                                        ? configured_dwell
-                                        : safe_dwell_cap;
+        constexpr uint32_t MIN_USEFUL_DWELL = 200;   // µs
+
+        uint32_t dwell_us = configured_dwell;
+        if (dwell_us > safe_dwell_cap) dwell_us = safe_dwell_cap;
+
+        if (cdi::core::spark::inductive()) {
+            // Pre-compute spark_delay to check the advance constraint.
+            // Note: this is the same value used below — we factor it
+            // out so the dwell cap can be aware of it.
+            uint32_t target_spark_delay = (uint32_t)((delayDeg / 360.0f) * (float)periodU);
+            if (dwell_us > target_spark_delay && target_spark_delay >= MIN_USEFUL_DWELL) {
+                // Shorten dwell to match target advance. Stays above
+                // the useful-spark floor.
+                dwell_us = target_spark_delay;
+            } else if (target_spark_delay < MIN_USEFUL_DWELL) {
+                // Target advance is so close to max_ref that even
+                // 200 µs dwell pushes spark past the intended angle.
+                // Accept the retard — set dwell to the floor and let
+                // the spark land a few degrees retarded from map.
+                dwell_us = MIN_USEFUL_DWELL;
+            }
+        }
+        if (dwell_us < MIN_USEFUL_DWELL) dwell_us = MIN_USEFUL_DWELL;
         cdi::core::spark::setEffectiveDwellUs(dwell_us);
 
         // For inductive ignition, the GPIO HIGH→LOW transition (end

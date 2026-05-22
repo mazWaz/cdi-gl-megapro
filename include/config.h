@@ -33,7 +33,11 @@ constexpr float    BASE_ADVANCE_FROM_CH2_DEG = 14.0f;
 constexpr uint32_t DEFAULT_REV_LIMIT_MAIN_RPM    = 10500;
 constexpr uint32_t DEFAULT_REV_LIMIT_OVERREV_RPM = 11500;
 constexpr uint32_t DEFAULT_REV_LIMIT_LAUNCH_RPM  = 5000;
-constexpr uint32_t DEFAULT_DWELL_US              = 2500;
+// 5 ms gives ~70% primary saturation on typical motorcycle coil
+// (3-5 mH, 0.5-1 Ω; τ = L/R ≈ 5 ms). Spark energy strong enough
+// for cold cranking. Auto-shortened by live_stats at high RPM to
+// preserve target advance (see live_stats::tick).
+constexpr uint32_t DEFAULT_DWELL_US              = 5000;
 
 // Sanity bounds — anything outside is rejected as noise/error.
 // MIN must be low enough to accept kick / electric-start cranking
