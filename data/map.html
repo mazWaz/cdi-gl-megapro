@@ -872,14 +872,19 @@ document.querySelectorAll('.slot').forEach(el => {
     const i = +el.dataset.slot;
     const slot = slots[i];
 
-    // Determine source curve + new active profile descriptor
+    // Determine source curve + new active profile descriptor.
+    // KEY: tap slot ALWAYS makes it the active destination (amber
+    // glow) regardless of whether the slot already had data. If
+    // empty, we load stock into the editor as a starting point but
+    // mark the slot itself as active — user is now editing 'into'
+    // that slot, ready to Apply+name it.
     let src, srcName, newProfile;
     if (slot){
       src = slot.points.map(p => [...p]);
       srcName = slot.name;
       newProfile = { type: 'slot', idx: i, name: slot.name };
     } else {
-      // empty slot → load active preset stock
+      // empty slot → load active preset stock as starting point
       const ready = await ensureStockLoaded();
       if (!ready){
         await cdi.modal.alert({
@@ -892,9 +897,9 @@ document.querySelectorAll('.slot').forEach(el => {
       }
       src = stockPoints.map(p => [...p]);
       srcName = 'stok ' + stockName;
-      // Loading stock into an empty slot — track as stock, NOT slot
-      // (the slot is still empty until user explicitly saves to it).
-      newProfile = { type: 'stock', name: stockName };
+      // Slot is empty but user picked it as destination — light it
+      // up with 'stok' as placeholder name. Apply will replace this.
+      newProfile = { type: 'slot', idx: i, name: 'stok' };
     }
 
     if (dirty){
