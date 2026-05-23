@@ -2,7 +2,10 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0a0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>CDI//MGPRO · Peta Pengapian</title>
 <link rel="stylesheet" href="/style.css">
 <style>
@@ -66,19 +69,28 @@
     border: 1px solid var(--border-hi);
     color: var(--text-dim);
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
-    padding: 9px 4px;
+    padding: 14px 8px;
+    min-height: 48px;   /* generous thumb tap */
     cursor: pointer;
     text-transform: uppercase;
-    transition: all 0.1s;
+    transition: all 0.12s;
+    touch-action: manipulation;
   }
   .pad button:hover:not(:disabled) { color: var(--amber); border-color: var(--amber); }
-  .pad button:active:not(:disabled) { transform: translateY(1px); background: var(--amber-soft); }
+  .pad button:active:not(:disabled) {
+    transform: translateY(1px);
+    background: var(--amber-soft);
+    box-shadow: inset 0 0 14px var(--amber-soft);
+  }
   .pad button:disabled { opacity: 0.3; cursor: not-allowed; }
   .pad button.del { color: var(--red); border-color: var(--red); }
   .pad button.del:hover { background: rgba(230,57,70,0.12); }
+  @media (min-width: 768px) {
+    .pad button { font-size: 11px; padding: 9px 4px; min-height: 0; }
+  }
 
   /* profile slots */
   .slots {
@@ -89,7 +101,7 @@
   }
   .slot {
     position: relative;
-    padding: 8px 4px 8px 4px;
+    padding: 14px 6px 16px 6px;
     background: var(--bg);
     border: 1px solid var(--border);
     text-align: center;
@@ -97,11 +109,19 @@
     font-size: 10px;
     letter-spacing: 0.08em;
     color: var(--text-dim);
-    transition: all 0.1s;
+    transition: all 0.15s;
+    min-height: 64px;
+    touch-action: manipulation;
   }
-  .slot .n  { color: var(--amber); font-weight: 700; font-size: 12px; display: block; }
-  .slot .nm { display: block; margin-top: 3px; text-transform: uppercase;
-              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot:active { transform: translateY(1px); }
+  .slot .n  { color: var(--amber); font-weight: 700; font-size: 14px; display: block; letter-spacing: 0.1em; }
+  .slot .nm { display: block; margin-top: 4px; text-transform: uppercase;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              font-size: 10px; }
+  @media (min-width: 768px) {
+    .slot { padding: 8px 4px; min-height: 0; }
+    .slot .n { font-size: 12px; }
+  }
   .slot.saved { border-color: var(--cyan); }
   .slot.saved .nm { color: var(--cyan); }
   .slot.active {
