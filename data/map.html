@@ -231,7 +231,7 @@
 
   <section class="panel">
     <span class="label">[ slot profil ]</span>
-    <p class="note">Tap slot untuk pilih tujuan. Tap <b>Terapkan</b> untuk simpan + kirim ke device.</p>
+    <p class="note">Tap slot = aktif + langsung kirim ke device. <b>Terapkan</b> untuk simpan perubahan baru ke slot.</p>
     <div class="slots" id="slots">
       <div class="slot" data-slot="0">
         <span class="n">P1</span><span class="nm">stok</span>
@@ -601,51 +601,59 @@ function adjustSelected(dRpm, dDeg){
 }
 
 async function applyChanges(){
-  // If a slot is active, name + save it to that slot before sending.
-  // If no slot is active, just send to device without saving anywhere.
-  if (activeProfile && activeProfile.type === 'slot'){
-    const i = activeProfile.idx;
-    const existing = slots[i];
-    const defaultName = existing ? existing.name :
-                        ('P' + (i+1) + ' ' +
-                         new Date().toLocaleDateString('id-ID', {
-                           day: '2-digit', month: 'short'
-                         }));
-    const name = await cdi.modal.prompt({
-      title: existing ? 'TERAPKAN & GANTI P' + (i+1) : 'TERAPKAN & SIMPAN P' + (i+1),
-      severity: 'info',
-      body: existing
-        ? 'Slot P' + (i+1) + ' saat ini: "' + existing.name + '"\n' +
-          'Akan diganti dengan kurva editor (' + points.length + ' titik) ' +
-          'dan dikirim ke device.\n\nBeri nama profile:'
-        : 'Simpan kurva editor (' + points.length + ' titik) ke slot P' +
-          (i+1) + ' dan kirim ke device.\n\nBeri nama profile:',
-      placeholder: 'mis: pertamax warming up',
-      defaultValue: defaultName,
-      okLabel: '✓ Simpan & Kirim',
-    });
-    if (name === null){
-      document.getElementById('mapStatus').textContent = '› dibatalkan';
-      return;
-    }
-    const cleaned = String(name).trim().slice(0, 32);
-    if (!cleaned){
-      document.getElementById('mapStatus').textContent = '› nama kosong, batal';
-      return;
-    }
-    slots[i] = {
-      name: cleaned,
-      points: points.map(p => [...p]),
-      savedAt: Date.now(),
-    };
-    saveSlots();
-    setActiveProfile({ type: 'slot', idx: i, name: cleaned });
-    document.getElementById('mapStatus').textContent =
-      '› simpan P' + (i+1) + ' "' + cleaned + '" + kirim…';
-  } else {
+  // Apply dipakai HANYA ketika user mengubah editor (dirty=true).
+  // Tap slot tanpa edit → auto-applied di slot handler, tombol ini
+  // disabled. Edit kurva → tombol nyala → klik = save+kirim dengan
+  // modal naming.
+  if (!(activeProfile && activeProfile.type === 'slot')){
+    // Editor sedang di mode 'device' (jarang sampai sini karena tap
+    // slot auto-apply). Kirim aja tanpa naming.
     document.getElementById('mapStatus').textContent = '› mengirim ke device…';
+    cdi.send({ cmd: 'setMap', points: points });
+    return;
   }
+  const i = activeProfile.idx;
+  const existing = slots[i];
+  const defaultName = existing ? existing.name :
+                      ('P' + (i+1) + ' ' +
+                       new Date().toLocaleDateString('id-ID', {
+                         day: '2-digit', month: 'short'
+                       }));
+  const name = await cdi.modal.prompt({
+    title: existing ? 'SIMPAN PERUBAHAN P' + (i+1) : 'SIMPAN BARU KE P' + (i+1),
+    severity: 'info',
+    body: existing
+      ? 'Slot P' + (i+1) + ' saat ini: "' + existing.name + '"\n' +
+        'Akan diganti dengan kurva editor (' + points.length + ' titik) ' +
+        'dan dikirim ke device.\n\nNama profile:'
+      : 'Simpan kurva editor (' + points.length + ' titik) ke slot P' +
+        (i+1) + ' dan kirim ke device.\n\nBeri nama profile:',
+    placeholder: 'mis: pertamax warming up',
+    defaultValue: defaultName,
+    okLabel: '✓ Simpan & Kirim',
+  });
+  if (name === null){
+    document.getElementById('mapStatus').textContent = '› dibatalkan';
+    return;
+  }
+  const cleaned = String(name).trim().slice(0, 32);
+  if (!cleaned){
+    document.getElementById('mapStatus').textContent = '› nama kosong, batal';
+    return;
+  }
+  slots[i] = {
+    name: cleaned,
+    points: points.map(p => [...p]),
+    savedAt: Date.now(),
+  };
+  saveSlots();
+  setActiveProfile({ type: 'slot', idx: i, name: cleaned });
+  document.getElementById('mapStatus').textContent =
+    '› P' + (i+1) + ' "' + cleaned + '" disimpan + dikirim';
   cdi.send({ cmd: 'setMap', points: points });
+  // Setelah disimpan + applied, editor clean state lagi sampai user
+  // edit lagi.
+  clearDirty();
 }
 
 function flash(msg){
@@ -842,10 +850,14 @@ document.getElementById('loadStockBtn').addEventListener('click', async () => {
   // point. User can then tune and click Apply to commit.
   points = stockPoints.map(p => [...p]);
   selected = -1;
-  markDirty();
+  clearDirty();
   setActiveProfile({ type: 'stock', name: stockName });
   renderCurve();
-  flash('stok ' + stockName + ' dimuat ke editor — klik Terapkan untuk kirim');
+  // Konsisten dengan slot tap — load = langsung kirim.
+  cdi.send({ cmd: 'setMap', points: points });
+  document.getElementById('mapStatus').textContent =
+    '› stok ' + stockName + ' dimuat + dikirim ke device';
+  flash('stok ' + stockName + ' aktif');
 });
 
 // ─────── Slot system (localStorage-backed) ───────
@@ -938,21 +950,23 @@ document.querySelectorAll('.slot').forEach(el => {
       const ok = await cdi.modal.confirm({
         title: 'BUANG PERUBAHAN',
         severity: 'warn',
-        body: 'Muat ' + srcName + ' ke editor akan menimpa perubahan ' +
-              'yang belum di-Terapkan.',
-        okLabel: '↺ Buang & muat',
+        body: 'Pindah ke ' + srcName + ' akan membuang perubahan ' +
+              'editor yang belum disimpan.',
+        okLabel: '↺ Buang & pindah',
       });
       if (!ok) return;
     }
     points = src;
     selected = -1;
-    // Mark dirty so Apply button is enabled — the editor now differs
-    // from what's running on the device, and "dirty" here means
-    // "different from device", not "different from slot source".
-    markDirty();
+    clearDirty();              // baru di-load = clean state
     setActiveProfile(newProfile);
     renderCurve();
-    flash(srcName + ' dimuat ke editor — klik Terapkan untuk kirim');
+    // Tap slot = langsung kirim ke device. Apply button cuma untuk
+    // commit perubahan editing baru (yang menandai dirty).
+    cdi.send({ cmd: 'setMap', points: points });
+    document.getElementById('mapStatus').textContent =
+      '› ' + srcName + ' dimuat + dikirim ke device';
+    flash(srcName + ' aktif');
   });
 });
 
