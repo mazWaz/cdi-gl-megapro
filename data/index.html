@@ -214,7 +214,7 @@ cdi.bus.on('idleRumble', m => {
     pill.style.display = '';
     pill.querySelector ? null : null;
     // Label berbeda per mode untuk indikasi visual
-    const modeName = ['OFF','SUBTLE','AGGR','BURBLE'][m.mode | 0] || '?';
+    const modeName = ['OFF','SUBTLE','AGGR','BURBLE','NGEBASS','NGOROK','BRAP-BRAP'][m.mode | 0] || '?';
     pill.textContent = 'RUMBLE · ' + modeName;
   } else {
     pill.style.display = 'none';

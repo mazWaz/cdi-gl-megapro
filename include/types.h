@@ -96,6 +96,10 @@ enum class IdleRumbleMode : uint8_t {
     SUBTLE      = 1,
     AGGRESSIVE  = 2,
     DRAG_BURBLE = 3,
+    // ── Karakter idle khas Indonesia ──
+    NGEBASS     = 4,  // sine-wave modulation retard 1.5 Hz → pulse dalam
+    NGOROK      = 5,  // V-twin snoring: burst pattern fire-5-skip-2
+    BRAP_BRAP   = 6,  // drag-bike popping: heavy retard + skip + random burst
 };
 
 } // namespace cdi

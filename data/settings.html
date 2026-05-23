@@ -234,6 +234,9 @@
       <button type="button" data-mode="1">Subtle</button>
       <button type="button" data-mode="2">Aggressive</button>
       <button type="button" data-mode="3">Drag Burble</button>
+      <button type="button" data-mode="4">Ngebass</button>
+      <button type="button" data-mode="5">Ngorok</button>
+      <button type="button" data-mode="6">Brap-Brap</button>
     </div>
     <p class="note" id="irModeDesc">—</p>
     <label class="field">idle rpm bawah
@@ -1066,13 +1069,19 @@ const IR_DESC = {
   0: 'OFF — idle normal, tidak ada variasi.',
   1: 'Subtle — jitter retard 0-3° per fire. Suara lopey halus, no skip.',
   2: 'Aggressive — jitter + skip-fire pattern. Irregular firing rhythm.',
-  3: 'Drag Burble — jitter heavy + frequent skip. Pop sesekali di idle.'
+  3: 'Drag Burble — jitter heavy + frequent skip. Pop sesekali di idle.',
+  4: 'Ngebass — sine modulation 1.5 Hz, pulse dalam "wub-wub-wub". Cocok untuk touring/cruiser feel.',
+  5: 'Ngorok — V-twin snoring emulation. Pattern fire-5-skip-2 + jitter. Mimic suara Harley/V-twin di single-cyl.',
+  6: 'Brap-Brap — drag-bike popping. Heavy retard 4-8° + skip 1-of-4 + random burst. Pop teratur di exhaust.'
 };
 const IR_DEFAULTS = {
   0: { lo: 1000, hi: 2000, ret: 0.0, skip:  0, sus: 3000, upt: 60 },
   1: { lo: 1000, hi: 2000, ret: 3.0, skip:  0, sus: 3000, upt: 60 },
   2: { lo: 1000, hi: 2000, ret: 4.0, skip:  7, sus: 3000, upt: 60 },
-  3: { lo: 1000, hi: 2000, ret: 6.0, skip:  4, sus: 2000, upt: 60 }
+  3: { lo: 1000, hi: 2000, ret: 6.0, skip:  4, sus: 2000, upt: 60 },
+  4: { lo: 900,  hi: 2200, ret: 6.0, skip:  0, sus: 3000, upt: 60 },   // ngebass — wide band, no skip
+  5: { lo: 1000, hi: 2000, ret: 4.0, skip:  0, sus: 2500, upt: 60 },   // ngorok — skip dari hardcoded pattern
+  6: { lo: 1100, hi: 2100, ret: 7.0, skip:  0, sus: 2000, upt: 60 }    // brap-brap — skip dari hardcoded pattern
 };
 let irModeValue = 1;
 function setIrMode(m, autofill){

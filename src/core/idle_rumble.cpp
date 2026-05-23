@@ -1,6 +1,7 @@
 #include "core/idle_rumble.h"
 
 #include <Arduino.h>
+#include <math.h>
 
 #include "core/launch_control.h"
 #include "core/safety.h"
@@ -107,36 +108,94 @@ void tick(cdi::rpm_t rpm) {
     // tidak bikin per-fire CPU spike di live_stats. live_stats baca
     // s_currentRetard apa adanya.
     if ((int32_t)(now - s_lastSampMs) >= 10) {
-        float max = s_maxRetardDeg;
-        // DRAG_BURBLE = heavier retard depth
-        if (s_mode == cdi::IdleRumbleMode::DRAG_BURBLE) {
-            max = s_maxRetardDeg * 2.0f;
-            if (max > 12.0f) max = 12.0f;       // safety cap
+        float r = 0.0f;
+        switch (s_mode) {
+            case cdi::IdleRumbleMode::SUBTLE:
+            case cdi::IdleRumbleMode::AGGRESSIVE:
+                r = jitterRetard(s_maxRetardDeg);
+                break;
+            case cdi::IdleRumbleMode::DRAG_BURBLE: {
+                float max = s_maxRetardDeg * 2.0f;
+                if (max > 12.0f) max = 12.0f;
+                r = jitterRetard(max);
+                break;
+            }
+            case cdi::IdleRumbleMode::NGEBASS: {
+                // Sine-wave modulation 1.5 Hz → engine pulse pelan
+                // 'wub-wub-wub'. Phase dari millis() supaya konsisten.
+                const float period_ms = 667.0f;   // 1.5 Hz
+                const float t = ((float)(now % (uint32_t)period_ms)) / period_ms;
+                const float sine = sinf(t * 2.0f * 3.14159265f);
+                const float depth = (s_maxRetardDeg < 4.0f) ? 8.0f
+                                                            : s_maxRetardDeg * 1.5f;
+                r = (sine * 0.5f + 0.5f) * (depth > 10.0f ? 10.0f : depth);
+                break;
+            }
+            case cdi::IdleRumbleMode::NGOROK: {
+                // Random retard 0-4°, mostly low. Burst skip handled di
+                // shouldFireThisCycle untuk efek 'snoring' tidak monoton.
+                r = jitterRetard(s_maxRetardDeg < 4.0f ? 4.0f : s_maxRetardDeg);
+                break;
+            }
+            case cdi::IdleRumbleMode::BRAP_BRAP: {
+                // Heavy retard 4-8°, dikombinasi dengan frequent skip.
+                const float base = 4.0f;
+                const float jit  = (s_maxRetardDeg < 4.0f ? 4.0f : s_maxRetardDeg);
+                r = base + jitterRetard(jit);
+                if (r > 10.0f) r = 10.0f;
+                break;
+            }
+            default:
+                r = 0.0f;
+                break;
         }
-        s_currentRetard = jitterRetard(max);
+        s_currentRetard = r;
         s_lastSampMs = now;
     }
 }
 
 // ── Spark ISR chain — called from safety::shouldFire ──────────────
-// Pattern fire-N-skip-1. SUBTLE mode = no skip (return true always
-// when active). AGGRESSIVE+DRAG_BURBLE = skip every (N+1)th fire.
+// Per-mode skip pattern. Active state sudah di-cek upstream.
 bool shouldFireThisCycle() {
     if (!s_active) return true;       // not engaged, never block fire
 
-    // SUBTLE: jitter retard only, never skip
-    if (s_mode == cdi::IdleRumbleMode::SUBTLE) return true;
+    switch (s_mode) {
+        case cdi::IdleRumbleMode::SUBTLE:
+        case cdi::IdleRumbleMode::NGEBASS:
+            // Jitter retard / sine modulation saja, tidak ada skip.
+            return true;
 
-    // AGGRESSIVE / DRAG_BURBLE: pattern skip
-    const uint8_t n = s_skipFireN;
-    if (n == 0) return true;          // skip disabled
+        case cdi::IdleRumbleMode::AGGRESSIVE:
+        case cdi::IdleRumbleMode::DRAG_BURBLE: {
+            // Fire-N-skip-1 sederhana (N = s_skipFireN dari config).
+            const uint8_t n = s_skipFireN;
+            if (n == 0) return true;
+            s_fireCounter++;
+            return (s_fireCounter % (n + 1)) != 0;
+        }
 
-    s_fireCounter++;
-    // Setiap (n+1)th fire = skip
-    if ((s_fireCounter % (n + 1)) == 0) {
-        return false;
+        case cdi::IdleRumbleMode::NGOROK: {
+            // V-twin snoring emulation: fire 5, skip 2, repeat.
+            // Pattern audible: 'BOM-BOM-BOM-BOM-BOM-(silent)-(silent)-...'
+            // Cycle 7 cycles per pattern, dengan 5/7 fire rate (71%).
+            s_fireCounter++;
+            const uint32_t pos = s_fireCounter % 7u;
+            return pos < 5u;          // fire on 0..4, skip on 5,6
+        }
+
+        case cdi::IdleRumbleMode::BRAP_BRAP: {
+            // Drag-bike popping: skip 1-of-4 reguler + 5% random extra skip.
+            // Audible: 'BOM-BOM-BOM-pop!-BOM-BOM-..-BOM-pop-BOM' irregular.
+            s_fireCounter++;
+            if ((s_fireCounter & 0x3u) == 0u) return false;       // 1-of-4 reguler skip
+            s_lcg = s_lcg * 1664525u + 1013904223u;
+            if ((s_lcg >> 24) < 12u) return false;                // ~5% random burst skip
+            return true;
+        }
+
+        default:
+            return true;
     }
-    return true;
 }
 
 // ── Public state queries ─────────────────────────────────────────
