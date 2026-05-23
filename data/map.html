@@ -771,11 +771,49 @@ document.getElementById('reloadBtn').addEventListener('click', async () => {
     const ok = await cdi.modal.confirm({
       title: 'BUANG PERUBAHAN',
       severity: 'warn',
-      body: 'Map editor memiliki perubahan yang belum di-Terapkan.\n\nMuat ulang dari perangkat akan membuang perubahan tersebut.',
+      body: 'Map editor memiliki perubahan yang belum di-Terapkan.\n\n' +
+            'Muat ulang akan reset kurva editor ke profile yang aktif.',
       okLabel: '↺ Buang & muat',
     });
     if (!ok) return;
   }
+  // Reload sumber yang sedang aktif — JANGAN refetch dari device,
+  // karena itu akan deselect slot user (activeProfile jadi 'device').
+  // User intent: 'undo perubahan saya, kembali ke baseline profile ini'.
+  if (activeProfile && activeProfile.type === 'slot' && slots[activeProfile.idx]){
+    const slot = slots[activeProfile.idx];
+    points = slot.points.map(p => [...p]);
+    selected = -1; clearDirty();
+    renderCurve();
+    flash('reset ke P' + (activeProfile.idx+1) + ': ' + slot.name);
+    return;
+  }
+  if (activeProfile && activeProfile.type === 'slot' && !slots[activeProfile.idx]){
+    // Slot active tapi belum saved — reload dari stok preset
+    const ready = await ensureStockLoaded();
+    if (!ready){
+      flash('stok preset belum termuat');
+      return;
+    }
+    points = stockPoints.map(p => [...p]);
+    selected = -1; clearDirty();
+    renderCurve();
+    flash('reset ke stok ' + stockName);
+    return;
+  }
+  if (activeProfile && activeProfile.type === 'stock'){
+    const ready = await ensureStockLoaded();
+    if (!ready){
+      flash('stok preset belum termuat');
+      return;
+    }
+    points = stockPoints.map(p => [...p]);
+    selected = -1; clearDirty();
+    renderCurve();
+    flash('reset ke stok ' + stockName);
+    return;
+  }
+  // Fallback: tidak ada profile aktif → fetch device map (set ke 'device')
   cdi.send({ cmd: 'getMap' });
 });
 document.getElementById('applyBtn').addEventListener('click', applyChanges);
