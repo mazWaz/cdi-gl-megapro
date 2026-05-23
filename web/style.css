@@ -607,6 +607,46 @@ hr.tech {
   margin: 10px 0;
 }
 
+/* ─────── DETAILS / COLLAPSIBLE INFO BLOCKS ─────── */
+details > summary {
+  list-style: none;          /* hide native disclosure marker */
+  user-select: none;
+  -webkit-user-select: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary > * { display: inline; }
+details[open] > summary > .twist-arrow,
+details:not([open]) > summary > .twist-arrow {
+  display: inline-block;
+}
+details > summary:hover { color: var(--amber) !important; }
+details[open] > summary::first-letter {
+  /* Rotate "▸" → effectively show "▾" via swap di JS, atau CSS hack */
+}
+/* Custom triangle indicator yang flip saat open */
+details > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 4px;
+  color: var(--cyan);
+  transition: transform 0.15s ease;
+}
+details[open] > summary::before {
+  transform: rotate(90deg);
+}
+/* Remove "▸ " yang di-inline-text supaya tidak duplicate dengan ::before */
+details > summary:first-line { color: inherit; }
+/* Pull-in animation untuk content saat opened */
+details[open] > div,
+details[open] > p,
+details[open] > ol {
+  animation: details-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes details-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* ─────── SCOPE STATS ROW ─────── */
 .scope-stats {
   display: flex; flex-wrap: wrap; gap: 6px;

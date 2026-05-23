@@ -507,6 +507,63 @@
       <dd><span id="pkpSourceView">—</span></dd>
     </dl>
 
+    <!-- TDC reference info — collapsible untuk hemat ruang -->
+    <details style="margin: 6px 0 10px; background: var(--bg); border: 1px solid var(--border); padding: 8px 12px">
+      <summary style="cursor:pointer; font-size:10px; letter-spacing:0.15em; color:var(--cyan); text-transform:uppercase; padding:2px 0">
+        Tentang TDC reference &amp; cara verify timing
+      </summary>
+      <div style="font-size:10px; line-height:1.6; color:var(--text-dim); margin-top:8px">
+        <p style="margin-bottom:8px">
+          <b style="color:var(--amber)">TDC</b> = Top Dead Center = posisi piston paling atas
+          = titik <b>0°</b> referensi. Semua advance diukur <b>BTDC</b> (Before TDC).
+          Firmware <b>tidak punya sensor TDC</b> — yang ada cuma pulser. Hubungan
+          fisik pickup → TDC ada di <b>max advance ref°</b>.
+        </p>
+
+        <div style="background:var(--bg-grid); border:1px solid var(--border); padding:8px; margin:6px 0; font-family:var(--mono); font-size:9px; line-height:1.5; color:var(--text-faint)">
+<pre style="margin:0; color:inherit">
+   crank rotation  ──►
+   ┌──────────────────────────────────────────────────┐
+   │  CH1↓ ── CH2↓ ─── fire ──── ▲ TDC ── ATDC        │
+   │   ▲       ▲        ▲        │                   │
+   │  32°BTDC 14°BTDC  10°BTDC   0°                   │
+   │ max_ref  base_ref   adv (dari map)               │
+   └──────────────────────────────────────────────────┘
+   (angka contoh Megapro stok)</pre>
+        </div>
+
+        <p style="margin-bottom:6px">
+          <b style="color:var(--cyan)">Cara verify TDC dengan strobe light:</b>
+        </p>
+        <ol style="margin: 0 0 8px 18px; padding: 0">
+          <li>Engine idle stabil ~1500 RPM, cabut sambungan ke koil sekunder kalau perlu.</li>
+          <li>Pasang strobe light pickup ke kabel busi.</li>
+          <li>Sinari flywheel — saat strobe nyala, lihat mark mana yang sejajar pointer:
+            <ul style="margin: 2px 0 0 18px; padding: 0">
+              <li><b>T</b> mark = fire AT TDC → map idle = 0° (terlalu retard, engine ngempos)</li>
+              <li><b>F</b> mark = ~10° BTDC → factory idle Megapro, target ideal</li>
+              <li><b>PL</b> mark = ~32° BTDC → peak advance saat rev tinggi</li>
+            </ul>
+          </li>
+          <li>Mismatch antara map setting vs actual strobe reading?
+            <ul style="margin: 2px 0 0 18px; padding: 0">
+              <li>Kalau bias konsisten (e.g., semua lambat 3°) → adjust <b>offset advance</b> di panel Tuning Output Pengapian.</li>
+              <li>Kalau peak mismatch (32° di map tapi strobe baca 28°) → adjust <b>max advance ref</b> di sini.</li>
+            </ul>
+          </li>
+        </ol>
+
+        <p style="margin: 0 0 6px">
+          <b style="color:var(--cyan)">Kapan perlu edit manual:</b>
+        </p>
+        <ul style="margin: 0 0 0 18px; padding: 0">
+          <li>Modif rotor magnetic (pulser dipindah / dibuat ulang custom).</li>
+          <li>Ganti pickup ke geometry beda (jarak ke flywheel, sudut mount).</li>
+          <li>Motor non-standard yang tidak ada preset-nya.</li>
+        </ul>
+      </div>
+    </details>
+
     <hr class="tech">
 
     <!-- Manual edit form -->
