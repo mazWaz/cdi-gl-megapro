@@ -71,52 +71,59 @@ void handleEmbedded(AsyncWebServerRequest* req) {
 
 // ── Captive-portal probe responders ──────────────────────────────
 //
-// Setiap OS modern probes URL well-known untuk detect internet.
-// Strategi lama: respond dengan exact success payload supaya banner
-// tidak muncul → user harus manually ketik 192.168.4.1. Strategi
-// sekarang (per user request): TRIGGER captive portal supaya browser
-// AUTO-OPEN ke dashboard kita.
+// Tujuan: bikin OS detect "no internet, captive portal" + biarkan
+// user pilih "Tetap terhubung tanpa internet" → setelah itu OS stop
+// spam probe. Browser bisa di-buka manual ke 192.168.4.1.
 //
-// Cara: response 302 redirect ke "/" (dashboard). OS lihat respond
-// ≠ expected success → flag network "needs sign-in" → trigger sistem:
-//   * Android : notification "Sign in to network" → tap → buka browser
-//   * iOS/Mac : auto-open captive browser ke URL → follow redirect
-//   * Windows : notif "No internet, limited" → klik → buka browser
+// Strategi: return 200 OK + HTML portal page (BUKAN exact success
+// payload, BUKAN 302 redirect). Behaviour per-OS:
 //
-// Reference probe URLs per-OS:
-//   Android  /generate_204, /gen_204            (Google connectivity check)
-//   Windows  /ncsi.txt, /connecttest.txt        (NCSI)
-//   iOS/Mac  /hotspot-detect.html, /library/test/success.html
-//   Apple    /canonical.html                    (newer iOS)
-//   Mozilla  /success.txt, /canonical.html       (Firefox)
+//   Android: probe gagal match expected "204 empty" → notif "Sign
+//            in to network" muncul SEKALI. User tap → buka browser
+//            ke portal URL. Dismiss notif → Android tanya "Tetap
+//            terhubung walau tanpa internet?". User pilih ya →
+//            jaringan di-whitelist, no more probes.
 //
-// Helper: 302 redirect ke dashboard. Browser follow → dashboard load.
+//   iOS/Mac: captive browser auto-open ke portal URL. User browse
+//            atau dismiss. OS mark network sebagai captive-aware.
+//
+//   Windows: "No internet, limited" indicator di tray. User can
+//            still browse manually.
+//
+// 302 redirect SEBELUMNYA terlalu agresif — Android terus re-probe
+// karena response berubah tiap try, never settles ke "captive done"
+// state. 200 + static HTML lebih cooperative.
 
-void portalRedirect(AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* r = req->beginResponse(302, "text/plain",
-                                                   "captive portal redirect");
-    r->addHeader("Location", "http://192.168.4.1/");
-    r->addHeader("Cache-Control", "no-store");
-    req->send(r);
-    Serial.printf("[HTTP] captive probe %s -> 302 redirect to /\n",
-                  req->url().c_str());
-}
-
-// Apple-specific: macOS captive browser kadang lebih happy dengan HTML
-// yang JELAS bukan "Success" + ada meta-refresh ke portal. 302 sometimes
-// gets cached oleh OS sebelum captive browser open. HTML approach lebih
-// reliable di iOS 14+.
-void portalAppleHtml(AsyncWebServerRequest* req) {
+void portalProbe(AsyncWebServerRequest* req) {
+    // Static HTML — small payload, identical setiap request supaya
+    // OS bisa hash-compare dan settle on "captive done" state.
     const char* body =
-        "<!DOCTYPE html><html><head>"
+        "<!DOCTYPE html><html lang=\"id\"><head>"
+        "<meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<meta http-equiv=\"refresh\" content=\"0; url=http://192.168.4.1/\">"
-        "<title>CDI Portal</title></head>"
-        "<body><a href=\"http://192.168.4.1/\">CDI//MGPRO portal</a></body>"
-        "</html>";
+        "<title>CDI//MGPRO Portal</title>"
+        "<style>"
+        "body{font-family:monospace;background:#0a0d12;color:#e8e6df;"
+        "margin:0;padding:40px 20px;text-align:center}"
+        "h1{color:#ffb84d;letter-spacing:0.2em;font-size:18px}"
+        "a{color:#ffb84d;font-size:16px;display:inline-block;"
+        "margin-top:20px;padding:14px 22px;border:1px solid #ffb84d;"
+        "text-decoration:none;letter-spacing:0.15em}"
+        "p{color:#8b95a7;font-size:11px;letter-spacing:0.08em;"
+        "text-transform:uppercase;margin:8px 0}"
+        "</style></head>"
+        "<body>"
+        "<h1>▌ CDI//MGPRO</h1>"
+        "<p>jaringan internal — tidak ada internet</p>"
+        "<a href=\"http://192.168.4.1/\">▶ Buka Dashboard</a>"
+        "</body></html>";
     AsyncWebServerResponse* r = req->beginResponse(200, "text/html", body);
-    r->addHeader("Cache-Control", "no-store");
+    // Cache portal HTML SECARA SHORT — OS akan revalidate setelah 10s.
+    // no-store ditinggalkan supaya OS detect content tidak berubah.
+    r->addHeader("Cache-Control", "max-age=10");
     req->send(r);
-    Serial.printf("[HTTP] apple probe %s -> portal HTML\n",
+    Serial.printf("[HTTP] captive probe %s -> portal HTML (200)\n",
                   req->url().c_str());
 }
 
@@ -170,26 +177,27 @@ void begin() {
     s_server.on("/datalog.csv",    HTTP_GET, handleDatalogCsv);
     s_server.on("/snapshot.csv",   HTTP_GET, handleSnapshotCsv);
 
-    // OS captive-portal probes — TRIGGER captive portal di semua OS
-    // dengan respond ≠ expected success. Browser akan auto-open
-    // ke dashboard kita.
+    // OS captive-portal probes — single handler returns 200 + HTML
+    // portal page. Cooperative behavior: Android dapat opsi "tetap
+    // terhubung" setelah probe gagal beberapa kali; iOS/Mac open
+    // captive browser SEKALI lalu network di-mark captive-aware.
 
     // Android (Google Chrome connectivity check):
-    s_server.on("/generate_204",              HTTP_GET, portalRedirect);
-    s_server.on("/gen_204",                   HTTP_GET, portalRedirect);
+    s_server.on("/generate_204",              HTTP_GET, portalProbe);
+    s_server.on("/gen_204",                   HTTP_GET, portalProbe);
 
     // Apple (iOS, macOS, iPadOS):
-    s_server.on("/hotspot-detect.html",       HTTP_GET, portalAppleHtml);
-    s_server.on("/library/test/success.html", HTTP_GET, portalAppleHtml);
+    s_server.on("/hotspot-detect.html",       HTTP_GET, portalProbe);
+    s_server.on("/library/test/success.html", HTTP_GET, portalProbe);
 
     // Windows NCSI:
-    s_server.on("/ncsi.txt",                  HTTP_GET, portalRedirect);
-    s_server.on("/connecttest.txt",           HTTP_GET, portalRedirect);
+    s_server.on("/ncsi.txt",                  HTTP_GET, portalProbe);
+    s_server.on("/connecttest.txt",           HTTP_GET, portalProbe);
 
     // Firefox / Mozilla:
-    s_server.on("/success.txt",               HTTP_GET, portalRedirect);
-    s_server.on("/canonical.html",            HTTP_GET, portalAppleHtml);
-    s_server.on("/redirect",                  HTTP_GET, portalRedirect);
+    s_server.on("/success.txt",               HTTP_GET, portalProbe);
+    s_server.on("/canonical.html",            HTTP_GET, portalProbe);
+    s_server.on("/redirect",                  HTTP_GET, portalProbe);
 
     // Unknown paths → serve embedded index (handleEmbedded fallback
     // to "/" kalau path tidak match). Won't trigger captive banner
