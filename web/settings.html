@@ -26,6 +26,10 @@
 
   <section class="panel" style="border-color:var(--amber)">
     <span class="label">[ ⚙ motor preset ]</span>
+    <p class="caption">
+      Pilih preset sesuai jenis motor. Setiap preset bawa <b>peta advance + rev limit + dwell + geometri pulser</b>
+      yang sudah dikalibrasi pabrik. Ganti preset = reset ke nilai stok motor itu.
+    </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip" id="presetCurrent" style="background:var(--amber-soft);border-color:var(--amber);color:var(--amber)">
         <b id="presetNameTxt">—</b>
@@ -145,6 +149,11 @@
 
   <section class="panel">
     <span class="label">[ pembatas rev · mode cut ]</span>
+    <p class="caption">
+      Cara firmware membatasi RPM saat melebihi limit. <b>Soft</b> halus (retard timing),
+      <b>Hard</b> mati total, <b>Pattern</b> skip pola tetap, <b>Progressive</b> skip random.
+      Pilih sesuai feel yang diinginkan saat menyentuh limiter.
+    </p>
     <div class="seg-group" id="cutModeBtns">
       <button type="button" data-mode="1">Soft Retard</button>
       <button type="button" data-mode="2">Hard Cut</button>
@@ -184,6 +193,11 @@
 
   <section class="panel">
     <span class="label">[ backfire · burble · anti-lag ]</span>
+    <p class="caption">
+      Bikin suara <b>pop/dor</b> di knalpot saat decel/idle dengan retard timing
+      ekstrem. Efek audio + flame di header. <b>Memperpendek umur exhaust valve</b>
+      — pakai bijak.
+    </p>
     <label class="field">
       <span style="min-width:70px">aktif</span>
       <label class="chk" style="margin-left:8px"><input type="checkbox" id="bfEn"> enabled</label>
@@ -228,6 +242,11 @@
 
   <section class="panel">
     <span class="label">[ idle rumble · lopey cam / drag-burble ]</span>
+    <p class="caption">
+      Bikin suara <b>"lopey cam"</b> / V-twin / drag-bike di saat idle dengan
+      jitter retard ± skip-fire. Hanya aktif di RPM idle band — auto-off saat gas
+      dibuka. Cocok motor sehari-hari yang mau sound character.
+    </p>
     <label class="field">
       <span style="min-width:70px">aktif</span>
       <label class="chk" style="margin-left:8px"><input type="checkbox" id="irEn"> enabled</label>
@@ -285,6 +304,11 @@
 
   <section class="panel">
     <span class="label">[ launch control · 2-step ]</span>
+    <p class="caption">
+      Hold RPM di angka tetap saat tarik kopling (input GPIO13 LOW) — untuk
+      <b>start drag race</b>. Tarik kopling, gas pol, RPM tertahan di angka
+      yang di-set. Lepas kopling = launch.
+    </p>
     <label class="field">
       <span style="min-width:70px">aktif</span>
       <label class="chk" style="margin-left:8px"><input type="checkbox" id="launchEn"> enabled</label>
@@ -306,6 +330,11 @@
 
   <section class="panel">
     <span class="label">[ quickshifter · clutchless up-shift ]</span>
+    <p class="caption">
+      Cut pengapian X ms saat sensor strain di tuas perseneling trigger (GPIO14)
+      → torque drop → gigi pindah tanpa kopling. Untuk <b>shift up cepat</b> di
+      track. Perlu sensor QS terpasang di linkage.
+    </p>
     <label class="field">
       <span style="min-width:70px">aktif</span>
       <label class="chk" style="margin-left:8px"><input type="checkbox" id="qsEn"> enabled</label>
@@ -335,6 +364,11 @@
 
   <section class="panel">
     <span class="label">[ shift light · gpio27 ]</span>
+    <p class="caption">
+      LED/buzzer eksternal di GPIO27 yang <b>nyala saat RPM mendekati limit</b>.
+      Warning di RPM warn (kedip), solid di RPM shift. Tanda visual untuk
+      shift up tepat waktu — bantu tarik gigi sebelum touch rev limiter.
+    </p>
     <label class="field">
       <span style="min-width:70px">aktif</span>
       <label class="chk" style="margin-left:8px"><input type="checkbox" id="shiftEn"> enabled</label>
@@ -360,6 +394,11 @@
 
   <section class="panel">
     <span class="label">[ kurva dwell · rpm-kompensasi ]</span>
+    <p class="caption">
+      Adjust durasi <b>dwell</b> (waktu saturasi koil) berdasarkan RPM. Di RPM
+      tinggi periode pendek → butuh dwell lebih singkat. Default 4 titik biasanya
+      OK untuk Megapro stock; modif perlu tune sendiri.
+    </p>
     <label class="field">
       <span style="min-width:70px">aktif</span>
       <label class="chk" style="margin-left:8px"><input type="checkbox" id="dwellCurveEn"> override manual dwell</label>
@@ -379,6 +418,11 @@
 
   <section class="panel">
     <span class="label">[ tuning output pengapian ]</span>
+    <p class="caption">
+      <b>Dwell</b> = lama GPIO HIGH per fire (waktu coil saturasi). <b>Offset advance</b>
+      = digeser ke seluruh map (kompensasi delay MOSFET + coil collapse).
+      Strobe verify dengan timing light setelah tune.
+    </p>
     <label class="field">dwell · lebar pulse gate
       <input id="dwellInp" type="number" min="500" max="8000" step="100" style="width:90px">
       <span class="val">µs</span>
@@ -402,6 +446,11 @@
 
   <section class="panel">
     <span class="label">[ alvp · proteksi voltase rendah ]</span>
+    <p class="caption">
+      Auto-protect saat aki lemah. Di voltase <b>derate</b>: rev limit dibatasi
+      + dwell di-boost untuk kompensasi spark lemah. Di voltase <b>disarm</b>:
+      spark dimatikan total agar koil tidak rusak. Aktifkan saat riding.
+    </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip">VBAT <b id="vbatNow">—</b> V</span>
       <span class="chip" id="alvpStatePill"><span class="dot"></span><span id="alvpStateTxt">NORMAL</span></span>
@@ -437,6 +486,11 @@
 
   <section class="panel">
     <span class="label">[ geometri pulser ]</span>
+    <p class="caption">
+      Sudut maksimal advance + lebar magnet pulser per motor. Otomatis di-set
+      saat pilih preset. Override manual cuma kalau modif rotor / pickup geometry
+      custom. Salah set = timing seluruh map melenceng.
+    </p>
     <dl class="kv">
       <dt>lebar magnet</dt>     <dd>18.0° (stok megapro)</dd>
       <dt>ref advance maks</dt> <dd>32.0° btdc (ch1 leading)</dd>
@@ -447,6 +501,11 @@
 
   <section class="panel">
     <span class="label">[ datalog · ring buffer ]</span>
+    <p class="caption">
+      Recorder data telemetri (RPM, advance, vbat, jitter, dst) ke ring buffer
+      RAM 60 detik. <b>Download CSV</b> untuk analisis di Excel/Sheets. Berguna untuk
+      debug masalah engine atau tuning post-ride.
+    </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip" id="dlState"><span class="dot"></span><span id="dlStateTxt">IDLE</span></span>
       <span class="chip">ENTRIES <b id="dlEntries">0</b> / <span id="dlCap">1500</span></span>
@@ -467,6 +526,11 @@
 
   <section class="panel">
     <span class="label">[ perangkat ]</span>
+    <p class="caption">
+      Info status hardware + tombol restart/OTA. Heap turun terus = kebocoran
+      memori (laporkan). Uptime untuk verify stability — engine grade rating
+      butuh sustained ride tanpa reboot.
+    </p>
     <dl class="kv">
       <dt>firmware</dt>       <dd class="fw-version">—</dd>
       <dt>chip</dt>           <dd>ESP32-WROOM-32</dd>
@@ -483,6 +547,11 @@
 
   <section class="panel" id="otaPanel" style="display:none">
     <span class="label">[ ota · update firmware ]</span>
+    <p class="caption">
+      Update firmware wireless (tanpa kabel USB). Pilih file <code>firmware.bin</code>
+      dari komputer/HP. Includes UI sekaligus (embedded di firmware). <b>Wajib disarm
+      spark dulu</b> sebelum upload.
+    </p>
     <p class="note crit">
       ⚠ Wajib mode <b>SCOPE</b> (engine monitoring akan terhenti). Pastikan baterai
       cukup — interrupt saat flashing bisa bikin device perlu re-flash via USB.
@@ -508,6 +577,11 @@
 
   <section class="panel">
     <span class="label">[ wifi ap ]</span>
+    <p class="caption">
+      Ganti SSID + password WiFi AP yang dipancarkan ESP32. Default dari build-flag
+      di firmware. Override disimpan di NVS, efektif setelah <b>reboot</b>. Lupa
+      password? Erase NVS via USB untuk reset ke default.
+    </p>
     <div class="readout-row" style="grid-template-columns:1fr 1fr;background:transparent;border:0;padding:0">
       <div class="readout">
         <span class="num" id="wifiSsid" style="font-size:14px">—</span>

@@ -43,6 +43,10 @@
 
   <section class="panel">
     <span class="label">[ kontrol mode ]</span>
+    <p class="caption">
+      <b>Pengapian</b>: pulser ISR aktif, spark scheduler ready. <b>Mode Aman</b>:
+      pulser detach + spark force-off, untuk diagnostic/maintenance.
+    </p>
     <div class="btn-row">
       <button class="btn" id="ignBtn">▶ Pengapian</button>
       <button class="btn crit" id="safeBtn">⏻ Mode aman</button>
@@ -51,6 +55,11 @@
 
   <section class="panel">
     <span class="label">[ keamanan ]</span>
+    <p class="caption">
+      Status failsafe sistem. Chip menyala saat fitur aktif: <b>LAUNCH</b>/<b>QS</b>
+      (input clutch/shift), <b>BACKFIRE</b>/<b>RUMBLE</b> (audio mode), <b>VBAT</b>
+      voltage. Reset failsafe = clear latch flags setelah no-signal/overrev.
+    </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip" id="safetyPill" style="background:rgba(82,183,136,0.18);border-color:var(--green);color:var(--green)">
         <span class="dot ok"></span><span id="safetyTxt">NORMAL</span>
@@ -71,6 +80,11 @@
 
   <section class="panel">
     <span class="label">[ output pengapian ]</span>
+    <p class="caption">
+      <b>Arm</b> = aktifkan trigger GPIO25 ke MOSFET koil. <b>Test fire</b>
+      = 1 tembakan untuk verify wiring (bench only — busi lepas). Auto-arm
+      = langsung armed saat power on (untuk install permanen di motor).
+    </p>
     <div class="readout-row" style="grid-template-columns:1fr 1fr 1fr;background:transparent;border:0;padding:0">
       <div class="readout"><span class="num" id="armState" style="font-size:24px">MATI</span><span class="unit">status arm</span></div>
       <div class="readout"><span class="num cyan" id="fireCount" style="font-size:24px">0</span><span class="unit">tembakan</span></div>

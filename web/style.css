@@ -196,6 +196,20 @@ body::before {
   text-transform: uppercase;
 }
 
+/* Caption singkat di bawah panel label — sentence-case, 1-2 baris,
+   jelaskan fungsi panel ke user tanpa overload. */
+.panel > .caption {
+  display: block;
+  margin: -4px 0 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-hi);
+}
+.panel > .caption b { color: var(--amber); font-weight: 700; }
+
 /* ─────── BIG READOUT (engine instrument display) ─────── */
 .readout {
   display: flex;
