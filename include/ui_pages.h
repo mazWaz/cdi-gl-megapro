@@ -9,10 +9,11 @@
 
 namespace cdi::ui::pages {
 
-// app.js (14092 -> 4565 bytes, gzip 32.4%)
+// app.js (14092 -> 4565 bytes, gzip 32.4%, etag=5f115658)
 const uint16_t PAGE_app_js_len  = 4565;
 const char     PAGE_app_js_path[] = "/app.js";
 const char     PAGE_app_js_mime[] = "application/javascript";
+const char     PAGE_app_js_etag[] = "\"5f115658\"";
 const uint8_t  PAGE_app_js[] PROGMEM = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd5, 0x5b, 0xdd, 0x72, 0xdb, 0x38,
     0xb2, 0xbe, 0x4f, 0x55, 0xde, 0x01, 0x3b, 0x35, 0x35, 0x24, 0x2b, 0x32, 0x25, 0x5b, 0xb6, 0x92,
@@ -302,10 +303,11 @@ const uint8_t  PAGE_app_js[] PROGMEM = {
     0x74, 0x0c, 0x37, 0x00, 0x00
 };
 
-// index.html (15910 -> 5342 bytes, gzip 33.6%)
+// index.html (15910 -> 5342 bytes, gzip 33.6%, etag=c67d8028)
 const uint16_t PAGE_index_html_len  = 5342;
 const char     PAGE_index_html_path[] = "/";
 const char     PAGE_index_html_mime[] = "text/html";
+const char     PAGE_index_html_etag[] = "\"c67d8028\"";
 const uint8_t  PAGE_index_html[] PROGMEM = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcd, 0x5b, 0x5b, 0x6f, 0x23, 0x47,
     0x76, 0x7e, 0x9f, 0x5f, 0x51, 0x56, 0x76, 0x4d, 0x12, 0x26, 0x9b, 0x94, 0x64, 0xcf, 0x1a, 0xd4,
@@ -643,10 +645,11 @@ const uint8_t  PAGE_index_html[] PROGMEM = {
     0x53, 0xfd, 0xaf, 0xf0, 0xff, 0x03, 0x26, 0xae, 0x22, 0x08, 0x26, 0x3e, 0x00, 0x00
 };
 
-// map.html (39933 -> 11800 bytes, gzip 29.5%)
+// map.html (39933 -> 11800 bytes, gzip 29.5%, etag=02008691)
 const uint16_t PAGE_map_html_len  = 11800;
 const char     PAGE_map_html_path[] = "/map.html";
 const char     PAGE_map_html_mime[] = "text/html";
+const char     PAGE_map_html_etag[] = "\"02008691\"";
 const uint8_t  PAGE_map_html[] PROGMEM = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd5, 0x7d, 0xdb, 0x72, 0x23, 0xc7,
     0x95, 0xe0, 0x3b, 0xbf, 0x22, 0x1b, 0xd6, 0x08, 0x80, 0x08, 0x80, 0x00, 0xbb, 0x5b, 0x6a, 0x81,
@@ -1388,10 +1391,11 @@ const uint8_t  PAGE_map_html[] PROGMEM = {
     0x73, 0xf8, 0xd3, 0x60, 0xfd, 0x9b, 0x00, 0x00
 };
 
-// scope.html (11856 -> 4417 bytes, gzip 37.3%)
+// scope.html (11856 -> 4417 bytes, gzip 37.3%, etag=a7581898)
 const uint16_t PAGE_scope_html_len  = 4417;
 const char     PAGE_scope_html_path[] = "/scope.html";
 const char     PAGE_scope_html_mime[] = "text/html";
+const char     PAGE_scope_html_etag[] = "\"a7581898\"";
 const uint8_t  PAGE_scope_html[] PROGMEM = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xad, 0x5a, 0x5b, 0x73, 0x1b, 0x47,
     0x76, 0x7e, 0xe7, 0xaf, 0x68, 0x23, 0xf6, 0x62, 0x20, 0x01, 0x83, 0x8b, 0x2c, 0xad, 0x03, 0x12,
@@ -1672,10 +1676,11 @@ const uint8_t  PAGE_scope_html[] PROGMEM = {
     0x00
 };
 
-// settings.html (63450 -> 15969 bytes, gzip 25.2%)
+// settings.html (63450 -> 15969 bytes, gzip 25.2%, etag=ac1bc6db)
 const uint16_t PAGE_settings_html_len  = 15969;
 const char     PAGE_settings_html_path[] = "/settings.html";
 const char     PAGE_settings_html_mime[] = "text/html";
+const char     PAGE_settings_html_etag[] = "\"ac1bc6db\"";
 const uint8_t  PAGE_settings_html[] PROGMEM = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd5, 0x7d, 0x69, 0x8f, 0x23, 0x49,
     0x76, 0xd8, 0x77, 0x01, 0xfa, 0x0f, 0x31, 0xe5, 0x9d, 0x25, 0xe9, 0x26, 0x59, 0x64, 0x1d, 0xbd,
@@ -2678,10 +2683,11 @@ const uint8_t  PAGE_settings_html[] PROGMEM = {
     0x00
 };
 
-// style.css (19053 -> 4644 bytes, gzip 24.4%)
+// style.css (19053 -> 4644 bytes, gzip 24.4%, etag=414403b3)
 const uint16_t PAGE_style_css_len  = 4644;
 const char     PAGE_style_css_path[] = "/style.css";
 const char     PAGE_style_css_mime[] = "text/css";
+const char     PAGE_style_css_etag[] = "\"414403b3\"";
 const uint8_t  PAGE_style_css[] PROGMEM = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd5, 0x5c, 0xeb, 0x72, 0xdb, 0x48,
     0x76, 0xfe, 0xaf, 0xa7, 0xe8, 0xc8, 0xe5, 0x2a, 0x71, 0x96, 0xa0, 0x41, 0x88, 0x37, 0x51, 0x95,
@@ -2980,18 +2986,19 @@ const uint8_t  PAGE_style_css[] PROGMEM = {
 struct PageEntry {
     const char*    path;
     const char*    mime;
+    const char*    etag;
     const uint8_t* data;
     uint16_t       len;
 };
 
 constexpr size_t kPageCount = 6;
 const PageEntry kPages[kPageCount] = {
-    { PAGE_app_js_path, PAGE_app_js_mime, PAGE_app_js, PAGE_app_js_len },
-    { PAGE_index_html_path, PAGE_index_html_mime, PAGE_index_html, PAGE_index_html_len },
-    { PAGE_map_html_path, PAGE_map_html_mime, PAGE_map_html, PAGE_map_html_len },
-    { PAGE_scope_html_path, PAGE_scope_html_mime, PAGE_scope_html, PAGE_scope_html_len },
-    { PAGE_settings_html_path, PAGE_settings_html_mime, PAGE_settings_html, PAGE_settings_html_len },
-    { PAGE_style_css_path, PAGE_style_css_mime, PAGE_style_css, PAGE_style_css_len },
+    { PAGE_app_js_path, PAGE_app_js_mime, PAGE_app_js_etag, PAGE_app_js, PAGE_app_js_len },
+    { PAGE_index_html_path, PAGE_index_html_mime, PAGE_index_html_etag, PAGE_index_html, PAGE_index_html_len },
+    { PAGE_map_html_path, PAGE_map_html_mime, PAGE_map_html_etag, PAGE_map_html, PAGE_map_html_len },
+    { PAGE_scope_html_path, PAGE_scope_html_mime, PAGE_scope_html_etag, PAGE_scope_html, PAGE_scope_html_len },
+    { PAGE_settings_html_path, PAGE_settings_html_mime, PAGE_settings_html_etag, PAGE_settings_html, PAGE_settings_html_len },
+    { PAGE_style_css_path, PAGE_style_css_mime, PAGE_style_css_etag, PAGE_style_css, PAGE_style_css_len },
 };
 
 } // namespace cdi::ui::pages

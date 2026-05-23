@@ -25,13 +25,27 @@ AsyncWebServer s_server(cdi::config::AP_HTTP_PORT);
 // — tidak copy ke heap, langsung stream dari flash.
 void sendEmbeddedPage(AsyncWebServerRequest* req,
                       const cdi::ui::pages::PageEntry& p) {
+    // ETag check: kalau browser kirim If-None-Match yang match, return
+    // 304 Not Modified — zero body, save 4-16 KB bandwidth per request.
+    // ETag bentuk: "abc12345" (8 hex chars from SHA1(gz)). Generated
+    // at build time per file, stable across rebuilds dengan content sama.
+    if (req->hasHeader("If-None-Match")) {
+        const auto* hdr = req->getHeader("If-None-Match");
+        if (hdr && hdr->value().equals(p.etag)) {
+            AsyncWebServerResponse* r304 = req->beginResponse(304);
+            r304->addHeader("ETag", p.etag);
+            req->send(r304);
+            return;
+        }
+    }
     AsyncWebServerResponse* r =
         req->beginResponse_P(200, p.mime, p.data, p.len);
     r->addHeader("Content-Encoding", "gzip");
-    r->addHeader("Cache-Control", "max-age=300");   // 5 min, cukup untuk session
+    r->addHeader("Cache-Control", "max-age=300, must-revalidate");
+    r->addHeader("ETag", p.etag);
     req->send(r);
-    Serial.printf("[HTTP] %s -> embed %s (%u B gz)\n",
-                  req->url().c_str(), p.path, (unsigned)p.len);
+    Serial.printf("[HTTP] %s -> embed %s (%u B gz, etag=%s)\n",
+                  req->url().c_str(), p.path, (unsigned)p.len, p.etag);
 }
 
 // Generic handler: lookup request path di kPages[], serve kalau match.
@@ -128,6 +142,9 @@ void handleDatalogCsv(AsyncWebServerRequest* req) {
 } // anonymous
 
 void begin() {
+    // (ESP32Async fork track semua headers otomatis — tidak perlu
+    // collectHeaders explicit untuk If-None-Match.)
+
     // ─── Embedded UI routes ──────────────────────────────────────
     // Register handler untuk tiap path di kPages[]. Generic
     // handleEmbedded() lookup by path dan serve dari PROGMEM.

@@ -24,6 +24,7 @@ build).
 
 import os
 import gzip
+import hashlib
 import re
 from pathlib import Path
 
@@ -107,11 +108,13 @@ def generate_header(files: list) -> str:
         size = len(f["gz"])
         raw_size = f["raw_size"]
         ratio = f["ratio"]
-        lines.append("// %s (%d -> %d bytes, gzip %.1f%%)" %
-                     (f["filename"], raw_size, size, ratio))
+        etag = f["etag"]
+        lines.append("// %s (%d -> %d bytes, gzip %.1f%%, etag=%s)" %
+                     (f["filename"], raw_size, size, ratio, etag))
         lines.append("const uint16_t %s_len  = %d;" % (ident, size))
         lines.append("const char     %s_path[] = \"%s\";" % (ident, f["http_path"]))
         lines.append("const char     %s_mime[] = \"%s\";" % (ident, f["mime"]))
+        lines.append("const char     %s_etag[] = \"\\\"%s\\\"\";" % (ident, etag))
         lines.append("const uint8_t  %s[] PROGMEM = {" % ident)
         lines.append(format_bytes_as_c(f["gz"]))
         lines.append("};")
@@ -122,6 +125,7 @@ def generate_header(files: list) -> str:
     lines.append("struct PageEntry {")
     lines.append("    const char*    path;")
     lines.append("    const char*    mime;")
+    lines.append("    const char*    etag;")
     lines.append("    const uint8_t* data;")
     lines.append("    uint16_t       len;")
     lines.append("};")
@@ -130,8 +134,8 @@ def generate_header(files: list) -> str:
     lines.append("const PageEntry kPages[kPageCount] = {")
     for f in files:
         ident = f["ident"]
-        lines.append("    { %s_path, %s_mime, %s, %s_len }," %
-                     (ident, ident, ident, ident))
+        lines.append("    { %s_path, %s_mime, %s_etag, %s, %s_len }," %
+                     (ident, ident, ident, ident, ident))
     lines.append("};")
     lines.append("")
     lines.append("} // namespace cdi::ui::pages")
@@ -161,6 +165,10 @@ def build(*_args, **_kwargs):
         raw = entry.read_bytes()
         gz = gzip_compress(raw)
         ratio = (len(gz) / len(raw) * 100.0) if raw else 0.0
+        # ETag = 8 hex chars of SHA1(gzipped). Stable across builds
+        # selama content sama (mtime stripped saat gzip), jadi browser
+        # cache valid antar rebuild yang tidak ubah file.
+        etag = hashlib.sha1(gz).hexdigest()[:8]
 
         # HTTP path = "/" + filename, except index -> "/" too
         if entry.name in ("index.html", "index.htm"):
@@ -175,6 +183,7 @@ def build(*_args, **_kwargs):
             "raw_size":  len(raw),
             "gz":        gz,
             "ratio":     ratio,
+            "etag":      etag,
             "ident":     safe_ident(entry.name),
         })
         total_raw += len(raw)
