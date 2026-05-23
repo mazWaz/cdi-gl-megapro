@@ -94,9 +94,9 @@
       <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
     </label>
     <p class="note crit">
-      ⚠ Mengaktifkan akan menyalakan output trigger GPIO25. Wajib mode
-      PENGAPIAN. Dengan HV stage terhubung, ini menyalakan koil pengapian.
-      Lepas busi dari silinder sebelum uji bangku.<br><br>
+      ⚠ Mengaktifkan akan menyalakan output trigger GPIO25 ke MOSFET
+      driver koil pengapian. Wajib mode PENGAPIAN. Lepas busi dari
+      silinder sebelum uji bangku.<br><br>
       <b>Auto-arm</b>: device langsung armed setelah power on (cocok untuk
       install permanen di motor — ESP32 dapat power dari kunci kontak).
       Saat aktif, spark fire begitu pulser detected. Disable saat
@@ -250,7 +250,7 @@ $('armBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
     title: 'AKTIFKAN PENGAPIAN',
     severity: 'danger',
-    body: 'GPIO25 akan pulse setiap siklus pulser. Dengan HV stage terhubung, koil pengapian akan menembak setiap revolusi.\n\nLanjutkan HANYA dengan beban aman:\n• busi lepas dari silinder, atau\n• resistor dummy (1 Ω 100W) di output koil, atau\n• bench test dengan ground secure.',
+    body: 'GPIO25 akan pulse setiap siklus pulser ke MOSFET driver. Koil pengapian akan menembak setiap revolusi.\n\nLanjutkan HANYA dengan beban aman:\n• busi lepas dari silinder, atau\n• resistor dummy (1 Ω 100W) di output koil, atau\n• bench test dengan ground secure.',
     okLabel: '⚡ Aktifkan',
   });
   if (!ok) return;

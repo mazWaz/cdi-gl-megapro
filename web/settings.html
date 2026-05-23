@@ -393,31 +393,11 @@
       <span class="note" id="tuningStatus" style="align-self:center"></span>
     </div>
     <p class="note">
-      Dwell = berapa lama GPIO25 HIGH per tembakan (= waktu pengisian kapasitor di HV stage).
-      Offset menambah ke setiap lookup advance° — pakai untuk kompensasi propagation delay
-      melalui optocoupler + driver SCR (+ve = spark lebih cepat = kompensasi delay positif).
+      Dwell = berapa lama GPIO25 HIGH per tembakan (= waktu saturasi primary
+      coil dari MOSFET drive sebelum spark fires di fall edge).
+      Offset menambah ke setiap lookup advance° — pakai untuk kompensasi
+      propagation delay MOSFET + coil collapse (+ve = spark lebih cepat).
     </p>
-  </section>
-
-  <section class="panel">
-    <span class="label">[ wiring hv stage ]</span>
-    <pre style="background:var(--bg);border:1px solid var(--border);padding:10px;font-size:10px;color:var(--text-dim);overflow-x:auto;line-height:1.5">
-ESP32 GPIO25 ──[ 220 Ω ]──┬── opto LED anode ── │ ── opto collector ── SCR gate
-                          │                     │              │
-                         GND                  opto LED      SCR cathode
-                                                emitter        │
-                                                              GND (HV)
-
-  HV stage: 12V → step-up → cap 300V → SCR discharge → koil primer
-
-  Spec GPIO25: logic 3.3 V, ~20 mA maks. Pakai resistor 220 Ω untuk
-  membatasi arus LED optocoupler.
-
-  GND ESP32 harus terhubung ke GND signal HV stage (bukan GND power koil)
-  via kabel tipis tunggal untuk menghindari ground loop.
-
-  TEST LOAD sebelum konek HV beneran: 10 kΩ + LED dari GPIO25 ke GND.
-  LED harus kedip terlihat setiap Bench test fire.</pre>
   </section>
 
   <section class="panel">
@@ -564,19 +544,6 @@ ESP32 GPIO25 ──[ 220 Ω ]──┬── opto LED anode ── │ ── op
     </div>
   </section>
 
-  <section class="panel">
-    <span class="label">[ roadmap ]</span>
-    <dl class="kv">
-      <dt class="ok">T0–T4</dt><dd class="ok">skeleton · scope · net · storage · pulser ✓</dd>
-      <dt class="ok">T5</dt><dd class="ok">peta advance ✓</dd>
-      <dt class="ok">T6</dt><dd class="ok">spark_scheduler · GPIO25 output ✓</dd>
-      <dt class="ok">T7</dt><dd class="ok">safety · pembatas rev · failsafe ✓</dd>
-      <dt class="ok">T8</dt><dd class="ok">integrasi HV stage · test fire ✓</dd>
-      <dt>T9</dt><dd>pembatas rev 4-mode (halus / keras / pola / progressive)</dd>
-      <dt>T10–T14</dt><dd>shift light · dwell · launch · quickshifter · backfire · alvp</dd>
-      <dt>T15+</dt><dd>datalog · ota · poles ui</dd>
-    </dl>
-  </section>
 </main>
 
 <nav class="bottom-nav">
