@@ -58,6 +58,7 @@
       <span class="chip" id="kvLaunch" style="display:none">LAUNCH ACTIVE</span>
       <span class="chip" id="kvQs" style="display:none">QS CUT</span>
       <span class="chip" id="kvBf" style="display:none">BACKFIRE</span>
+      <span class="chip" id="kvIr" style="display:none;background:rgba(82,183,136,0.18);border-color:var(--green);color:var(--green)">RUMBLE</span>
       <span class="chip" id="kvVbat">VBAT <b id="kvVbatVal">—</b> V</span>
     </div>
     <div class="btn-row">
@@ -185,6 +186,8 @@ cdi.bus.on('telemetry', t => {
   bfPill.style.display = bfActive ? '' : 'none';
   bfPill.style.color   = 'var(--warn)';
   bfPill.style.borderColor = 'var(--warn)';
+  // Idle rumble chip — populated via periodic getIdleRumble poll
+  // (active state belum di-broadcast lewat telemetry binary frame).
   // VBAT chip — color based on ALVP state
   $('kvVbatVal').textContent = (t.vbat_mv / 1000).toFixed(2);
   const vbatPill = $('kvVbat');
@@ -199,6 +202,35 @@ cdi.bus.on('telemetry', t => {
 cdi.bus.on('connection', () => {
   $('kvSession').textContent = cdi.state.connected ? 'terhubung' : 'menyambung…';
   $('kvSession').className   = cdi.state.connected ? 'ok' : 'crit';
+});
+
+// Idle rumble status chip — poll setiap 1 detik supaya user lihat
+// realtime saat engine masuk idle band + rumble engage. Sengaja
+// pakai poll dan bukan tambah ke telemetry binary frame supaya
+// tidak ubah protocol (cuma diagnostic display, low priority).
+cdi.bus.on('idleRumble', m => {
+  const pill = $('kvIr');
+  if (m.enabled && m.active){
+    pill.style.display = '';
+    pill.querySelector ? null : null;
+    // Label berbeda per mode untuk indikasi visual
+    const modeName = ['OFF','SUBTLE','AGGR','BURBLE'][m.mode | 0] || '?';
+    pill.textContent = 'RUMBLE · ' + modeName;
+  } else {
+    pill.style.display = 'none';
+  }
+});
+let _irPollTimer = null;
+cdi.bus.on('open', () => {
+  if (_irPollTimer) clearInterval(_irPollTimer);
+  cdi.send({ cmd: 'getIdleRumble' });
+  _irPollTimer = setInterval(() => {
+    if (cdi.state.connected) cdi.send({ cmd: 'getIdleRumble' });
+  }, 1000);
+});
+cdi.bus.on('close', () => {
+  if (_irPollTimer){ clearInterval(_irPollTimer); _irPollTimer = null; }
+  $('kvIr').style.display = 'none';
 });
 
 $('ignBtn').addEventListener('click',   () => cdi.send({cmd:'setMode', mode:'ignition'}));
