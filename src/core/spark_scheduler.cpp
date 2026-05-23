@@ -18,7 +18,7 @@ hw_timer_t* s_fireOffTimer = nullptr;
 volatile bool     s_armed         = false;
 volatile bool     s_autoArm       = false;
 volatile bool     s_activeLow     = false;   // false=active-HIGH (default)
-volatile bool     s_inductive     = true;    // true=TCI (default), false=CDI/SCR
+// (s_inductive removed — hardware fixed TCI, inductive() returns true const)
 volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop
 // True only after live_stats has computed a delay from at least one
 // valid period. Distinguishes "delay = 0 by computation (legitimate
@@ -424,13 +424,15 @@ void setActiveLow(bool en) {
 }
 bool activeLow() { return s_activeLow; }
 
-void setInductive(bool en) {
-    s_inductive = en;
-    Serial.printf("[spark] ignition = %s (spark fires on %s edge)\n",
-                  en ? "INDUCTIVE/TCI" : "CAPACITIVE/CDI",
-                  en ? "FALL"          : "RISE");
+// Hardware in this build is N-MOSFET TCI direct gate drive — fixed
+// inductive topology. setInductive is kept as a no-op so legacy
+// callers (config_store.load for old NVS blobs) still link. Any
+// attempt to switch to capacitive/CDI is silently rejected; UI no
+// longer exposes the toggle.
+void setInductive(bool /*en*/) {
+    // intentionally no-op
 }
-bool inductive() { return s_inductive; }
+bool inductive() { return true; }
 
 void forceLow() {
     // ─── TCI mid-dwell safety: do NOT force GPIO idle right now ───
@@ -454,10 +456,8 @@ void forceLow() {
     // any new fire. One correctly-timed parting spark is benign;
     // an arbitrary-angle interruption is not.
     //
-    // For CDI / capacitive (s_inductive=false) the rising edge is
-    // the spark, so GPIO HIGH→LOW is harmless idle return. Drop
-    // through to the normal path.
-    if (s_inductive && s_dwellInProgress) {
+    // Hardware always TCI in this build (s_inductive removed).
+    if (s_dwellInProgress) {
 #if ESP_ARDUINO_VERSION_MAJOR < 3
         if (s_fireOnTimer) timerAlarmDisable(s_fireOnTimer);
 #endif

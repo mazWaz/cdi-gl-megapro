@@ -259,21 +259,11 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         JsonDocument r;
         r["type"]       = "sparkPolarity";
         r["active_low"] = cdi::core::spark::activeLow();
-        r["inductive"]  = cdi::core::spark::inductive();
         String out; serializeJson(r, out);
         client->text(out);
     }
-    else if (!strcmp(cmd, "setIgnitionType")) {
-        const bool ind = doc["inductive"] | true;
-        cdi::core::spark::setInductive(ind);
-        cdi::storage::config::markDirty();
-        JsonDocument r;
-        r["type"]      = "sparkPolarity";
-        r["inductive"] = cdi::core::spark::inductive();
-        r["active_low"]= cdi::core::spark::activeLow();
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
+    // setIgnitionType command removed — hardware is fixed N-MOSFET TCI;
+    // firmware always operates in inductive mode. See spark_scheduler.
     else if (!strcmp(cmd, "setRevLimit")) {
         uint32_t main = doc["main"]    | cdi::core::safety::mainLimitRpm();
         uint32_t over = doc["overrev"] | cdi::core::safety::overrevLimitRpm();
