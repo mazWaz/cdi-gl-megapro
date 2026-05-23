@@ -1,11 +1,24 @@
 // Exhaust flame — produce visible exhaust flame saat sustained
-// di rev limiter. Mekanisme dua-tahap:
+// di rev limiter. Mekanisme dua-tahap, tapi kontribusi tidak sama:
 //
-//   1) Skip pattern: drop sebagian spark di limiter → unburned
-//      air-fuel mixture lewat exhaust valve → ignite di header panas.
-//   2) Retard injection: cycle yang fire dapat heavy retard (5-20°)
-//      → combustion bergeser ke exhaust stroke → flame keluar saat
-//      valve buka.
+//   1) Skip pattern (PRIMARY): drop sebagian spark di limiter →
+//      unburned air-fuel mixture lewat exhaust valve → ignite di
+//      header panas. Ini sumber utama flame untuk semua tuning.
+//
+//   2) Retard injection (SECONDARY, conditional): cycle yang fire
+//      dapat retard 5-20°. EFFECTIVE hanya kalau:
+//        total_retard > adv_lookup_at_limit
+//      Untuk default Honda preset (adv_lookup ~30-32° di top RPM),
+//      AGRESIF max retard (10+20=30°) JUST BARELY mencapai TDC.
+//      Untuk conservative map (adv_lookup ~24°), retard bisa push
+//      effective fire ke -6 sampai -10° ATDC = combustion bocor ke
+//      exhaust stroke = flame contribution real.
+//      live_stats clamp min adv ke -20° saat flame::isActive() —
+//      ceiling tersedia, tapi parameter typical tidak mencapai.
+//
+// Net: flame primarily skip-driven. Retard pelengkap untuk
+// conservative tuning. Visual effect: pop irregular dari skip,
+// flame trail dari unburned fuel di header panas.
 //
 // Dua intensity:
 //   SAFE       — fire-fire-skip + retard 5-8°,  max 3s, cooldown 2s

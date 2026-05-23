@@ -236,6 +236,7 @@ body::before {
 }
 .readout .num.cyan { color: var(--cyan); text-shadow: 0 0 12px rgba(93,173,226,0.5); }
 .readout .num.green { color: var(--green); text-shadow: 0 0 12px rgba(82,183,136,0.5); }
+.readout .num.warn { color: var(--warn); text-shadow: 0 0 14px rgba(244,160,0,0.6); }
 .readout .unit {
   font-size: 10px;
   letter-spacing: 0.3em;

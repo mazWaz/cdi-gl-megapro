@@ -128,19 +128,27 @@ void tick(cdi::rpm_t rpm) {
 
     // ─── Gating layer 4b: Vbat threshold per-mode ─────────────────
     // Kalau ALVP DISABLED (prototype tanpa divider 1:4 di GPIO32),
-    // vbatMv() return stale 0. Skip Vbat check di stage ini — user
+    // vbatMv() return stale 0. Skip Vbat check entirely — user
     // sengaja accept risk karena hardware sense belum ada.
     //
-    // Kalau ALVP ENABLED tapi vbat di bawah threshold mode:
+    // Kalau ALVP ENABLED, enforce per-mode threshold:
     //   SAFE       → ≥ 11.5V
     //   AGGRESSIVE → ≥ 12.0V
-    // Refuse engage untuk hindari weak-spark + flame compound stress
-    // pada koil. Threshold lebih tinggi dari ALVP derate (~10.5V)
-    // supaya flame disengage SEBELUM masuk derate zone.
+    //
+    // Cek tight: vbat < min_mv UNCONDITIONALLY refuse (termasuk
+    // vbat=0 yang berarti belum di-sample). Cost: 500ms delay engage
+    // post-ALVP-enable sampai ADC sample pertama tiba. Trade vs
+    // safety: tight check menutup window vulnerability di mana flame
+    // bisa engage tanpa proteksi Vbat selama ~500ms (race condition
+    // antara user toggle ALVP + flame instant).
+    //
+    // Threshold lebih tinggi dari ALVP derate (~10.5V) supaya flame
+    // disengage SEBELUM masuk derate zone — tidak compound dengan
+    // ALVP derate state.
     if (cdi::core::alvp::isEnabled()) {
         const uint16_t vbat_mv = cdi::core::alvp::vbatMv();
         const uint16_t min_mv  = currentParams().vbat_min_mv;
-        if (vbat_mv > 0 && vbat_mv < min_mv) {
+        if (vbat_mv < min_mv) {
             if (s_active) {
                 Serial.printf("[flame] disengage (vbat %u mV < %u mV)\n",
                               (unsigned)vbat_mv, (unsigned)min_mv);

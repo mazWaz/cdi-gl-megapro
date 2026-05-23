@@ -36,7 +36,7 @@
       </div>
       <div class="readout">
         <span class="num cyan" id="advBig">—</span>
-        <span class="unit">° advance btdc</span>
+        <span class="unit" id="advUnit">° advance btdc</span>
       </div>
     </div>
   </section>
@@ -148,7 +148,20 @@ function fmtTime(ms){
 
 cdi.bus.on('telemetry', t => {
   $('rpmBig').textContent = t.rpm;
-  $('advBig').textContent = (t.advance_x10/10).toFixed(1);
+  // Advance bisa NEGATIVE saat flame::isActive() (live_stats clamp ke
+  // -20° ATDC bukan 0). Tampil sign + label ATDC/BTDC sesuai supaya
+  // user tidak panic lihat angka negatif. Negative = combustion fire
+  // SETELAH TDC = mekanisme flame retard injection (intentional).
+  const advDeg = t.advance_x10 / 10;
+  if (advDeg < 0){
+    $('advBig').textContent = (-advDeg).toFixed(1);
+    $('advUnit').textContent = '° retard atdc (flame)';
+    $('advBig').className = 'num warn';   // amber untuk highlight unusual state
+  } else {
+    $('advBig').textContent = advDeg.toFixed(1);
+    $('advUnit').textContent = '° advance btdc';
+    $('advBig').className = 'num cyan';
+  }
   $('kvMode').textContent = cdi.MODE[t.mode] || '?';
   // IGNITION (mode 2) is "engine running, all working" → ok (green).
   // SAFE_HOLD (mode 3) is failsafe state → crit (red).
