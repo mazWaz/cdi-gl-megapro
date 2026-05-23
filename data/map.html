@@ -225,7 +225,7 @@
       </div>
     </div>
     <div class="btn-row" style="margin-top:6px">
-      <button class="btn ghost" id="loadStockBtn">▼ Muat stok preset aktif</button>
+      <button class="btn ghost" id="loadStockBtn" disabled>… memuat stok preset</button>
     </div>
     <p class="note">Penyimpanan slot persistent akan ada di T13 (storage/profile_store).</p>
   </section>
@@ -594,11 +594,41 @@ cdi.bus.on('preset', m => {
 cdi.bus.on('presetMap', m => {
   stockPoints = m.points.map(p => [+p[0], +p[1]]);
   stockName   = m.name || m.id || '—';
-  // update label on compare button so user knows which stock it is
-  const b = document.getElementById('cmpBtn');
-  if (b) b.textContent = '◇ Bandingkan ' + stockName;
+  // update button labels + enable now that data ready
+  const cmp = document.getElementById('cmpBtn');
+  if (cmp) cmp.textContent = '◇ Bandingkan ' + stockName;
+  const ldr = document.getElementById('loadStockBtn');
+  if (ldr){
+    ldr.disabled = false;
+    ldr.textContent = '▼ Muat stok ' + stockName;
+  }
+  // also update the P2 slot label
+  const p2 = document.querySelector('.slot[data-slot="1"] .nm');
+  if (p2) p2.textContent = 'stok';
   if (showCompare) renderCurve();
 });
+
+// Helper: ensure stockPoints is loaded; fetch + wait if necessary.
+// Returns true if ready, false on timeout.
+function ensureStockLoaded(timeoutMs = 2000){
+  return new Promise(resolve => {
+    if (stockPoints && stockPoints.length){ resolve(true); return; }
+    // request what we know — preset status first, then map
+    if (activePresetId){
+      cdi.send({ cmd: 'getPresetMap', id: activePresetId });
+    } else {
+      cdi.send({ cmd: 'getPresetStatus' });   // will chain to getPresetMap
+    }
+    const deadline = Date.now() + timeoutMs;
+    const poll = setInterval(() => {
+      if (stockPoints && stockPoints.length){
+        clearInterval(poll); resolve(true);
+      } else if (Date.now() > deadline){
+        clearInterval(poll); resolve(false);
+      }
+    }, 50);
+  });
+}
 
 cdi.bus.on('map', pts => {
   points = pts.map(p => [+p[0], +p[1]]);
@@ -648,10 +678,13 @@ document.getElementById('reloadBtn').addEventListener('click', async () => {
 });
 document.getElementById('applyBtn').addEventListener('click', applyChanges);
 document.getElementById('loadStockBtn').addEventListener('click', async () => {
-  if (!stockPoints || stockPoints.length === 0){
+  const ready = await ensureStockLoaded();
+  if (!ready){
     await cdi.modal.alert({
-      title: 'STOK BELUM TERSEDIA',
-      body: 'Data stok preset belum termuat. Coba refresh halaman.',
+      title: 'STOK TIDAK TERSEDIA',
+      severity: 'warn',
+      body: 'Backend tidak merespons getPresetMap dalam 2 detik.\n' +
+            'Cek koneksi WiFi atau muat ulang halaman.',
       okLabel: 'OK'
     });
     return;
@@ -681,10 +714,12 @@ document.querySelectorAll('.slot').forEach(el => {
     const slot = +el.dataset.slot;
     if (slot === 0) return;                          // P1 = live (already active)
     if (slot === 1){                                 // P2 = stock (active preset)
-      if (!stockPoints || stockPoints.length === 0){
+      const ready = await ensureStockLoaded();
+      if (!ready){
         await cdi.modal.alert({
-          title: 'STOK BELUM TERSEDIA',
-          body: 'Data stok preset belum termuat.',
+          title: 'STOK TIDAK TERSEDIA',
+          severity: 'warn',
+          body: 'Backend tidak merespons. Cek koneksi atau muat ulang.',
           okLabel: 'OK'
         });
         return;
