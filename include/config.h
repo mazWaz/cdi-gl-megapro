@@ -9,7 +9,7 @@ namespace cdi::config {
 
 // ---------- Firmware identity ----------
 constexpr uint32_t FW_VERSION_MAJOR = 0;
-constexpr uint32_t FW_VERSION_MINOR = 3;
+constexpr uint32_t FW_VERSION_MINOR = 4;
 constexpr uint32_t FW_VERSION_PATCH = 0;
 constexpr uint32_t FW_VERSION       = (FW_VERSION_MAJOR << 16) |
                                       (FW_VERSION_MINOR << 8)  |
