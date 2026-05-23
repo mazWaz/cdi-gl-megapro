@@ -37,9 +37,12 @@ const char* Map::validateForSafety(const Point* pts, size_t n) {
         if (pts[i].deg > 45.0f) return "advance >45° BTDC — detonation guaranteed";
         if (pts[i].deg < 0.0f)  return "advance <0° (post-TDC) — combustion fail";
     }
-    // Monotonic RPM
+    // Monotonic-non-decreasing RPM. Equal RPMs are allowed (lookup
+    // takes the first match, harmless) so a user who drags a point to
+    // exactly the same RPM as its neighbor doesn't get rejected — they
+    // probably intended a step in the curve.
     for (size_t i = 1; i < n; i++) {
-        if (pts[i].rpm <= pts[i-1].rpm) return "RPM not monotonically increasing";
+        if (pts[i].rpm < pts[i-1].rpm) return "RPM tidak naik berurutan";
     }
     // Idle band sanity (1000-1800 rpm should be ≤ 18° BTDC for stock fuel)
     for (size_t i = 0; i < n; i++) {
@@ -47,11 +50,18 @@ const char* Map::validateForSafety(const Point* pts, size_t n) {
             return "idle-band advance >18° — detonation risk at stock fuel";
         }
     }
-    // No huge jumps between consecutive points (engine stumble)
+    // No huge jumps between consecutive points (engine stumble).
+    // Loosened from 8°/10° to 12°/12° so users have room to drag points
+    // around in the UI editor without each edit immediately failing
+    // validation. The thresholds still catch obvious typos (one
+    // out-of-pattern point in an otherwise smooth curve) while
+    // permitting legitimate aggressive curve shapes like deep retard
+    // at peak RPM. Real-world detonation risk only kicks in around
+    // 15-18° jumps on stock fuel.
     for (size_t i = 1; i < n; i++) {
         const float jump = pts[i].deg - pts[i-1].deg;
-        if (jump > 8.0f || jump < -10.0f) {
-            return "consecutive points differ >8° — uneven curve, engine stumble";
+        if (jump > 12.0f || jump < -12.0f) {
+            return "lompatan derajat >12° antar titik berurutan";
         }
     }
     return nullptr;   // all clear

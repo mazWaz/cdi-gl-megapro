@@ -68,9 +68,89 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
             client->text("{\"type\":\"err\",\"msg\":\"missing points\"}");
             return;
         }
+        // Pre-validate so we can return the SPECIFIC reason to the UI
+        // instead of the generic "invalid map". Parse into a temp array
+        // first, then run validateForSafety, then commit.
+        cdi::core::advance::Point tmp[cdi::config::MAX_ADVANCE_POINTS];
+        size_t n = 0;
+        for (JsonVariantConst v : arr) {
+            if (n >= cdi::config::MAX_ADVANCE_POINTS) {
+                client->text("{\"type\":\"err\",\"msg\":\"max 32 titik\"}");
+                return;
+            }
+            if (!v.is<JsonArrayConst>()) {
+                client->text("{\"type\":\"err\",\"msg\":\"format salah (bukan [rpm,deg])\"}");
+                return;
+            }
+            JsonArrayConst pair = v.as<JsonArrayConst>();
+            if (pair.size() != 2) {
+                client->text("{\"type\":\"err\",\"msg\":\"setiap titik harus [rpm,deg]\"}");
+                return;
+            }
+            tmp[n].rpm = (cdi::rpm_t)(pair[0].as<int>());
+            tmp[n].deg = pair[1].as<float>();
+            // Range check per point with explicit message
+            if (tmp[n].rpm < cdi::config::RPM_MIN_VALID ||
+                tmp[n].rpm > cdi::config::RPM_MAX_VALID) {
+                JsonDocument r;
+                r["type"] = "err";
+                char buf[80];
+                snprintf(buf, sizeof(buf),
+                         "titik %u: RPM %u di luar %u-%u",
+                         (unsigned)(n+1), (unsigned)tmp[n].rpm,
+                         (unsigned)cdi::config::RPM_MIN_VALID,
+                         (unsigned)cdi::config::RPM_MAX_VALID);
+                r["msg"] = buf;
+                String out; serializeJson(r, out);
+                client->text(out);
+                return;
+            }
+            if (tmp[n].deg < cdi::config::ADVANCE_MIN_DEG ||
+                tmp[n].deg > cdi::config::ADVANCE_MAX_DEG) {
+                JsonDocument r;
+                r["type"] = "err";
+                char buf[80];
+                snprintf(buf, sizeof(buf),
+                         "titik %u: advance %.1f° di luar %.0f-%.0f°",
+                         (unsigned)(n+1), tmp[n].deg,
+                         cdi::config::ADVANCE_MIN_DEG,
+                         cdi::config::ADVANCE_MAX_DEG);
+                r["msg"] = buf;
+                String out; serializeJson(r, out);
+                client->text(out);
+                return;
+            }
+            n++;
+        }
+        if (n == 0) {
+            client->text("{\"type\":\"err\",\"msg\":\"map kosong\"}");
+            return;
+        }
+        // Sort by RPM before safety-validation (validateForSafety
+        // expects monotonic order).
+        for (size_t i = 1; i < n; i++) {
+            cdi::core::advance::Point key = tmp[i];
+            size_t j = i;
+            while (j > 0 && tmp[j-1].rpm > key.rpm) {
+                tmp[j] = tmp[j-1];
+                j--;
+            }
+            tmp[j] = key;
+        }
+        if (const char* err =
+                cdi::core::advance::Map::validateForSafety(tmp, n)) {
+            JsonDocument r;
+            r["type"] = "err";
+            char buf[120];
+            snprintf(buf, sizeof(buf), "safety: %s", err);
+            r["msg"] = buf;
+            String out; serializeJson(r, out);
+            client->text(out);
+            return;
+        }
         cdi::core::advance::Map fresh;
-        if (!fresh.loadFromJson(arr)) {
-            client->text("{\"type\":\"err\",\"msg\":\"invalid map (range or format)\"}");
+        if (!fresh.set(tmp, n)) {
+            client->text("{\"type\":\"err\",\"msg\":\"set failed (internal)\"}");
             return;
         }
         cdi::core::advance::active() = fresh;

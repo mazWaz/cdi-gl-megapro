@@ -481,14 +481,27 @@ function hideCoordReadout(){ document.getElementById('coordReadout').textContent
 function markDirty(){ dirty = true; }
 function clearDirty(){ dirty = false; }
 
-function addPoint(){
-  if (points.length >= MAX_POINTS){ flash('maks ' + MAX_POINTS + ' titik'); return; }
+async function addPoint(){
+  if (points.length >= MAX_POINTS){
+    await cdi.modal.alert({
+      title: 'BATAS TITIK TERCAPAI',
+      severity: 'warn',
+      body: 'Sudah ada ' + MAX_POINTS + ' titik (maksimum).\n\n' +
+            'Hapus dulu satu titik (tap titik → tombol HAPUS) ' +
+            'sebelum menambah yang baru.',
+      okLabel: 'OK'
+    });
+    return;
+  }
   // insert between selected and next, or in mid-range
   let newRpm, newDeg;
   if (selected >= 0 && selected < points.length - 1){
     const a = points[selected], b = points[selected+1];
     newRpm = Math.round((a[0]+b[0])/2 / RPM_SNAP) * RPM_SNAP;
     newDeg = (a[1]+b[1])/2;
+    // avoid landing exactly on an existing RPM
+    if (newRpm === a[0]) newRpm = a[0] + RPM_SNAP;
+    if (newRpm === b[0]) newRpm = b[0] - RPM_SNAP;
   } else if (points.length === 0){
     newRpm = 3000; newDeg = 20;
   } else {
