@@ -317,6 +317,24 @@ function setActiveProfile(p){
   activeProfile = p;
   refreshSlotLabels();    // also updates .slot.active class
   updateHud();
+  // Persist which slot user is currently editing so refresh resumes
+  // there instead of jumping back to P1 every time.
+  try {
+    if (p && p.type === 'slot'){
+      localStorage.setItem('cdi.activeSlot.v1', String(p.idx));
+    } else {
+      localStorage.removeItem('cdi.activeSlot.v1');
+    }
+  } catch (e) {}
+}
+
+function loadLastActiveSlot(){
+  try {
+    const v = localStorage.getItem('cdi.activeSlot.v1');
+    if (v === null) return -1;
+    const i = parseInt(v, 10);
+    return (i >= 0 && i < 4) ? i : -1;
+  } catch (e) { return -1; }
 }
 
 function updateHud(){
@@ -722,9 +740,23 @@ function ensureStockLoaded(timeoutMs = 2000){
 }
 
 cdi.bus.on('map', pts => {
-  // If P1 has saved content, prefer it as the default editor state
-  // — user expectation is 'open the app and resume on my own profile'.
-  // Device map fallback only when no slot is set up yet.
+  // Fallback chain untuk default editor state:
+  //   1. Slot yang terakhir dipilih user (dari localStorage)
+  //      kalau slot itu masih punya data
+  //   2. P1 kalau P1 ada datanya
+  //   3. Whatever yang sedang aktif di device (ESP)
+  const lastIdx = loadLastActiveSlot();
+  if (lastIdx >= 0 && slots[lastIdx]){
+    points = slots[lastIdx].points.map(p => [...p]);
+    selected = -1; clearDirty();
+    setActiveProfile({ type: 'slot', idx: lastIdx, name: slots[lastIdx].name });
+    document.getElementById('mapJson').value = JSON.stringify(points);
+    document.getElementById('mapStatus').textContent =
+      '› ' + points.length + ' titik dimuat dari P' + (lastIdx+1) +
+      ': ' + slots[lastIdx].name;
+    renderCurve();
+    return;
+  }
   if (slots[0]){
     points = slots[0].points.map(p => [...p]);
     selected = -1; clearDirty();
@@ -735,7 +767,7 @@ cdi.bus.on('map', pts => {
     renderCurve();
     return;
   }
-  // No P1 saved yet — show whatever is live on the device.
+  // No saved slot — show whatever is live on the device.
   points = pts.map(p => [+p[0], +p[1]]);
   selected = -1; clearDirty();
   setActiveProfile({ type: 'device', name: 'live' });
