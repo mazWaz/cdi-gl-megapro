@@ -30,8 +30,29 @@ uint32_t           s_lastSampMs    = 0;
 // chain). volatile for safety::shouldFire reentry.
 volatile uint32_t  s_fireCounter   = 0;
 
-// LCG random for jitter
+// LCG random untuk JITTER (loop side, tick()). Tidak shared dengan ISR
+// supaya tidak race.
 uint32_t s_lcg = 0xBEEFC0DE;
+
+// LCG random untuk ISR side (BRAP_BRAP burst skip). Separate state
+// dari s_lcg supaya tidak race ketika tick() dan ISR sama-sama update.
+// volatile karena ISR + cuma kebaca/ditulis dari ISR.
+volatile uint32_t s_isr_lcg = 0xDEADCAFE;
+
+// ── Stall-guard cooldown ──
+// Skip-heavy modes (AGGRESSIVE/DRAG_BURBLE/NGOROK/BRAP_BRAP) bisa drag
+// idle RPM turun ke bawah rpmLo → exit band → disengage → recover →
+// re-engage → loop death-spiral atau stall. Stall guard:
+//   * Track minimum RPM dilihat dalam window in-band (1s)
+//   * Kalau min < (rpmLo + 50), set cooldown 5 detik — selama cooldown
+//     tidak akan engage lagi walau RPM normal kembali
+//   * Cooldown reset kalau idle stabilo (min > rpmLo + 200) untuk 5s
+//
+// Net effect: kalau idle motor user marginal, rumble auto-back-off,
+// engine recover, tidak stuck di death-spiral.
+uint32_t  s_cooldownUntilMs = 0;
+cdi::rpm_t s_minRpmInWindow = 65535;
+uint32_t  s_minWinStartMs   = 0;
 
 float jitterRetard(float max){
     if (max <= 0.0f) return 0.0f;
@@ -92,9 +113,36 @@ void tick(cdi::rpm_t rpm) {
         s_inBandSinceMs = now;
     }
     if ((int32_t)(now - s_inBandSinceMs) < (int32_t)s_sustainMs) {
-        // Belum cukup lama di band, belum engage
         s_active = false; s_currentRetard = 0.0f;
         return;
+    }
+
+    // ─── Gating layer 6: stall-guard cooldown ─────────────────────
+    if ((int32_t)(now - s_cooldownUntilMs) < 0) {
+        // Recent stall avoidance — don't engage selama cooldown.
+        s_active = false; s_currentRetard = 0.0f;
+        return;
+    }
+
+    // Track minimum RPM dalam rolling 1-detik window untuk stall detect
+    if (rpm < s_minRpmInWindow) s_minRpmInWindow = rpm;
+    if ((int32_t)(now - s_minWinStartMs) >= 1000) {
+        const cdi::rpm_t margin = (cdi::rpm_t)50;
+        if (s_minRpmInWindow < s_rpmLo + margin && s_active) {
+            // RPM mendekati floor band → backoff untuk hindari stall.
+            // Skip-heavy modes paling rentan; SUBTLE/NGEBASS no skip,
+            // tapi heavy retard masih bisa drop RPM, jadi cooldown
+            // universal (5 detik).
+            s_cooldownUntilMs = now + 5000;
+            Serial.printf("[rumble] stall-guard cooldown 5s (minrpm=%u floor=%u)\n",
+                          (unsigned)s_minRpmInWindow, (unsigned)s_rpmLo);
+            s_active = false; s_currentRetard = 0.0f;
+            s_minRpmInWindow = 65535;
+            s_minWinStartMs = now;
+            return;
+        }
+        s_minRpmInWindow = 65535;
+        s_minWinStartMs = now;
     }
 
     // ─── Engaged. Compute retard + skip pattern. ──────────────────
@@ -123,12 +171,16 @@ void tick(cdi::rpm_t rpm) {
             case cdi::IdleRumbleMode::NGEBASS: {
                 // Sine-wave modulation 1.5 Hz → engine pulse pelan
                 // 'wub-wub-wub'. Phase dari millis() supaya konsisten.
+                // Depth = user config × 1.5, capped di 10°. User bisa
+                // dial in subtle NGEBASS (retard=2 → depth=3°) atau
+                // dramatic (retard=6 → depth=9°).
                 const float period_ms = 667.0f;   // 1.5 Hz
                 const float t = ((float)(now % (uint32_t)period_ms)) / period_ms;
                 const float sine = sinf(t * 2.0f * 3.14159265f);
-                const float depth = (s_maxRetardDeg < 4.0f) ? 8.0f
-                                                            : s_maxRetardDeg * 1.5f;
-                r = (sine * 0.5f + 0.5f) * (depth > 10.0f ? 10.0f : depth);
+                float depth = s_maxRetardDeg * 1.5f;
+                if (depth > 10.0f) depth = 10.0f;
+                if (depth < 0.5f)  depth = 0.5f;       // floor minimal supaya audible
+                r = (sine * 0.5f + 0.5f) * depth;
                 break;
             }
             case cdi::IdleRumbleMode::NGOROK: {
@@ -185,11 +237,13 @@ bool shouldFireThisCycle() {
 
         case cdi::IdleRumbleMode::BRAP_BRAP: {
             // Drag-bike popping: skip 1-of-4 reguler + 5% random extra skip.
-            // Audible: 'BOM-BOM-BOM-pop!-BOM-BOM-..-BOM-pop-BOM' irregular.
+            // Pakai s_isr_lcg terpisah dari s_lcg (loop side) supaya
+            // tidak ada race antara ISR dan tick() yang sama-sama update
+            // RNG state.
             s_fireCounter++;
-            if ((s_fireCounter & 0x3u) == 0u) return false;       // 1-of-4 reguler skip
-            s_lcg = s_lcg * 1664525u + 1013904223u;
-            if ((s_lcg >> 24) < 12u) return false;                // ~5% random burst skip
+            if ((s_fireCounter & 0x3u) == 0u) return false;
+            s_isr_lcg = s_isr_lcg * 1664525u + 1013904223u;
+            if ((s_isr_lcg >> 24) < 12u) return false;
             return true;
         }
 
@@ -213,15 +267,22 @@ float currentRetardDeg()  { return s_active ? s_currentRetard : 0.0f; }
 // ── Setters ──────────────────────────────────────────────────────
 void setEnabled(bool en) {
     s_enabled = en;
-    if (!en) { s_active = false; s_currentRetard = 0.0f; }
+    if (!en) {
+        s_active = false; s_currentRetard = 0.0f;
+        s_inBandSinceMs = 0;
+        s_cooldownUntilMs = 0;        // reset cooldown
+        s_minRpmInWindow = 65535;
+    }
     Serial.printf("[rumble] enabled=%d\n", en ? 1 : 0);
 }
 
 void setMode(cdi::IdleRumbleMode m) {
     s_mode = m;
-    s_active = false;                 // re-engage on next tick
+    s_active = false;
     s_currentRetard = 0.0f;
     s_fireCounter = 0;
+    s_cooldownUntilMs = 0;            // reset cooldown saat ganti mode
+    s_minRpmInWindow = 65535;
     Serial.printf("[rumble] mode=%d\n", (int)m);
 }
 
