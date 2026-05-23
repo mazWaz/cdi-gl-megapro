@@ -304,6 +304,29 @@ let selected = -1;
 let dragging = -1;
 let dirty = false;
 let showCompare = false;
+// baselinePoints = snapshot kurva yang dianggap 'sudah committed':
+//   * Slot saved → slot.points (versi tersimpan terakhir)
+//   * Slot empty atau 'stock' loaded → null (always dirty, save dibutuhkan)
+//   * Device fetch → device points (sudah sesuai dengan apa yang di ESP)
+// Apply button enabled hanya kalau editor != baseline.
+let baselinePoints = null;
+
+function pointsEqual(a, b){
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++){
+    if (+a[i][0] !== +b[i][0]) return false;
+    if (Math.abs(+a[i][1] - +b[i][1]) > 0.001) return false;
+  }
+  return true;
+}
+
+function recomputeDirty(){
+  // null baseline = no committed reference → consider dirty (save needed)
+  const same = baselinePoints && pointsEqual(points, baselinePoints);
+  if (same) clearDirty();
+  else      markDirty();
+}
 // Which profile slot is currently being edited.
 //   { type: 'slot',   idx: 0..3, name }   — loaded from saved slot
 //   { type: 'stock',  name }              — loaded from "Muat stok" or empty slot
@@ -513,7 +536,7 @@ function onMove(e){
   const rpm = clamp(snap(rpmOf(x), RPM_SNAP), RPM_MIN, RPM_MAX);
   const deg = clamp(snap(degOf(y), DEG_SNAP), DEG_MIN, DEG_MAX);
   points[dragging] = [rpm, deg];
-  markDirty();
+  recomputeDirty();
   showCoordReadout(rpm, deg);
   renderCurve();
 }
@@ -571,7 +594,7 @@ function adjustSelected(dRpm, dDeg){
   if (dDeg) p[1] = clamp(+(p[1] + dDeg).toFixed(2), DEG_MIN, DEG_MAX);
   points.sort((a,b) => a[0] - b[0]);
   selected = points.indexOf(p);
-  markDirty(); renderCurve();
+  recomputeDirty(); renderCurve();
 }
 
 async function applyChanges(){
@@ -622,12 +645,12 @@ async function applyChanges(){
   };
   saveSlots();
   setActiveProfile({ type: 'slot', idx: i, name: cleaned });
+  // Baseline sekarang = isi slot baru yang barusan saved.
+  baselinePoints = points.map(p => [...p]);
   document.getElementById('mapStatus').textContent =
     '› P' + (i+1) + ' "' + cleaned + '" disimpan + dikirim';
   cdi.send({ cmd: 'setMap', points: points });
-  // Setelah disimpan + applied, editor clean state lagi sampai user
-  // edit lagi.
-  clearDirty();
+  recomputeDirty();          // editor == baseline → clean
 }
 
 function flash(msg){
@@ -722,40 +745,40 @@ function ensureStockLoaded(timeoutMs = 2000){
 }
 
 cdi.bus.on('map', pts => {
-  // Fallback chain untuk default editor state:
-  //   1. Slot yang terakhir dipilih user (dari localStorage)
-  //      kalau slot itu masih punya data
-  //   2. P1 kalau P1 ada datanya
-  //   3. Whatever yang sedang aktif di device (ESP)
   const lastIdx = loadLastActiveSlot();
   if (lastIdx >= 0 && slots[lastIdx]){
     points = slots[lastIdx].points.map(p => [...p]);
-    selected = -1; clearDirty();
+    selected = -1;
+    baselinePoints = slots[lastIdx].points.map(p => [...p]);
     setActiveProfile({ type: 'slot', idx: lastIdx, name: slots[lastIdx].name });
     document.getElementById('mapJson').value = JSON.stringify(points);
     document.getElementById('mapStatus').textContent =
-      '› ' + points.length + ' titik dimuat dari P' + (lastIdx+1) +
-      ': ' + slots[lastIdx].name;
+      '› dimuat dari P' + (lastIdx+1) + ': ' + slots[lastIdx].name;
+    recomputeDirty();
     renderCurve();
     return;
   }
   if (slots[0]){
     points = slots[0].points.map(p => [...p]);
-    selected = -1; clearDirty();
+    selected = -1;
+    baselinePoints = slots[0].points.map(p => [...p]);
     setActiveProfile({ type: 'slot', idx: 0, name: slots[0].name });
     document.getElementById('mapJson').value = JSON.stringify(points);
     document.getElementById('mapStatus').textContent =
-      '› ' + points.length + ' titik dimuat dari P1: ' + slots[0].name;
+      '› dimuat dari P1: ' + slots[0].name;
+    recomputeDirty();
     renderCurve();
     return;
   }
   // No saved slot — show whatever is live on the device.
   points = pts.map(p => [+p[0], +p[1]]);
-  selected = -1; clearDirty();
+  selected = -1;
+  baselinePoints = pts.map(p => [+p[0], +p[1]]);
   setActiveProfile({ type: 'device', name: 'live' });
   document.getElementById('mapJson').value = JSON.stringify(points);
   document.getElementById('mapStatus').textContent =
     '› ' + points.length + ' titik dimuat dari device';
+  recomputeDirty();
   renderCurve();
 });
 
@@ -800,7 +823,9 @@ document.getElementById('reloadBtn').addEventListener('click', async () => {
   if (activeProfile && activeProfile.type === 'slot' && slots[activeProfile.idx]){
     const slot = slots[activeProfile.idx];
     points = slot.points.map(p => [...p]);
-    selected = -1; clearDirty();
+    baselinePoints = slot.points.map(p => [...p]);
+    selected = -1;
+    recomputeDirty();
     renderCurve();
     flash('reset ke P' + (activeProfile.idx+1) + ': ' + slot.name);
     return;
@@ -813,7 +838,9 @@ document.getElementById('reloadBtn').addEventListener('click', async () => {
       return;
     }
     points = stockPoints.map(p => [...p]);
-    selected = -1; clearDirty();
+    baselinePoints = null;     // slot belum saved → editor tetap dirty
+    selected = -1;
+    recomputeDirty();
     renderCurve();
     flash('reset ke stok ' + stockName);
     return;
@@ -825,7 +852,9 @@ document.getElementById('reloadBtn').addEventListener('click', async () => {
       return;
     }
     points = stockPoints.map(p => [...p]);
-    selected = -1; clearDirty();
+    baselinePoints = points.map(p => [...p]);
+    selected = -1;
+    recomputeDirty();
     renderCurve();
     flash('reset ke stok ' + stockName);
     return;
@@ -870,24 +899,26 @@ document.getElementById('loadStockBtn').addEventListener('click', async () => {
   // Load stok preset's curve into editor.
   points = stockPoints.map(p => [...p]);
   selected = -1;
-  renderCurve();
 
   if (slotIdx >= 0){
-    // Ada slot aktif → JANGAN auto-send ke device. Auto-send akan
-    // trigger mapApplied event yang reset dirty=false → Apply
-    // disabled lagi (glitch nyala-mati). User intent di sini:
-    // overwrite editor dengan stok, lalu commit ke slot via Apply
-    // dengan naming modal. Send ke device terjadi saat Apply.
-    markDirty();
+    // Slot active: baseline tetap = isi slot lama (sebelum stok dimuat).
+    // recomputeDirty akan compare stok vs isi slot saved — kalau persis
+    // sama (kasus rare: slot user sudah identik dengan stok), Apply
+    // disabled. Kalau berbeda (kasus normal), Apply nyala dan stay
+    // nyala sampai user save atau buang.
+    recomputeDirty();
+    renderCurve();
     document.getElementById('mapStatus').textContent =
       '› stok ' + stockName + ' dimuat ke P' + (slotIdx+1) +
       ' · Terapkan untuk simpan & kirim';
     flash('stok dimuat ke P' + (slotIdx+1) + ' — klik Terapkan');
   } else {
     // Tidak ada slot active → device-level: langsung kirim + clean
+    baselinePoints = points.map(p => [...p]);
     cdi.send({ cmd: 'setMap', points: points });
-    clearDirty();
     setActiveProfile({ type: 'stock', name: stockName });
+    recomputeDirty();
+    renderCurve();
     document.getElementById('mapStatus').textContent =
       '› stok ' + stockName + ' dimuat + dikirim ke device';
     flash('stok ' + stockName + ' aktif');
@@ -992,12 +1023,13 @@ document.querySelectorAll('.slot').forEach(el => {
     }
     points = src;
     selected = -1;
-    clearDirty();              // baru di-load = clean state
+    // Set baseline = isi slot kalau ada (saved), atau null kalau
+    // empty slot (stok loaded, user belum commit ke slot).
+    baselinePoints = slot ? slot.points.map(p => [...p]) : null;
     setActiveProfile(newProfile);
-    renderCurve();
-    // Tap slot = langsung kirim ke device. Apply button cuma untuk
-    // commit perubahan editing baru (yang menandai dirty).
     cdi.send({ cmd: 'setMap', points: points });
+    recomputeDirty();          // saved slot → clean; empty slot → dirty
+    renderCurve();
     document.getElementById('mapStatus').textContent =
       '› ' + srcName + ' dimuat + dikirim ke device';
     flash(srcName + ' aktif');
