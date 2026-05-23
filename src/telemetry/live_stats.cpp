@@ -15,6 +15,7 @@
 #include "core/quickshifter.h"
 #include "core/backfire.h"
 #include "core/idle_rumble.h"
+#include "core/exhaust_flame.h"
 #include "core/alvp.h"
 #include "config.h"
 
@@ -64,6 +65,7 @@ void tick() {
         adv -= cdi::core::safety::currentRetardDeg();
         adv -= cdi::core::backfire::currentRetardDeg();
         adv -= cdi::core::idle_rumble::currentRetardDeg();
+        adv -= cdi::core::flame::currentRetardDeg();
         // Global advance trim (T8, compensates HV stage propagation delay).
         adv += cdi::core::spark::advanceOffsetDeg();
         if (adv < cdi::config::ADVANCE_MIN_DEG) adv = cdi::config::ADVANCE_MIN_DEG;

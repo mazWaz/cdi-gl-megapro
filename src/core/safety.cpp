@@ -9,6 +9,7 @@
 #include "core/launch_control.h"
 #include "core/alvp.h"
 #include "core/idle_rumble.h"
+#include "core/exhaust_flame.h"
 
 namespace cdi::core::safety {
 namespace {
@@ -293,6 +294,15 @@ bool IRAM_ATTR shouldFire() {
     // di idle band + mode AGGRESSIVE/DRAG_BURBLE). Cek dulu sebelum
     // cut-mode logic supaya tidak kompound dengan rev-limit cut.
     if (!cdi::core::idle_rumble::shouldFireThisCycle()) return false;
+
+    // Exhaust flame skip-fire pattern (aktif saat sustained di rev
+    // limiter + flame mode enabled). Skip jalan PARALEL dengan rev-limit
+    // cut yang sudah ada — flame engage hanya kalau safety::isRevLimited
+    // true, jadi cut mode SOFT_RETARD/PATTERN_CUT/HARD_CUT juga aktif.
+    // shouldFireThisCycle() flame return false → skip. Kalau true,
+    // jatuh ke cut-mode logic di bawah (yang juga bisa decide skip).
+    // Net effect: kalau salah satu return false, fire diskip. Aman.
+    if (!cdi::core::flame::shouldFireThisCycle()) return false;
 
     cdi::CutMode m = s_activeCutMode;
     if (m == cdi::CutMode::OFF || m == cdi::CutMode::SOFT_RETARD) return true;

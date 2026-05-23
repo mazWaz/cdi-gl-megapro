@@ -20,6 +20,7 @@
 #include "core/quickshifter.h"
 #include "core/backfire.h"
 #include "core/idle_rumble.h"
+#include "core/exhaust_flame.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
 #include "core/pickup.h"
@@ -798,6 +799,36 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         r["sustain_ms"] = cdi::core::idle_rumble::sustainMs();
         r["min_uptime"] = cdi::core::idle_rumble::minUptimeSec();
         r["active"]     = cdi::core::idle_rumble::isActive();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setFlame")) {
+        bool en      = doc["enabled"] | false;
+        uint8_t mode = doc["mode"]    | (uint8_t)cdi::core::flame::mode();
+        if (mode > 2) mode = 0;
+        Serial.printf("[ws] setFlame en=%d mode=%d\n", en?1:0, (int)mode);
+
+        cdi::core::flame::setMode((cdi::FlameMode)mode);
+        cdi::core::flame::setEnabled(en);
+        cdi::storage::config::markDirty();
+
+        JsonDocument r;
+        r["type"]    = "flame";
+        r["enabled"] = cdi::core::flame::isEnabled();
+        r["mode"]    = (uint8_t)cdi::core::flame::mode();
+        r["max_ms"]  = cdi::core::flame::maxDurationMs();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getFlame")) {
+        JsonDocument r;
+        r["type"]       = "flame";
+        r["enabled"]    = cdi::core::flame::isEnabled();
+        r["mode"]       = (uint8_t)cdi::core::flame::mode();
+        r["active"]     = cdi::core::flame::isActive();
+        r["cooldown"]   = cdi::core::flame::isInCooldown();
+        r["elapsed_ms"] = cdi::core::flame::activeElapsedMs();
+        r["max_ms"]     = cdi::core::flame::maxDurationMs();
         String out; serializeJson(r, out);
         client->text(out);
     }

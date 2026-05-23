@@ -84,6 +84,24 @@ enum class BackfireTrigger : uint8_t {
     LAUNCH = 3,  // active during 2-step launch
 };
 
+// ---------- Exhaust flame mode (rev-limit cut + retard combo) ----------
+// Memunculkan api keluar knalpot saat sustained di rev limiter. Mekanisme:
+// skip beberapa cycle (dump unburned fuel ke exhaust manifold panas) +
+// fire dengan heavy retard sehingga combustion telat → flame keluar
+// saat exhaust valve buka. Tidak akan engage di bawah engagement_delay
+// supaya touch-limit biasa tidak trigger flame.
+//
+// SAFE     = pattern fire-fire-skip + retard 5-8°, max 3s engage.
+// AGGRESSIVE = pattern fire-skip-skip + retard 12-20°, max 5s engage.
+//
+// Risiko: AGGRESSIVE bisa naikkan EGT ~150°C, fuel wash di silinder
+// bila session >30s/menit. SAFE relatively benign.
+enum class FlameMode : uint8_t {
+    OFF        = 0,
+    SAFE       = 1,
+    AGGRESSIVE = 2,
+};
+
 // ---------- Idle rumble mode ----------
 // Bikin idle sound "lopey" / "racy" lewat retard jitter ± skip-fire.
 // SUBTLE = jitter retard saja, tidak ada skip → safest, halus.

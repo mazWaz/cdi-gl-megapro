@@ -16,6 +16,7 @@
 #include "core/quickshifter.h"
 #include "core/backfire.h"
 #include "core/idle_rumble.h"
+#include "core/exhaust_flame.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
 #include "core/pickup.h"
@@ -170,6 +171,11 @@ void buildJson(JsonDocument& doc) {
     ir["skip_n"]     = cdi::core::idle_rumble::skipPattern();
     ir["sustain_ms"] = cdi::core::idle_rumble::sustainMs();
     ir["min_uptime"] = cdi::core::idle_rumble::minUptimeSec();
+
+    // exhaust flame
+    JsonObject fl = doc["flame"].to<JsonObject>();
+    fl["enabled"] = cdi::core::flame::isEnabled();
+    fl["mode"]    = (uint8_t)cdi::core::flame::mode();
 }
 
 void applyJson(const JsonDocument& doc) {
@@ -303,6 +309,16 @@ void applyJson(const JsonDocument& doc) {
             cdi::core::idle_rumble::setSustainMs(ir["sustain_ms"] | 3000);
             cdi::core::idle_rumble::setMinUptimeSec(ir["min_uptime"] | 60);
             cdi::core::idle_rumble::setEnabled(ir["enabled"] | false);
+        }
+    }
+    // exhaust flame
+    {
+        JsonObjectConst fl = doc["flame"];
+        if (!fl.isNull()) {
+            uint8_t m = fl["mode"] | (uint8_t)cdi::FlameMode::OFF;
+            if (m > 2) m = 0;
+            cdi::core::flame::setMode((cdi::FlameMode)m);
+            cdi::core::flame::setEnabled(fl["enabled"] | false);
         }
     }
 

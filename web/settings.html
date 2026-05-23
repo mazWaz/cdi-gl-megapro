@@ -305,6 +305,52 @@
   </section>
 
   <section class="panel">
+    <span class="label">[ 🔥 exhaust flame · rev-limit burner ]</span>
+    <p class="caption">
+      Munculkan <b>api keluar knalpot</b> saat <b>sustained di rev limiter</b>
+      (gas pol mentok limit ≥1 detik). Mekanisme: skip beberapa cycle (dump
+      unburned fuel ke exhaust panas) + fire dengan retard ekstrem (combustion
+      bocor ke exhaust stroke). Auto-disengage saat lepas gas / RPM turun.
+    </p>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="flameEn"> enabled</label>
+    </label>
+    <div class="seg-group" id="flameModeBtns">
+      <button type="button" data-mode="0">OFF</button>
+      <button type="button" data-mode="1">AMAN</button>
+      <button type="button" data-mode="2">AGRESIF</button>
+    </div>
+    <p class="note" id="flameModeDesc">—</p>
+    <div class="field" style="flex-wrap:wrap;gap:8px">
+      <span class="chip" id="flameStatusChip" style="background:rgba(139,149,167,0.15);border-color:#8b95a7;color:#8b95a7">idle</span>
+      <span class="chip" id="flameElapsedChip" style="display:none;background:var(--amber-soft);border-color:var(--amber);color:var(--amber)">0 / 0 ms</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn green" id="applyFlameBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadFlameBtn">↻ Muat ulang</button>
+      <span class="note" id="flameStatus" style="align-self:center"></span>
+    </div>
+    <p class="note crit">
+      ⚠ Memang <b>memperpendek umur exhaust valve</b> &amp; bisa naikkan EGT.
+      Cocok untuk show / drag, BUKAN harian. Mode AGRESIF butuh konfirmasi
+      tambahan karena risiko fuel wash + thermal shock.
+    </p>
+    <details>
+      <summary class="note">▾ Detail teknis &amp; safety gates</summary>
+      <p class="note" style="margin-top:8px">
+        <b>AMAN</b>: pattern fire-fire-skip + retard 5-8° (jittered), engage
+        delay 1 detik, max 3 detik aktif, cooldown 2 detik. Vbat min 11.5V.<br>
+        <b>AGRESIF</b>: pattern fire-skip-skip + retard 12-20° (jittered),
+        engage delay 1.5 detik, max 5 detik aktif, cooldown 5 detik. Vbat min 12V.<br><br>
+        <b>Auto-disengage</b>: RPM turun di bawah limit-300, launch aktif,
+        ALVP derate, spark disarm, panic button. Tidak engage sebelum uptime
+        30 detik (warmup proxy — exhaust harus panas dulu).
+      </p>
+    </details>
+  </section>
+
+  <section class="panel">
     <span class="label">[ launch control · 2-step ]</span>
     <p class="caption">
       Hold RPM di angka tetap saat tarik kopling (input GPIO13 LOW) — untuk
@@ -1376,6 +1422,105 @@ $('reloadIrBtn').addEventListener('click', () => {
   $('irStatus').textContent = '› reload…';
 });
 $('applyIrBtn').addEventListener('click', applyIrNow);
+
+// ── Exhaust flame ──
+const FLAME_DESC = {
+  0: 'OFF — tidak ada flame, perilaku rev-limit normal.',
+  1: 'AMAN — pattern fire-fire-skip + retard 5-8°. Max 3s aktif, cooldown 2s. Vbat min 11.5V. Flame kecil-medium, risiko terkontrol untuk motor harian.',
+  2: 'AGRESIF — pattern fire-skip-skip + retard 12-20°. Max 5s aktif, cooldown 5s. Vbat min 12V. Flame besar, BUKAN untuk harian — risiko thermal shock + fuel wash.',
+};
+let flameModeValue = 0;
+function setFlameMode(m){
+  flameModeValue = +m;
+  document.querySelectorAll('#flameModeBtns button').forEach(b => {
+    b.classList.toggle('active', +b.dataset.mode === flameModeValue);
+  });
+  $('flameModeDesc').textContent = FLAME_DESC[flameModeValue] || '—';
+}
+function applyFlameNow(){
+  cdi.send({
+    cmd: 'setFlame',
+    enabled: $('flameEn').checked,
+    mode: flameModeValue,
+  });
+  const lbl = flameModeValue === 0 ? 'OFF' : (flameModeValue === 1 ? 'AMAN' : 'AGRESIF');
+  $('flameStatus').textContent = '› ' + lbl + ' diterapkan';
+}
+async function confirmAggressiveFlame(){
+  return await cdi.modal.confirm({
+    title: '⚠ MODE AGRESIF — KONFIRMASI',
+    body:
+      'Mode ini menggunakan pattern skip+retard intens yang akan:\n\n' +
+      '• Membuat exhaust valve menerima thermal shock berulang\n' +
+      '• EGT bisa naik 100-150°C di sesi panjang\n' +
+      '• Fuel wash di silinder → encerkan oli kalau >10 sesi/jam\n' +
+      '• Konsumsi bahan bakar +30-40% saat aktif\n\n' +
+      'Cocok untuk: drag race, show bike, ride-out custom\n' +
+      'TIDAK cocok untuk: motor harian, touring jarak jauh\n\n' +
+      'Lanjutkan dengan mode AGRESIF?',
+    okLabel: '✓ Saya paham — lanjutkan',
+    cancelLabel: '✕ Batal',
+    severity: 'danger',
+  });
+}
+document.querySelectorAll('#flameModeBtns button').forEach(b => {
+  b.addEventListener('click', async () => {
+    const newMode = +b.dataset.mode;
+    if (newMode === 2 && flameModeValue !== 2){
+      // Going INTO aggressive — require disclaimer ack
+      const ok = await confirmAggressiveFlame();
+      if (!ok){
+        $('flameStatus').textContent = '› batal — tetap di mode sebelumnya';
+        return;
+      }
+    }
+    setFlameMode(newMode);
+    applyFlameNow();
+  });
+});
+$('flameEn').addEventListener('change', applyFlameNow);
+
+cdi.bus.on('flame', m => {
+  $('flameEn').checked = !!m.enabled;
+  setFlameMode(m.mode | 0);
+  // Status chip
+  const chip = $('flameStatusChip');
+  const elap = $('flameElapsedChip');
+  if (m.active){
+    chip.textContent = '🔥 ACTIVE';
+    chip.style.background = 'rgba(255,184,77,0.25)';
+    chip.style.borderColor = 'var(--amber)';
+    chip.style.color = 'var(--amber)';
+    elap.style.display = '';
+    elap.textContent = (m.elapsed_ms || 0) + ' / ' + (m.max_ms || 0) + ' ms';
+  } else if (m.cooldown){
+    chip.textContent = '⏸ COOLDOWN';
+    chip.style.background = 'rgba(244,160,0,0.18)';
+    chip.style.borderColor = 'var(--warn)';
+    chip.style.color = 'var(--warn)';
+    elap.style.display = 'none';
+  } else {
+    chip.textContent = 'idle';
+    chip.style.background = 'rgba(139,149,167,0.15)';
+    chip.style.borderColor = '#8b95a7';
+    chip.style.color = '#8b95a7';
+    elap.style.display = 'none';
+  }
+});
+cdi.bus.on('open', () => cdi.send({ cmd: 'getFlame' }));
+$('reloadFlameBtn').addEventListener('click', () => {
+  cdi.send({ cmd: 'getFlame' });
+  $('flameStatus').textContent = '› reload…';
+});
+$('applyFlameBtn').addEventListener('click', async () => {
+  if (flameModeValue === 2){
+    const ok = await confirmAggressiveFlame();
+    if (!ok){ $('flameStatus').textContent = '› batal'; return; }
+  }
+  applyFlameNow();
+});
+// Poll status setiap 500ms while page open supaya chip update real-time
+setInterval(() => { cdi.send({ cmd: 'getFlame' }); }, 500);
 
 // ── Launch ──
 let launchInit = false;
