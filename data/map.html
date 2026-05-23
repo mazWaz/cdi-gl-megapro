@@ -58,7 +58,7 @@
   /* fine adjust pad */
   .pad {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
   }
   .pad button {
@@ -154,8 +154,8 @@
   }
 
   @media (max-width: 480px) {
-    .pad { grid-template-columns: repeat(3, 1fr); }
-    .slots { grid-template-columns: repeat(5, 1fr); }
+    .pad { grid-template-columns: repeat(2, 1fr); }
+    .slots { grid-template-columns: repeat(4, 1fr); }
   }
 </style>
 </head>
@@ -209,7 +209,6 @@
 
     <!-- toolbar below chart -->
     <div class="btn-row" style="margin-top:10px">
-      <button class="btn ghost" id="addBtn">⊕ Tambah titik</button>
       <button class="btn ghost" id="cmpBtn">◇ Bandingkan stok</button>
       <button class="btn ghost" id="reloadBtn">↻ Muat ulang</button>
       <button class="btn green" id="applyBtn" disabled>✓ Terapkan<span class="dirty-badge" id="dirtyTag" style="display:none">●</span></button>
@@ -218,14 +217,13 @@
 
   <section class="panel">
     <span class="label">[ penyesuaian halus · titik dipilih ]</span>
-    <p class="note" id="adjHint">Tap titik untuk memilih.</p>
-    <p class="note" style="font-size:9px"><span id="ptCount">0</span> / 32 titik terpakai</p>
+    <p class="note" id="adjHint">Tap titik untuk memilih, drag untuk geser.</p>
+    <p class="note" style="font-size:9px"><span id="ptCount">0</span> titik dalam kurva (32 step tetap)</p>
     <div class="pad">
       <button id="advUp">+0.5°</button>
       <button id="advDn">−0.5°</button>
       <button id="rpmDn">−100 RPM</button>
       <button id="rpmUp">+100 RPM</button>
-      <button class="del" id="delBtn">⌫ HAPUS</button>
     </div>
   </section>
 
@@ -549,47 +547,6 @@ function hideCoordReadout(){ document.getElementById('coordReadout').textContent
 function markDirty(){ dirty = true; updateHud(); }
 function clearDirty(){ dirty = false; updateHud(); }
 
-async function addPoint(){
-  if (points.length >= MAX_POINTS){
-    await cdi.modal.alert({
-      title: 'BATAS TITIK TERCAPAI',
-      severity: 'warn',
-      body: 'Sudah ada ' + MAX_POINTS + ' titik (maksimum).\n\n' +
-            'Hapus dulu satu titik (tap titik → tombol HAPUS) ' +
-            'sebelum menambah yang baru.',
-      okLabel: 'OK'
-    });
-    return;
-  }
-  // insert between selected and next, or in mid-range
-  let newRpm, newDeg;
-  if (selected >= 0 && selected < points.length - 1){
-    const a = points[selected], b = points[selected+1];
-    newRpm = Math.round((a[0]+b[0])/2 / RPM_SNAP) * RPM_SNAP;
-    newDeg = (a[1]+b[1])/2;
-    // avoid landing exactly on an existing RPM
-    if (newRpm === a[0]) newRpm = a[0] + RPM_SNAP;
-    if (newRpm === b[0]) newRpm = b[0] - RPM_SNAP;
-  } else if (points.length === 0){
-    newRpm = 3000; newDeg = 20;
-  } else {
-    newRpm = clamp(points[points.length-1][0] + 1000, RPM_MIN, RPM_MAX);
-    newDeg = points[points.length-1][1];
-  }
-  points.push([newRpm, +newDeg.toFixed(1)]);
-  points.sort((a,b) => a[0] - b[0]);
-  selected = points.findIndex(p => p[0] === newRpm && p[1] === +newDeg.toFixed(1));
-  markDirty(); renderCurve();
-}
-
-function deleteSelected(){
-  if (selected < 0) return;
-  if (points.length <= 2){ flash('minimal 2 titik'); return; }
-  points.splice(selected, 1);
-  selected = -1;
-  markDirty(); renderCurve();
-}
-
 function adjustSelected(dRpm, dDeg){
   if (selected < 0) return;
   const p = points[selected];
@@ -798,8 +755,6 @@ cdi.bus.on('telemetry', t => {
 });
 
 // ─────── button bindings ───────
-document.getElementById('addBtn').addEventListener('click', addPoint);
-document.getElementById('delBtn').addEventListener('click', deleteSelected);
 document.getElementById('advUp').addEventListener('click', () => adjustSelected(0, +DEG_SNAP));
 document.getElementById('advDn').addEventListener('click', () => adjustSelected(0, -DEG_SNAP));
 document.getElementById('rpmUp').addEventListener('click', () => adjustSelected(+RPM_SNAP, 0));
