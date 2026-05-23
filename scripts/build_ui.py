@@ -42,7 +42,12 @@ if PLATFORMIO:
     PROJECT_DIR = Path(env["PROJECT_DIR"])
 else:
     PROJECT_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR    = PROJECT_DIR / "data"
+# UI source files. Sebelumnya 'data/' (PlatformIO LittleFS convention)
+# tapi UI sekarang di-embed ke firmware via PROGMEM, bukan LittleFS,
+# jadi rename ke 'web/' supaya niat lebih jelas: ini source code,
+# bukan filesystem image. LittleFS partition masih dipakai oleh
+# edge_snapshot module untuk save scope ring snapshots di runtime.
+WEB_DIR     = PROJECT_DIR / "web"
 OUT_HEADER  = PROJECT_DIR / "include" / "ui_pages.h"
 
 # Mapping ekstensi file -> C identifier safe + MIME type
@@ -145,15 +150,15 @@ def generate_header(files: list) -> str:
 
 
 def build(*_args, **_kwargs):
-    if not DATA_DIR.exists():
-        print("[build_ui] DATA_DIR not found: %s" % DATA_DIR)
+    if not WEB_DIR.exists():
+        print("[build_ui] WEB_DIR not found: %s" % WEB_DIR)
         return
 
     files = []
     total_raw = 0
     total_gz  = 0
 
-    for entry in sorted(DATA_DIR.iterdir()):
+    for entry in sorted(WEB_DIR.iterdir()):
         if not entry.is_file():
             continue
         ext = entry.suffix.lower()
