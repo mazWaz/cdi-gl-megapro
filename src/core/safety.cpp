@@ -8,6 +8,7 @@
 #include "core/spark_scheduler.h"
 #include "core/launch_control.h"
 #include "core/alvp.h"
+#include "core/idle_rumble.h"
 
 namespace cdi::core::safety {
 namespace {
@@ -288,6 +289,11 @@ uint8_t patternSkipN() { return s_patternSkipN; }
 float currentRetardDeg() { return s_activeRetardDeg; }
 
 bool IRAM_ATTR shouldFire() {
+    // Idle rumble skip-fire pattern (cuma aktif kalau engine sustained
+    // di idle band + mode AGGRESSIVE/DRAG_BURBLE). Cek dulu sebelum
+    // cut-mode logic supaya tidak kompound dengan rev-limit cut.
+    if (!cdi::core::idle_rumble::shouldFireThisCycle()) return false;
+
     cdi::CutMode m = s_activeCutMode;
     if (m == cdi::CutMode::OFF || m == cdi::CutMode::SOFT_RETARD) return true;
     if (m == cdi::CutMode::HARD_CUT) return false;

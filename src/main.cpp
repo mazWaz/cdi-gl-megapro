@@ -18,6 +18,7 @@
 #include "core/launch_control.h"
 #include "core/quickshifter.h"
 #include "core/backfire.h"
+#include "core/idle_rumble.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
 #include "core/pickup.h"
@@ -118,6 +119,7 @@ void setup() {
     cdi::core::launch::begin();                    // GPIO13 INPUT_PULLUP
     cdi::core::quickshift::begin();                // GPIO14 INPUT_PULLUP (ISR off)
     cdi::core::backfire::begin();                  // (disabled at boot)
+    cdi::core::idle_rumble::begin();               // (disabled at boot)
     cdi::core::alvp::begin();                      // adc1 init for Vbat
     cdi::core::panic::begin();                     // hardware emergency kill on GPIO0
     cdi::core::preset::apply("honda_megapro");     // default preset (overridden by load if NVS)
@@ -160,6 +162,7 @@ void loop() {
     cdi::core::panic::poll();                // boot-button long-press → SAFE_HOLD
     cdi::core::launch::poll();               // debounced digital read
     cdi::core::backfire::tick(cdi::core::rpm::raw());   // raw RPM for fast decel-edge detection
+    cdi::core::idle_rumble::tick(cdi::core::rpm::raw()); // jitter+skip at sustained idle
     cdi::core::alvp::tick();                   // sampled every 500ms internally
     cdi::telemetry::datalog::tick();           // sampled every 20ms internally
     cdi::core::pickup_cal::tick();             // auto-cal (drains scope ring when active)

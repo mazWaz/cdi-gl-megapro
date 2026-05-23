@@ -19,6 +19,7 @@
 #include "core/launch_control.h"
 #include "core/quickshifter.h"
 #include "core/backfire.h"
+#include "core/idle_rumble.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
 #include "core/pickup.h"
@@ -691,6 +692,55 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         r["retard"]    = cdi::core::backfire::retardDeg();
         r["duration_ms"] = cdi::core::backfire::durationMs();
         r["random"]    = cdi::core::backfire::randomPattern();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "setIdleRumble")) {
+        bool en       = doc["enabled"]    | false;
+        uint8_t mode  = doc["mode"]       | (uint8_t)cdi::core::idle_rumble::mode();
+        uint32_t lo   = doc["rpm_lo"]     | cdi::core::idle_rumble::rpmLo();
+        uint32_t hi   = doc["rpm_hi"]     | cdi::core::idle_rumble::rpmHi();
+        float retard  = doc["retard"]     | cdi::core::idle_rumble::maxRetardDeg();
+        uint8_t skip  = doc["skip_n"]     | cdi::core::idle_rumble::skipPattern();
+        uint32_t sus  = doc["sustain_ms"] | cdi::core::idle_rumble::sustainMs();
+        uint32_t upt  = doc["min_uptime"] | cdi::core::idle_rumble::minUptimeSec();
+        Serial.printf("[ws] setIdleRumble en=%d mode=%d band=%u-%u ret=%.1f skip=%u\n",
+                      en?1:0, (int)mode, (unsigned)lo, (unsigned)hi, retard, (unsigned)skip);
+
+        cdi::core::idle_rumble::setMode((cdi::IdleRumbleMode)mode);
+        cdi::core::idle_rumble::setRpmBand(lo, hi);
+        cdi::core::idle_rumble::setMaxRetardDeg(retard);
+        cdi::core::idle_rumble::setSkipPattern(skip);
+        cdi::core::idle_rumble::setSustainMs(sus);
+        cdi::core::idle_rumble::setMinUptimeSec(upt);
+        cdi::core::idle_rumble::setEnabled(en);
+        cdi::storage::config::markDirty();
+
+        JsonDocument r;
+        r["type"]       = "idleRumble";
+        r["enabled"]    = cdi::core::idle_rumble::isEnabled();
+        r["mode"]       = (uint8_t)cdi::core::idle_rumble::mode();
+        r["rpm_lo"]     = cdi::core::idle_rumble::rpmLo();
+        r["rpm_hi"]     = cdi::core::idle_rumble::rpmHi();
+        r["retard"]     = cdi::core::idle_rumble::maxRetardDeg();
+        r["skip_n"]     = cdi::core::idle_rumble::skipPattern();
+        r["sustain_ms"] = cdi::core::idle_rumble::sustainMs();
+        r["min_uptime"] = cdi::core::idle_rumble::minUptimeSec();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
+    else if (!strcmp(cmd, "getIdleRumble")) {
+        JsonDocument r;
+        r["type"]       = "idleRumble";
+        r["enabled"]    = cdi::core::idle_rumble::isEnabled();
+        r["mode"]       = (uint8_t)cdi::core::idle_rumble::mode();
+        r["rpm_lo"]     = cdi::core::idle_rumble::rpmLo();
+        r["rpm_hi"]     = cdi::core::idle_rumble::rpmHi();
+        r["retard"]     = cdi::core::idle_rumble::maxRetardDeg();
+        r["skip_n"]     = cdi::core::idle_rumble::skipPattern();
+        r["sustain_ms"] = cdi::core::idle_rumble::sustainMs();
+        r["min_uptime"] = cdi::core::idle_rumble::minUptimeSec();
+        r["active"]     = cdi::core::idle_rumble::isActive();
         String out; serializeJson(r, out);
         client->text(out);
     }

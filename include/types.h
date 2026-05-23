@@ -84,4 +84,18 @@ enum class BackfireTrigger : uint8_t {
     LAUNCH = 3,  // active during 2-step launch
 };
 
+// ---------- Idle rumble mode ----------
+// Bikin idle sound "lopey" / "racy" lewat retard jitter ± skip-fire.
+// SUBTLE = jitter retard saja, tidak ada skip → safest, halus.
+// AGGRESSIVE = jitter retard + occasional skip-fire → clearly audible
+//              irregular firing rhythm. Sedikit risk minor stall.
+// DRAG_BURBLE = heavy jitter + frequent skip → exhaust pops at idle,
+//               drag-bike feel. Most exhaust valve wear.
+enum class IdleRumbleMode : uint8_t {
+    OFF         = 0,
+    SUBTLE      = 1,
+    AGGRESSIVE  = 2,
+    DRAG_BURBLE = 3,
+};
+
 } // namespace cdi

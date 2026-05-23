@@ -15,6 +15,7 @@
 #include "core/launch_control.h"
 #include "core/quickshifter.h"
 #include "core/backfire.h"
+#include "core/idle_rumble.h"
 #include "core/alvp.h"
 #include "core/engine_preset.h"
 #include "core/pickup.h"
@@ -158,6 +159,17 @@ void buildJson(JsonDocument& doc) {
     bf["retard"]      = cdi::core::backfire::retardDeg();
     bf["duration_ms"] = cdi::core::backfire::durationMs();
     bf["random"]      = cdi::core::backfire::randomPattern();
+
+    // idle rumble
+    JsonObject ir = doc["idle_rumble"].to<JsonObject>();
+    ir["enabled"]    = cdi::core::idle_rumble::isEnabled();
+    ir["mode"]       = (uint8_t)cdi::core::idle_rumble::mode();
+    ir["rpm_lo"]     = cdi::core::idle_rumble::rpmLo();
+    ir["rpm_hi"]     = cdi::core::idle_rumble::rpmHi();
+    ir["retard"]     = cdi::core::idle_rumble::maxRetardDeg();
+    ir["skip_n"]     = cdi::core::idle_rumble::skipPattern();
+    ir["sustain_ms"] = cdi::core::idle_rumble::sustainMs();
+    ir["min_uptime"] = cdi::core::idle_rumble::minUptimeSec();
 }
 
 void applyJson(const JsonDocument& doc) {
@@ -277,6 +289,20 @@ void applyJson(const JsonDocument& doc) {
             cdi::core::backfire::setDurationMs(bf["duration_ms"] | 200);
             cdi::core::backfire::setRandomPattern(bf["random"] | true);
             cdi::core::backfire::setEnabled(bf["enabled"] | false);
+        }
+    }
+    // idle rumble
+    {
+        JsonObjectConst ir = doc["idle_rumble"];
+        if (!ir.isNull()) {
+            cdi::core::idle_rumble::setMode(
+                (cdi::IdleRumbleMode)(ir["mode"] | (int)cdi::IdleRumbleMode::SUBTLE));
+            cdi::core::idle_rumble::setRpmBand(ir["rpm_lo"] | 1000, ir["rpm_hi"] | 2000);
+            cdi::core::idle_rumble::setMaxRetardDeg(ir["retard"] | 3.0f);
+            cdi::core::idle_rumble::setSkipPattern(ir["skip_n"] | 7);
+            cdi::core::idle_rumble::setSustainMs(ir["sustain_ms"] | 3000);
+            cdi::core::idle_rumble::setMinUptimeSec(ir["min_uptime"] | 60);
+            cdi::core::idle_rumble::setEnabled(ir["enabled"] | false);
         }
     }
 

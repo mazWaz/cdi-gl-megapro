@@ -224,6 +224,60 @@
   </section>
 
   <section class="panel">
+    <span class="label">[ idle rumble · lopey cam / drag-burble ]</span>
+    <label class="field">
+      <span style="min-width:70px">aktif</span>
+      <label class="chk" style="margin-left:8px"><input type="checkbox" id="irEn"> enabled</label>
+    </label>
+    <div class="seg-group" id="irModeBtns">
+      <button type="button" data-mode="0">OFF</button>
+      <button type="button" data-mode="1">Subtle</button>
+      <button type="button" data-mode="2">Aggressive</button>
+      <button type="button" data-mode="3">Drag Burble</button>
+    </div>
+    <p class="note" id="irModeDesc">—</p>
+    <label class="field">idle rpm bawah
+      <input id="irLoInp" type="number" min="500" max="3800" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">idle rpm atas
+      <input id="irHiInp" type="number" min="700" max="4000" step="100" style="width:90px">
+      <span class="val">rpm</span>
+    </label>
+    <label class="field">retard max
+      <input id="irRetInp" type="number" min="0" max="10" step="0.5" style="width:90px">
+      <span class="val">° (jitter 0..max)</span>
+    </label>
+    <label class="field">skip pattern
+      <input id="irSkipInp" type="number" min="0" max="20" step="1" style="width:90px">
+      <span class="val">fire-N-skip-1 (0=no skip)</span>
+    </label>
+    <label class="field">sustain
+      <input id="irSusInp" type="number" min="500" max="10000" step="100" style="width:90px">
+      <span class="val">ms in band before engage</span>
+    </label>
+    <label class="field">min uptime
+      <input id="irUptInp" type="number" min="0" max="300" step="5" style="width:90px">
+      <span class="val">s warm-up</span>
+    </label>
+    <div class="btn-row">
+      <button class="btn green" id="applyIrBtn">✓ Terapkan</button>
+      <button class="btn ghost" id="reloadIrBtn">↻ Muat ulang</button>
+      <span class="note" id="irStatus" style="align-self:center"></span>
+    </div>
+    <p class="note">
+      Bikin idle suara "lopey" / drag-bike feel via jitter retard ± skip-fire.
+      Auto-disengage saat RPM keluar dari idle band (gas dibuka). Tidak aktif
+      sebelum engine warm-up (default 60 detik dari boot).
+    </p>
+    <p class="note crit">
+      ⚠ Mode <b>Aggressive</b> &amp; <b>Drag Burble</b> bisa stall engine kalau
+      idle setting motor terlalu rendah — pastikan idle stable ≥1200 rpm dulu.
+      Skip-fire akumulasi unburned fuel ke exhaust (lebih sedikit dari backfire).
+    </p>
+  </section>
+
+  <section class="panel">
     <span class="label">[ launch control · 2-step ]</span>
     <label class="field">
       <span style="min-width:70px">aktif</span>
@@ -1006,6 +1060,80 @@ $('reloadBfBtn').addEventListener('click', () => {
   $('bfStatus').textContent = '› nilai perangkat dimuat';
 });
 $('applyBfBtn').addEventListener('click', applyBfNow);
+
+// ── Idle Rumble ──
+const IR_DESC = {
+  0: 'OFF — idle normal, tidak ada variasi.',
+  1: 'Subtle — jitter retard 0-3° per fire. Suara lopey halus, no skip.',
+  2: 'Aggressive — jitter + skip-fire pattern. Irregular firing rhythm.',
+  3: 'Drag Burble — jitter heavy + frequent skip. Pop sesekali di idle.'
+};
+const IR_DEFAULTS = {
+  0: { lo: 1000, hi: 2000, ret: 0.0, skip:  0, sus: 3000, upt: 60 },
+  1: { lo: 1000, hi: 2000, ret: 3.0, skip:  0, sus: 3000, upt: 60 },
+  2: { lo: 1000, hi: 2000, ret: 4.0, skip:  7, sus: 3000, upt: 60 },
+  3: { lo: 1000, hi: 2000, ret: 6.0, skip:  4, sus: 2000, upt: 60 }
+};
+let irModeValue = 1;
+function setIrMode(m, autofill){
+  irModeValue = +m;
+  document.querySelectorAll('#irModeBtns button').forEach(b => {
+    b.classList.toggle('active', +b.dataset.mode === irModeValue);
+  });
+  $('irModeDesc').textContent = IR_DESC[irModeValue] || '—';
+  if (autofill){
+    const d = IR_DEFAULTS[irModeValue];
+    if (d){
+      $('irLoInp').value   = d.lo;
+      $('irHiInp').value   = d.hi;
+      $('irRetInp').value  = d.ret.toFixed(1);
+      $('irSkipInp').value = d.skip;
+      $('irSusInp').value  = d.sus;
+      $('irUptInp').value  = d.upt;
+    }
+  }
+}
+function applyIrNow(){
+  cdi.send({
+    cmd:'setIdleRumble',
+    enabled: $('irEn').checked,
+    mode:    irModeValue,
+    rpm_lo:  parseInt($('irLoInp').value, 10),
+    rpm_hi:  parseInt($('irHiInp').value, 10),
+    retard:  parseFloat($('irRetInp').value),
+    skip_n:  parseInt($('irSkipInp').value, 10),
+    sustain_ms: parseInt($('irSusInp').value, 10),
+    min_uptime: parseInt($('irUptInp').value, 10),
+  });
+  $('irStatus').textContent = '› ' + IR_DESC[irModeValue].split('—')[0].trim() + ' diterapkan';
+}
+document.querySelectorAll('#irModeBtns button').forEach(b => {
+  b.addEventListener('click', () => {
+    setIrMode(b.dataset.mode, true);
+    applyIrNow();
+  });
+});
+$('irEn').addEventListener('change', applyIrNow);
+
+// Populate from getIdleRumble reply (cdi.bus 'idleRumble' event)
+cdi.bus.on('idleRumble', m => {
+  $('irEn').checked    = !!m.enabled;
+  setIrMode(m.mode | 0, false);
+  $('irLoInp').value   = m.rpm_lo;
+  $('irHiInp').value   = m.rpm_hi;
+  $('irRetInp').value  = (m.retard || 0).toFixed(1);
+  $('irSkipInp').value = m.skip_n || 0;
+  $('irSusInp').value  = m.sustain_ms || 3000;
+  $('irUptInp').value  = m.min_uptime || 60;
+  $('irStatus').textContent = m.active ? '› active' : '› idle';
+});
+cdi.bus.on('open', () => cdi.send({ cmd: 'getIdleRumble' }));
+
+$('reloadIrBtn').addEventListener('click', () => {
+  cdi.send({ cmd: 'getIdleRumble' });
+  $('irStatus').textContent = '› reload…';
+});
+$('applyIrBtn').addEventListener('click', applyIrNow);
 
 // ── Launch ──
 let launchInit = false;
