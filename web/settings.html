@@ -27,8 +27,10 @@
   <section class="panel" style="border-color:var(--amber)">
     <span class="label">[ ⚙ motor preset ]</span>
     <p class="caption">
-      Pilih preset sesuai jenis motor. Setiap preset bawa <b>peta advance + rev limit + dwell + geometri pulser</b>
-      yang sudah dikalibrasi pabrik. Ganti preset = reset ke nilai stok motor itu.
+      Pilih preset sesuai jenis motor. Setiap preset bawa <b>peta advance + rev limit
+      + dwell + geometri pulser</b> yang sudah dikalibrasi pabrik. Untuk motor
+      modif pulser, jalankan <b>kalibrasi otomatis</b> dengan tombol "⌕ Kalibrasi
+      sekarang" di bawah — hasil ukur jadi override yang persist di NVS.
     </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip" id="presetCurrent" style="background:var(--amber-soft);border-color:var(--amber);color:var(--amber)">
@@ -487,16 +489,22 @@
   <section class="panel">
     <span class="label">[ geometri pulser ]</span>
     <p class="caption">
-      Sudut maksimal advance + lebar magnet pulser per motor. Otomatis di-set
-      saat pilih preset. Override manual cuma kalau modif rotor / pickup geometry
-      custom. Salah set = timing seluruh map melenceng.
+      Sudut max advance + lebar magnet pulser. Otomatis di-set saat pilih
+      preset (cocok untuk motor stok). Untuk motor modif rotor/pickup,
+      jalankan <b>kalibrasi otomatis</b> dari panel <b>Motor Preset</b> di
+      atas — firmware ukur magnet width langsung dari pulser saat idle.
     </p>
-    <dl class="kv">
-      <dt>lebar magnet</dt>     <dd>18.0° (stok megapro)</dd>
-      <dt>ref advance maks</dt> <dd>32.0° btdc (ch1 leading)</dd>
-      <dt>ref advance base</dt> <dd>14.0° btdc (ch2 trailing)</dd>
+    <dl class="kv" style="margin-bottom:8px">
+      <dt>lebar magnet</dt>      <dd><span id="pkpMagnetView" class="ok">—°</span></dd>
+      <dt>max advance ref</dt>   <dd><span id="pkpMaxRefView">—° BTDC</span></dd>
+      <dt>base advance ref</dt>  <dd><span id="pkpBaseRefView">—° BTDC</span></dd>
+      <dt>sumber nilai</dt>      <dd><span id="pkpSourceView">—</span></dd>
     </dl>
-    <p class="note">Konstanta geometri dari <code style="color:var(--text);background:var(--bg);padding:1px 4px">config.h</code>. Ganti hardware pickup → update di sana.</p>
+    <p class="note" style="font-size:10px;color:var(--text-faint)">
+      Sumber <b style="color:var(--text-dim)">preset</b> = nilai factory dari engine_preset table.
+      Sumber <b style="color:var(--warn)">auto_cal</b> = hasil kalibrasi (override aktif).
+      Untuk reset ke factory, scroll ke panel Motor Preset dan klik <b>↺ Reset ke preset</b>.
+    </p>
   </section>
 
   <section class="panel">
@@ -854,6 +862,7 @@ cdi.bus.on('preset', m => {
 
 // ── Pickup geometry display + reset ──
 function renderPickup(m){
+  // Top sub-panel (motor preset section)
   $('pickupMagnet').textContent = (typeof m.magnet === 'number') ? m.magnet.toFixed(2) : '—';
   $('pickupMax').textContent    = (typeof m.max_ref === 'number') ? m.max_ref.toFixed(1) : '—';
   $('pickupBase').textContent   = (typeof m.base === 'number') ? m.base.toFixed(1) : '—';
@@ -863,8 +872,26 @@ function renderPickup(m){
   $('pickupSrcChip').style.borderColor = isOverride ? 'var(--warn)' : '';
   $('pickupSrcChip').style.color       = isOverride ? 'var(--warn)' : 'var(--text-dim)';
   $('pickupResetBtn').style.display = isOverride ? '' : 'none';
+
+  // Lower [geometri pulser] panel (read-only summary view)
+  if ($('pkpMagnetView')) {
+    $('pkpMagnetView').textContent =
+      (typeof m.magnet === 'number') ? m.magnet.toFixed(2) + '°' : '—°';
+    $('pkpMaxRefView').textContent =
+      (typeof m.max_ref === 'number') ? m.max_ref.toFixed(1) + '° BTDC' : '—° BTDC';
+    $('pkpBaseRefView').textContent =
+      (typeof m.base === 'number') ? m.base.toFixed(1) + '° BTDC' : '—° BTDC';
+    const src = m.source || (isOverride ? 'override' : 'preset');
+    const srcEl = $('pkpSourceView');
+    srcEl.textContent = src;
+    // Color source label: amber for preset (default), warn for auto_cal/override
+    srcEl.style.color = (src === 'preset') ? 'var(--text-dim)' : 'var(--warn)';
+    srcEl.style.fontWeight = (src === 'preset') ? '400' : '700';
+  }
 }
 cdi.bus.on('pickup', renderPickup);
+// Fetch initial pickup state pada open WS
+cdi.bus.on('open', () => cdi.send({cmd:'getPickup'}));
 $('pickupResetBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
     title: 'RESET PICKUP',
