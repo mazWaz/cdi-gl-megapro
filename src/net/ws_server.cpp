@@ -460,12 +460,28 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
             return;
         }
         cdi::storage::config::saveNow();
-        JsonDocument r;
-        r["type"]     = "preset";
-        r["current"]  = cdi::core::preset::currentId();
-        r["modified"] = false;
-        String out; serializeJson(r, out);
-        client->text(out);
+        // Reply 1: preset state (untuk settings.html badge update)
+        {
+            JsonDocument r;
+            r["type"]     = "preset";
+            r["current"]  = cdi::core::preset::currentId();
+            r["modified"] = false;
+            String out; serializeJson(r, out);
+            client->text(out);
+        }
+        // Reply 2: push active map yang baru. preset::apply() sudah
+        // replace advance::active() dengan kurva preset baru — tapi
+        // tanpa push ini, map editor di tab lain masih show kurva lama.
+        // Kirim sebagai 'map' event biar bus.on('map') di map.html
+        // re-run dengan data fresh.
+        {
+            JsonDocument r;
+            r["type"] = "map";
+            JsonArray arr = r["points"].to<JsonArray>();
+            cdi::core::advance::active().serialize(arr);
+            String out; serializeJson(r, out);
+            client->text(out);
+        }
     }
     else if (!strcmp(cmd, "getPresetStatus")) {
         JsonDocument r;

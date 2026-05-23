@@ -718,9 +718,32 @@ cdi.bus.on('open', () => {
 // When preset status arrives, fetch its curve as the stock reference.
 // Also fires when user switches preset (backend sends 'preset' event).
 cdi.bus.on('preset', m => {
+  // Distinguish initial load (activePresetId === null → first time
+  // we ever see preset state, browser baru open) versus actual user
+  // switch (activePresetId already set → user clicked beda preset).
+  const isSwitch = activePresetId !== null
+                   && m.current
+                   && m.current !== activePresetId;
+
   if (m.current && m.current !== activePresetId){
     activePresetId = m.current;
     cdi.send({ cmd: 'getPresetMap', id: m.current });
+  }
+
+  if (isSwitch){
+    // User benar-benar switch preset → reset editor context tapi
+    // PRESERVE saved slots P1..P4 (user boleh mau coba kurva yang
+    // sama di preset lain). Firmware sudah ganti advance::active()
+    // ke preset baru dan akan push 'map' event berikutnya. Kita
+    // reset active slot context supaya bus.on('map') handler fall
+    // through ke device fallback (case 4) → editor load fresh kurva
+    // preset baru sebagai starting point.
+    stockPoints    = null;     // force refetch — kurva stok beda preset
+    baselinePoints = null;
+    try { localStorage.removeItem('cdi.activeSlot.v1'); } catch(e){}
+    activeProfile = null;      // bus.on('map') akan set ulang ke device
+    document.getElementById('mapStatus').textContent =
+      '› preset diganti → editor dimuat ulang dari peta baru';
   }
 });
 
