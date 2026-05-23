@@ -325,7 +325,13 @@
     <div class="field" style="flex-wrap:wrap;gap:8px">
       <span class="chip" id="flameStatusChip" style="background:rgba(139,149,167,0.15);border-color:#8b95a7;color:#8b95a7">idle</span>
       <span class="chip" id="flameElapsedChip" style="display:none;background:var(--amber-soft);border-color:var(--amber);color:var(--amber)">0 / 0 ms</span>
+      <span class="chip" id="flameCooldownChip" style="display:none;background:rgba(244,160,0,0.18);border-color:var(--warn);color:var(--warn)">cooldown 0 ms</span>
     </div>
+    <p class="note crit" id="flameCutModeWarn" style="display:none">
+      ⚠ Cut mode <b>HARD CUT</b> tidak compatible — semua spark di-skip di
+      rev-limit, tidak ada fire untuk ignite mixture di exhaust. Ganti ke
+      <b>Soft Retard</b> atau <b>Pattern Cut</b> di panel "Rev Limiter" di atas.
+    </p>
     <div class="btn-row">
       <button class="btn green" id="applyFlameBtn">✓ Terapkan</button>
       <button class="btn ghost" id="reloadFlameBtn">↻ Muat ulang</button>
@@ -1486,6 +1492,7 @@ cdi.bus.on('flame', m => {
   // Status chip
   const chip = $('flameStatusChip');
   const elap = $('flameElapsedChip');
+  const cool = $('flameCooldownChip');
   if (m.active){
     chip.textContent = '🔥 ACTIVE';
     chip.style.background = 'rgba(255,184,77,0.25)';
@@ -1493,19 +1500,27 @@ cdi.bus.on('flame', m => {
     chip.style.color = 'var(--amber)';
     elap.style.display = '';
     elap.textContent = (m.elapsed_ms || 0) + ' / ' + (m.max_ms || 0) + ' ms';
+    cool.style.display = 'none';
   } else if (m.cooldown){
     chip.textContent = '⏸ COOLDOWN';
     chip.style.background = 'rgba(244,160,0,0.18)';
     chip.style.borderColor = 'var(--warn)';
     chip.style.color = 'var(--warn)';
     elap.style.display = 'none';
+    cool.style.display = '';
+    cool.textContent = 'cooldown ' + (m.cooldown_ms || 0) + ' ms';
   } else {
     chip.textContent = 'idle';
     chip.style.background = 'rgba(139,149,167,0.15)';
     chip.style.borderColor = '#8b95a7';
     chip.style.color = '#8b95a7';
     elap.style.display = 'none';
+    cool.style.display = 'none';
   }
+  // Cut mode incompatibility warning — show kalau user enable flame
+  // tapi rev-limit cut_mode masih HARD_CUT (= 2).
+  const warn = $('flameCutModeWarn');
+  if (warn) warn.style.display = (m.enabled && (m.cut_mode|0) === 2) ? '' : 'none';
 });
 cdi.bus.on('open', () => cdi.send({ cmd: 'getFlame' }));
 $('reloadFlameBtn').addEventListener('click', () => {
@@ -1519,8 +1534,9 @@ $('applyFlameBtn').addEventListener('click', async () => {
   }
   applyFlameNow();
 });
-// Poll status setiap 500ms while page open supaya chip update real-time
-setInterval(() => { cdi.send({ cmd: 'getFlame' }); }, 500);
+// Status chip update via server push — firmware broadcasts 'flame' JSON
+// @ 2Hz dari ws_server::tickFlame() (replaces previous setInterval poll).
+// Initial fetch via getFlame on 'open' event sudah cukup untuk seed UI.
 
 // ── Launch ──
 let launchInit = false;

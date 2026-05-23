@@ -822,13 +822,15 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
     }
     else if (!strcmp(cmd, "getFlame")) {
         JsonDocument r;
-        r["type"]       = "flame";
-        r["enabled"]    = cdi::core::flame::isEnabled();
-        r["mode"]       = (uint8_t)cdi::core::flame::mode();
-        r["active"]     = cdi::core::flame::isActive();
-        r["cooldown"]   = cdi::core::flame::isInCooldown();
-        r["elapsed_ms"] = cdi::core::flame::activeElapsedMs();
-        r["max_ms"]     = cdi::core::flame::maxDurationMs();
+        r["type"]         = "flame";
+        r["enabled"]      = cdi::core::flame::isEnabled();
+        r["mode"]         = (uint8_t)cdi::core::flame::mode();
+        r["active"]       = cdi::core::flame::isActive();
+        r["cooldown"]     = cdi::core::flame::isInCooldown();
+        r["elapsed_ms"]   = cdi::core::flame::activeElapsedMs();
+        r["max_ms"]       = cdi::core::flame::maxDurationMs();
+        r["cooldown_ms"]  = cdi::core::flame::cooldownRemainingMs();
+        r["cut_mode"]     = (uint8_t)cdi::core::safety::mainCutMode();
         String out; serializeJson(r, out);
         client->text(out);
     }
@@ -1035,6 +1037,28 @@ void tickTelemetry() {
     buf[68] = t.flags4;
     memcpy(&buf[69], &t.alvp_derate_rpm, 2);
     s_ws.binaryAll(buf, sizeof(buf));
+}
+
+void tickFlame() {
+    // Broadcast JSON status flame ke semua client. Replaces 500ms poll
+    // dari settings.html. Hanya dipanggil kalau ada client connected.
+    if (s_ws.count() == 0) return;
+    // Backpressure guard sama seperti tickTelemetry.
+    for (auto& c : s_ws.getClients()) {
+        if (c.queueIsFull()) return;
+    }
+    JsonDocument r;
+    r["type"]         = "flame";
+    r["enabled"]      = cdi::core::flame::isEnabled();
+    r["mode"]         = (uint8_t)cdi::core::flame::mode();
+    r["active"]       = cdi::core::flame::isActive();
+    r["cooldown"]     = cdi::core::flame::isInCooldown();
+    r["elapsed_ms"]   = cdi::core::flame::activeElapsedMs();
+    r["max_ms"]       = cdi::core::flame::maxDurationMs();
+    r["cooldown_ms"]  = cdi::core::flame::cooldownRemainingMs();
+    r["cut_mode"]     = (uint8_t)cdi::core::safety::mainCutMode();
+    String out; serializeJson(r, out);
+    s_ws.textAll(out);
 }
 
 void cleanup() { s_ws.cleanupClients(); }

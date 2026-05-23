@@ -41,8 +41,10 @@ namespace pin = cdi::pins;
 static uint32_t s_lastScopeFrameMs = 0;
 static uint32_t s_lastTelemetryMs  = 0;
 static uint32_t s_lastSafetyMs     = 0;
+static uint32_t s_lastFlameMs      = 0;
 
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 200;   // 5 fps
+constexpr uint32_t FLAME_INTERVAL_MS     = 500;   // 2 fps flame state push
 
 // Human-readable reset cause for the boot banner.
 const char* resetReasonStr(esp_reset_reason_t r) {
@@ -155,6 +157,10 @@ void loop() {
     if (now - s_lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
         s_lastTelemetryMs = now;
         cdi::net::ws_server::tickTelemetry();
+    }
+    if (now - s_lastFlameMs >= FLAME_INTERVAL_MS) {
+        s_lastFlameMs = now;
+        cdi::net::ws_server::tickFlame();
     }
     if (now - s_lastSafetyMs >= cfg::SAFETY_TICK_INTERVAL_MS) {
         s_lastSafetyMs = now;

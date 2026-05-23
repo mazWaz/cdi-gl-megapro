@@ -68,7 +68,27 @@ void tick() {
         adv -= cdi::core::flame::currentRetardDeg();
         // Global advance trim (T8, compensates HV stage propagation delay).
         adv += cdi::core::spark::advanceOffsetDeg();
-        if (adv < cdi::config::ADVANCE_MIN_DEG) adv = cdi::config::ADVANCE_MIN_DEG;
+
+        // Per-feature MIN-advance override.
+        // Default: clamp ke ADVANCE_MIN_DEG (0° = TDC). Combustion masih
+        // selesai sebelum exhaust valve buka → tidak ada flame dari retard.
+        //
+        // Saat flame::isActive(), allow effective advance ke -20° ATDC
+        // (post-TDC fire). Mekanisme:
+        //   * Spark fire SETELAH TDC dengan piston turun
+        //   * Combustion start saat valve mulai mendekati open
+        //   * Sisa burn front bocor ke exhaust manifold panas
+        //   * Visible flame keluar dari knalpot
+        // Math: delay_deg = max_ref - adv. Untuk adv = -20°,
+        //   delay = 32 - (-20) = 52° = valid (< 360°). Scheduler tidak
+        //   peduli sign — cuma fire di scheduled micro.
+        // Safety: -20° hard cap → combustion gak terjadi sebelum TDC
+        //   (no kickback). Exhaust valve sees thermal load — yang sudah
+        //   di-warn di UI disclaimer AGRESIF mode.
+        const float min_adv_eff = cdi::core::flame::isActive()
+            ? -20.0f
+            : cdi::config::ADVANCE_MIN_DEG;
+        if (adv < min_adv_eff) adv = min_adv_eff;
         if (adv > cdi::config::ADVANCE_MAX_DEG) adv = cdi::config::ADVANCE_MAX_DEG;
 
         // Pickup's max_advance_ref is per-motor (set by preset::apply

@@ -49,8 +49,9 @@ cdi::FlameMode mode();
 // ── Runtime state ──
 bool isActive();            // sedang dump flame
 bool isInCooldown();        // habis cap, lagi recovery
-uint16_t activeElapsedMs(); // berapa ms sudah engage (untuk UI countdown)
-uint16_t maxDurationMs();   // berapa ms cap untuk mode aktif
+uint16_t activeElapsedMs();    // berapa ms sudah engage (untuk UI countdown)
+uint16_t maxDurationMs();      // berapa ms cap untuk mode aktif (0 kalau OFF)
+uint16_t cooldownRemainingMs();// sisa ms cooldown (0 kalau bukan cooldown)
 
 // ── Spark ISR chain (called dari safety::shouldFire) ──
 bool shouldFireThisCycle();

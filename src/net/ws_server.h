@@ -19,6 +19,7 @@ namespace cdi::net::ws_server {
 void begin();
 void tickBroadcast();    // 20 fps scope frame (when SCOPE mode)
 void tickTelemetry();    // 5 fps telemetry frame (always)
+void tickFlame();        // 2 fps flame state JSON broadcast (replaces UI polling)
 void cleanup();
 int  clientCount();
 

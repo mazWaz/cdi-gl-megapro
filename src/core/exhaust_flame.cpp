@@ -28,8 +28,10 @@ uint32_t           s_lastSampMs        = 0;  // tick-internal
 // ISR-only pattern counter
 volatile uint32_t  s_fireCounter       = 0;
 
-// LCG random — separate state untuk loop side (jitter retard)
-uint32_t s_lcg = 0xF1AAEC0DE;
+// LCG random — separate state untuk loop side (jitter retard).
+// 32-bit seed (0xF1AEC0DE, sebelumnya 9-hex literal yang overflow ke
+// 0x1AAEC0DE setelah truncation).
+uint32_t s_lcg = 0xF1AEC0DE;
 
 // ── Mode parameters ──
 struct Params {
@@ -116,12 +118,36 @@ void tick(cdi::rpm_t rpm) {
         return;
     }
 
-    // ─── Gating layer 4: launch / alvp priority ───────────────────
+    // ─── Gating layer 4a: launch / alvp derate priority ───────────
     // Launch active = drag-start hold, jangan kompound dengan flame.
-    // ALVP derated = battery low, jangan boros lagi pakai skip+retard.
+    // ALVP derated = battery low + ALVP enabled, jangan boros lagi.
     if (cdi::core::launch::isActive() || cdi::core::alvp::isDerated()) {
         resetState();
         return;
+    }
+
+    // ─── Gating layer 4b: Vbat threshold per-mode ─────────────────
+    // Kalau ALVP DISABLED (prototype tanpa divider 1:4 di GPIO32),
+    // vbatMv() return stale 0. Skip Vbat check di stage ini — user
+    // sengaja accept risk karena hardware sense belum ada.
+    //
+    // Kalau ALVP ENABLED tapi vbat di bawah threshold mode:
+    //   SAFE       → ≥ 11.5V
+    //   AGGRESSIVE → ≥ 12.0V
+    // Refuse engage untuk hindari weak-spark + flame compound stress
+    // pada koil. Threshold lebih tinggi dari ALVP derate (~10.5V)
+    // supaya flame disengage SEBELUM masuk derate zone.
+    if (cdi::core::alvp::isEnabled()) {
+        const uint16_t vbat_mv = cdi::core::alvp::vbatMv();
+        const uint16_t min_mv  = currentParams().vbat_min_mv;
+        if (vbat_mv > 0 && vbat_mv < min_mv) {
+            if (s_active) {
+                Serial.printf("[flame] disengage (vbat %u mV < %u mV)\n",
+                              (unsigned)vbat_mv, (unsigned)min_mv);
+            }
+            resetState();
+            return;
+        }
     }
 
     // ─── Gating layer 5: cooldown ─────────────────────────────────
@@ -130,7 +156,29 @@ void tick(cdi::rpm_t rpm) {
         s_currentRetard = 0.0f;
         s_engageSinceMs = 0;
         s_activeSinceMs = 0;
+        s_fireCounter   = 0;     // reset di sini juga supaya next engage
+                                 // start dari pattern position 0
         return;
+    }
+
+    // ─── Gating layer 5b: cut_mode incompatibility ────────────────
+    // HARD_CUT di safety::shouldFire ALWAYS return false saat
+    // s_revLimited. Flame skip-pattern jadi tidak relevan karena
+    // hard-cut over-rule semuanya — engine bog total, tidak ada
+    // spark untuk ignite mixture di exhaust = tidak ada flame.
+    //
+    // Refuse engage daripada user bingung kenapa fitur tidak jalan.
+    // SOFT_RETARD / PATTERN_CUT / SPARK_PROGRESSIVE compatible
+    // (still allow some sparks through that flame pattern can shape).
+    {
+        const cdi::CutMode cm = cdi::core::safety::mainCutMode();
+        if (cm == cdi::CutMode::HARD_CUT) {
+            if (s_active) {
+                Serial.println("[flame] disengage (cut_mode=HARD_CUT incompatible)");
+            }
+            resetState();
+            return;
+        }
     }
 
     // ─── Gating layer 6: must be at main rev limit ────────────────
@@ -171,10 +219,17 @@ void tick(cdi::rpm_t rpm) {
 
     // ─── Engaged — check duration cap ─────────────────────────────
     if (!s_active) {
-        // Edge: just became active
-        s_active        = true;
-        s_activeSinceMs = now;
+        // Edge: just became active. CRITICAL ORDER untuk hindari
+        // race dengan ISR yang baca s_active + s_fireCounter:
+        //   1. Reset counter DULU (ISR yang fire saat ini dapat 0→1, OK)
+        //   2. Set timestamp
+        //   3. Flip active flag PALING AKHIR
+        // Kalau active=true di-set duluan, ISR bisa baca active=true
+        // dengan counter stale (sisa dari sebelum cooldown) → pattern
+        // position salah ~1-N cycles.
         s_fireCounter   = 0;
+        s_activeSinceMs = now;
+        s_active        = true;
         Serial.printf("[flame] ENGAGE @ %u rpm (mode=%s, max=%ums)\n",
                       (unsigned)rpm,
                       (s_mode == cdi::FlameMode::AGGRESSIVE) ? "AGGRESSIVE" : "SAFE",
@@ -229,7 +284,18 @@ uint16_t activeElapsedMs() {
     const uint32_t e = millis() - s_activeSinceMs;
     return (e > 65535u) ? 65535u : (uint16_t)e;
 }
-uint16_t maxDurationMs() { return currentParams().max_duration_ms; }
+uint16_t maxDurationMs() {
+    // OFF mode: return 0 — UI tidak boleh tampil placeholder "3000ms"
+    // kalau fitur tidak aktif sama sekali.
+    if (s_mode == cdi::FlameMode::OFF) return 0;
+    return currentParams().max_duration_ms;
+}
+uint16_t cooldownRemainingMs() {
+    const int32_t rem = (int32_t)(s_cooldownUntilMs - millis());
+    if (rem <= 0)        return 0;
+    if (rem > 65535)     return 65535;
+    return (uint16_t)rem;
+}
 
 void setEnabled(bool en) {
     s_enabled = en;
