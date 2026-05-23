@@ -167,16 +167,22 @@ void Map::serialize(JsonArray out) const {
 }
 
 void Map::loadDefaultMegapro() {
-    // Honda Megapro stock-ish curve, derived from manual_crank.csv
-    // analysis + plan reference (15° base, 32° max).
+    // Honda Megapro factory-calibrated curve (32 points).
+    // Mirrors engine_preset.cpp `honda_megapro` exactly so the
+    // editor's "Muat stok" button gives the same result as applying
+    // the preset from the preset picker. The pre-pass-2 7-point
+    // version lived here from initial scaffolding and went stale
+    // when the preset library was added — unifying the two prevents
+    // user confusion about "which stock is the real stock".
     static const Point megapro[] = {
-        {  800, 10.0f },
-        { 1500, 15.0f },
-        { 2500, 20.0f },
-        { 3500, 25.0f },
-        { 4500, 29.0f },
-        { 6000, 32.0f },
-        {10000, 32.0f },
+        { 200, 2.0f },  { 300, 3.0f },  { 500, 6.0f },  { 800, 8.0f },
+        {1000, 9.0f },  {1200, 9.0f },  {1500,10.0f},  {1800,12.0f},
+        {2000,13.0f},  {2200,14.0f},  {2500,16.0f},  {2800,18.0f},
+        {3000,19.0f},  {3300,21.0f},  {3500,22.0f},  {3800,24.0f},
+        {4000,25.0f},  {4300,26.0f},  {4500,27.0f},  {4800,28.0f},
+        {5000,29.0f},  {5300,30.0f},  {5500,31.0f},  {5800,31.0f},
+        {6000,32.0f},  {6500,32.0f},  {7000,32.0f},  {7500,32.0f},
+        {8000,32.0f},  {9000,32.0f},  {10500,31.0f}, {12000,30.0f},
     };
     set(megapro, sizeof(megapro) / sizeof(megapro[0]));
 }
