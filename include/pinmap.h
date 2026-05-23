@@ -18,28 +18,8 @@ constexpr uint8_t PULSER_CH2 = 35;  // trailing edge of magnet
 constexpr adc1_channel_t PULSER_CH1_ADC = ADC1_CHANNEL_6;  // GPIO34
 constexpr adc1_channel_t PULSER_CH2_ADC = ADC1_CHANNEL_7;  // GPIO35
 
-// ---------- Spark output (1-pin OR 2-pin mode) ----------
-//
-// Two supported output topologies, runtime-selectable from the UI:
-//
-// 1-PIN mode (set spark::useChargePin = false):
-//   SPARK_OUT alone. For inductive (TCI) or single-pin CDI modules
-//   that auto-fire on release. See comment block below.
-//
-// 2-PIN mode (set spark::useChargePin = true):
-//   CHARGE_OUT (GPIO16) — pulled LOW for dwell_us = step-up MOSFET
-//     ON, capacitor charges, high-freq sound from boost transformer.
-//     Pulled HIGH = step-up OFF, idle.
-//   SPARK_OUT (GPIO25) — brief HIGH pulse (~200 µs) at fire moment
-//     triggers SCR gate, capacitor dumps via primary coil → spark.
-//   Sequence per fire:
-//     T - dwell_us :  CHARGE → LOW   (charging starts, suara muncul)
-//     T            :  CHARGE → HIGH  (charging stops)
-//                   + SPARK → HIGH  (SCR gate triggers)
-//     T + 200µs    :  SPARK → LOW   (gate released, SCR already
-//                                    latched, cap already discharged)
-//
-// 1-PIN inductive (TCI) wiring details:
+// ---------- Spark output ----------
+// Wiring used in this build is INDUCTIVE (TCI), NOT CDI:
 //   GPIO25 → series resistor (220-1k Ω) → MOSFET/NPN gate → coil
 //   primary → +12V battery.
 // Behaviour: GPIO25 HIGH for dwell_us charges primary; LOW → flyback
@@ -52,24 +32,27 @@ constexpr adc1_channel_t PULSER_CH2_ADC = ADC1_CHANNEL_7;  // GPIO35
 // the primary, then a sudden LOW transition fires an unwanted spark
 // at every power-on. Software pinMode in setup() helps but doesn't
 // cover the pre-setup window.
-constexpr uint8_t SPARK_OUT  = 25;
-constexpr uint8_t CHARGE_OUT = 16;   // step-up MOSFET enable (2-pin CDI mode)
+constexpr uint8_t SPARK_OUT = 25;
 
 // ---------- Status LEDs ----------
-constexpr uint8_t STATUS_LED  = 2;  // onboard, blink = health
-constexpr uint8_t MODE_LED    = 26; // ON = IGNITION_MODE armed
-constexpr uint8_t SHIFT_LIGHT = 27; // HIGH when RPM > shift threshold
+// STATUS_LED: HIGH saat ada WS client connected, LOW saat tidak ada.
+// (Bukan blinking heartbeat — sebelumnya direncanakan tapi tidak
+// diimplementasi. Cukup useful as connection indicator.)
+constexpr uint8_t STATUS_LED  = 2;
+// MODE_LED: HIGH selama dwell (visible spark indicator).
+constexpr uint8_t MODE_LED    = 26;
+// SHIFT_LIGHT: HIGH/flashing saat RPM >= warn/shift threshold.
+constexpr uint8_t SHIFT_LIGHT = 27;
 
 // ---------- User input ----------
-constexpr uint8_t BOOT_BTN     = 0;  // long-press → switch profile
+constexpr uint8_t BOOT_BTN     = 0;  // long-press 2s → SAFE_HOLD (panic kill)
 constexpr uint8_t LAUNCH_INPUT = 13; // clutch pressed → 2-step active
 constexpr uint8_t QUICKSHIFTER = 14; // shift sensor → cut ignition
 
 // ---------- Analog sense ----------
-constexpr uint8_t GEAR_SENSE = 33;  // ADC1_CH5, voltage divider from gear switch
-constexpr uint8_t VBAT_SENSE = 32;  // ADC1_CH4, 1:4 divider from 12V supply
-
-constexpr adc1_channel_t GEAR_SENSE_ADC = ADC1_CHANNEL_5;
+// VBAT divider 1:4 dari 12V supply ke ADC pin (0-3.3V range).
+// Dipakai oleh ALVP untuk derate/disarm pada under-voltage.
+constexpr uint8_t VBAT_SENSE = 32;  // ADC1_CH4
 constexpr adc1_channel_t VBAT_SENSE_ADC = ADC1_CHANNEL_4;
 
 // ---------- Voltage divider ratios (for ALVP / gear sense conversion) ----------
