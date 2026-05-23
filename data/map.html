@@ -2,265 +2,824 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>CDI//MGPRO · Peta Pengapian</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0a0907">
+<title>IGN-MAP · CDI//MGPRO</title>
 <link rel="stylesheet" href="/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  /* ─────── Map editor specific ─────── */
+/* ─────────────────────────────────────────────────────────
+   IGN-MAP · "Bengkel Telemetry 1989"
+   1989 sportscar pit-wall computer aesthetic — brass trim,
+   stencil typography, CRT phosphor numerals, bone-on-ink.
+   Page-local overrides + entirely new component system.
+   ───────────────────────────────────────────────────────── */
+
+  :root {
+    --ink:        #0a0907;
+    --ink-deep:   #050402;
+    --ink-card:   #14110d;
+    --ink-card-hi:#1f1a13;
+    --bone:       #ebe4d3;
+    --bone-dim:   #a59f8c;
+    --bone-faint: #6c6759;
+    --phos-a:     #ff9100;
+    --phos-c:     #00e5ff;
+    --brass:      #b08a4a;
+    --brass-hi:   #d4a85c;
+    --brass-deep: #6f5429;
+    --brass-glow: rgba(212,168,92,0.32);
+    --red:        #e63946;
+    --green:      #6fce8e;
+    --border:     #2a2520;
+    --border-hi:  #4a3f2c;
+
+    --font-stencil: "Saira Stencil One", "Impact", sans-serif;
+    --font-crt:     "VT323", "Courier New", monospace;
+    --font-mono:    "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+  }
+
+  /* ─── reset map-page chrome ─── */
+  html, body {
+    background: var(--ink);
+    color: var(--bone);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* film grain — barely there, gives depth */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 999;
+    background-image:
+      radial-gradient(circle at 18% 12%, rgba(176,138,74,0.04), transparent 38%),
+      radial-gradient(circle at 82% 88%, rgba(0,229,255,0.025), transparent 42%);
+    mix-blend-mode: screen;
+  }
+
+  /* ─── topbar overrides — chunky brass trim ─── */
+  body > .topbar {
+    background: linear-gradient(180deg, #15110a 0%, #0a0907 100%);
+    border-bottom: 1px solid var(--brass-deep);
+    padding: 8px 14px;
+    position: relative;
+  }
+  body > .topbar::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg,
+      transparent 0%, var(--brass) 20%, var(--brass-hi) 50%, var(--brass) 80%, transparent 100%);
+    opacity: 0.6;
+  }
+  body > .topbar .brand {
+    font-family: var(--font-stencil);
+    color: var(--bone);
+    letter-spacing: 0.08em;
+    font-size: 14px;
+    text-shadow: 0 0 6px rgba(255,145,0,0.18);
+  }
+  body > .topbar .brand .ver {
+    color: var(--brass);
+    margin-left: 6px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.15em;
+  }
+  body > .topbar .chip {
+    background: var(--ink-card);
+    border: 1px solid var(--brass-deep);
+    color: var(--bone-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    padding: 3px 9px;
+    text-transform: uppercase;
+  }
+
+  /* ─── content reset ─── */
+  main.content {
+    padding: 12px 0 100px;
+    background: var(--ink);
+    max-width: 100%;
+  }
+
+  /* ─── document strip (technical doc header) ─── */
+  .doc-strip {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 14px 8px;
+    border-bottom: 1px dashed var(--border-hi);
+    margin-bottom: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--bone-faint);
+  }
+  .doc-id b      { color: var(--brass-hi); font-weight: 500; }
+  .doc-title     {
+    text-align: center;
+    font-family: var(--font-stencil);
+    font-size: 13px;
+    letter-spacing: 0.4em;
+    color: var(--bone);
+    text-shadow: 0 0 4px rgba(255,145,0,0.2);
+  }
+  .doc-rev       { color: var(--brass); }
+
+  /* ─── corner registration marks (printer's plate feel) ─── */
+  .reg-mark {
+    position: fixed;
+    width: 18px; height: 18px;
+    color: var(--brass-deep);
+    font-family: var(--font-mono);
+    font-size: 18px;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.55;
+  }
+  .reg-mark.tl { top: 56px;  left: 6px; }
+  .reg-mark.tr { top: 56px;  right: 6px; transform: scaleX(-1); }
+  .reg-mark.bl { bottom: 88px; left: 6px; transform: scaleY(-1); }
+  .reg-mark.br { bottom: 88px; right: 6px; transform: scale(-1,-1); }
+
+  /* ─── chart hero ─── */
+  .chart-hero {
+    position: relative;
+    margin: 0 10px 16px;
+    padding: 0;
+    background: var(--ink-deep);
+    border: 1px solid var(--border-hi);
+    box-shadow:
+      inset 0 1px 0 rgba(176,138,74,0.18),
+      inset 0 -1px 0 rgba(0,0,0,0.5),
+      0 10px 30px -10px rgba(0,0,0,0.7);
+  }
+  /* brass screws on corners */
+  .chart-hero::before, .chart-hero::after,
+  .chart-frame::before, .chart-frame::after {
+    content: '';
+    position: absolute;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, var(--brass-hi), var(--brass-deep) 60%, #2a1f10 100%);
+    box-shadow: 0 0 0 1px var(--ink), 0 1px 2px rgba(0,0,0,0.6);
+  }
+  .chart-hero::before { top: 5px; left: 5px; }
+  .chart-hero::after  { top: 5px; right: 5px; }
+  .chart-frame::before { bottom: 5px; left: 5px; }
+  .chart-frame::after  { bottom: 5px; right: 5px; }
+
+  .chart-frame {
+    position: relative;
+    padding: 14px 6px 8px;
+  }
+
+  /* margin tags around chart (engineering bound annotations) */
+  .margin-tag {
+    position: absolute;
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--brass);
+    pointer-events: none;
+    background: var(--ink-deep);
+    padding: 1px 5px;
+    border: 1px solid var(--brass-deep);
+  }
+  .margin-tag.tl { top: 18px;  left: 18px; }
+  .margin-tag.tr { top: 18px;  right: 18px; }
+  .margin-tag.bl { bottom: 18px; left: 18px; }
+  .margin-tag.br { bottom: 18px; right: 18px; }
+
+  /* the SVG itself */
   .map-stage {
     position: relative;
-    background: #050709;
-    border: 1px solid var(--border);
+    background: var(--ink-deep);
     user-select: none;
     -webkit-user-select: none;
-    touch-action: none;       /* critical: prevent scroll during drag */
+    touch-action: none;
   }
   .map-stage svg { display: block; width: 100%; height: auto; }
 
   /* breakpoint dot — large hit area for touch */
   .bp { cursor: grab; }
   .bp:active { cursor: grabbing; }
-  .bp .core { fill: var(--amber); stroke: #050709; stroke-width: 1.5; transition: r 0.1s; }
-  .bp .hit  { fill: transparent; }                /* invisible enlarged hit-target */
-  .bp.selected .core { fill: var(--cyan); stroke: var(--amber); stroke-width: 2; }
-  .bp.dragging .core { fill: #fff; }
+  .bp .core { fill: var(--phos-a); stroke: #050402; stroke-width: 1.5; transition: r 0.1s; }
+  .bp .hit  { fill: transparent; }
+  .bp.selected .core { fill: var(--phos-c); stroke: var(--phos-a); stroke-width: 2; filter: drop-shadow(0 0 4px var(--phos-c)); }
+  .bp.dragging .core { fill: var(--bone); }
 
-  /* curve line styles */
-  .curve-active   { fill: none; stroke: var(--amber); stroke-width: 2; }
-  .curve-stock    { fill: none; stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
-  .curve-fill     { fill: var(--amber-soft); }
-  .redline-zone   { fill: rgba(230,57,70,0.08); }
-  .idle-zone      { fill: rgba(82,183,136,0.05); }
-  .axis           { stroke: #2a3242; stroke-width: 1; }
-  .grid-major     { stroke: #1f2530; stroke-width: 1; }
-  .grid-minor     { stroke: #15191f; stroke-width: 0.5; }
-  .axis-label     { fill: var(--text-faint); font: 9px ui-monospace, monospace; }
-  .axis-unit      { fill: var(--text-dim); font: 10px ui-monospace, monospace; letter-spacing: 0.1em; }
-  .cursor-line    { stroke: var(--cyan); stroke-width: 1; stroke-dasharray: 4 4; }
-  .cursor-glow    { fill: var(--cyan); }
-  .coord-readout  { fill: var(--amber); font: 10px ui-monospace, monospace; }
+  /* curve styles */
+  .curve-active   { fill: none; stroke: var(--phos-a); stroke-width: 2; filter: drop-shadow(0 0 3px rgba(255,145,0,0.5)); }
+  .curve-stock    { fill: none; stroke: var(--bone-faint); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.75; }
+  .curve-fill     { fill: var(--phos-a); opacity: 0.1; }
+  .redline-zone   { fill: rgba(230,57,70,0.07); }
+  .idle-zone      { fill: rgba(176,138,74,0.04); }
+  .axis           { stroke: var(--brass-deep); stroke-width: 1; }
+  .grid-major     { stroke: #251f15; stroke-width: 1; }
+  .grid-minor     { stroke: #17140e; stroke-width: 0.5; }
+  .axis-label     { fill: var(--bone-faint); font: 9px var(--font-mono); }
+  .axis-unit      { fill: var(--brass); font: 8px var(--font-mono); letter-spacing: 0.18em; text-transform: uppercase; }
+  .cursor-line    { stroke: var(--phos-c); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.8; }
+  .cursor-glow    { fill: var(--phos-c); filter: drop-shadow(0 0 4px var(--phos-c)); }
+  .coord-readout  { fill: var(--phos-a); font: 9px var(--font-mono); font-weight: 500; }
 
-  /* hud */
-  .hud {
-    position: absolute; top: 8px; right: 10px;
-    background: rgba(10,13,18,0.85);
-    border: 1px solid var(--border-hi);
-    padding: 4px 9px;
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+  /* ─── HUD telemetry plates ─── */
+  .hud-plate {
+    position: absolute;
+    background: linear-gradient(180deg, rgba(20,17,13,0.96) 0%, rgba(10,9,7,0.96) 100%);
+    border: 1px solid var(--brass-deep);
+    box-shadow:
+      inset 0 1px 0 var(--brass-glow),
+      inset 0 -1px 0 rgba(0,0,0,0.6),
+      0 4px 12px rgba(0,0,0,0.6);
+    padding: 6px 10px 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     pointer-events: none;
+    z-index: 4;
   }
-  .hud b { color: var(--amber); font-weight: 700; }
-  .hud .live { color: var(--cyan); }
+  .hud-rpm { top: 22px; left: 22px; }
+  .hud-sel { top: 22px; right: 22px; text-align: right; }
 
-  /* fine adjust pad */
-  .pad {
+  .plate-cap {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--brass);
+  }
+  .plate-digits {
+    font-family: var(--font-crt);
+    font-size: 30px;
+    line-height: 0.85;
+    color: var(--phos-a);
+    text-shadow:
+      0 0 6px rgba(255,145,0,0.7),
+      0 0 14px rgba(255,145,0,0.35);
+    letter-spacing: 0.02em;
+  }
+  .plate-unit {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.25em;
+    color: var(--bone-faint);
+  }
+  .plate-label {
+    font-family: var(--font-crt);
+    font-size: 18px;
+    color: var(--phos-c);
+    text-shadow: 0 0 6px rgba(0,229,255,0.55);
+    line-height: 1;
+  }
+
+  /* ─── racks (panels) ─── */
+  .rack {
+    margin: 0 10px 12px;
+    background: linear-gradient(180deg, var(--ink-card) 0%, var(--ink-card-hi) 100%);
+    border: 1px solid var(--border-hi);
+    box-shadow:
+      inset 0 1px 0 rgba(176,138,74,0.15),
+      inset 0 -1px 0 rgba(0,0,0,0.5);
+  }
+  .rack-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: linear-gradient(180deg, rgba(176,138,74,0.08) 0%, transparent 100%);
+    border-bottom: 1px dashed var(--border-hi);
+  }
+  .rack-tag {
+    font-family: var(--font-stencil);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--brass-hi);
+    background: var(--ink-deep);
+    padding: 2px 6px;
+    border: 1px solid var(--brass-deep);
+  }
+  .rack-title {
+    font-family: var(--font-stencil);
+    font-size: 13px;
+    letter-spacing: 0.25em;
+    color: var(--bone);
+    flex: 1;
+  }
+  .rack-meta {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--bone-faint);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .rack-meta b { color: var(--phos-a); font-weight: 500; }
+  .rack-body {
+    padding: 10px 12px;
+  }
+  .rack-readout {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--bone-dim);
+    padding: 8px 12px 4px;
+    line-height: 1.4;
+  }
+  .rack-readout b { color: var(--phos-a); font-weight: 500; }
+  .rack-readout .ch { color: var(--phos-c); }
+
+  /* ─── precision tune d-pad ─── */
+  .dpad-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 6px;
+    padding: 6px 12px 12px;
   }
-  .pad button {
-    background: var(--bg);
+  .dpad-btn {
+    background: linear-gradient(180deg, #1c1812 0%, #100d09 100%);
     border: 1px solid var(--border-hi);
-    color: var(--text-dim);
-    font-family: var(--mono);
+    color: var(--bone);
+    font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 9px 4px;
+    letter-spacing: 0.06em;
+    padding: 11px 4px;
     cursor: pointer;
     text-transform: uppercase;
-    transition: all 0.1s;
+    transition: all 0.12s ease;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(176,138,74,0.12),
+      inset 0 -1px 0 rgba(0,0,0,0.5);
   }
-  .pad button:hover:not(:disabled) { color: var(--amber); border-color: var(--amber); }
-  .pad button:active:not(:disabled) { transform: translateY(1px); background: var(--amber-soft); }
-  .pad button:disabled { opacity: 0.3; cursor: not-allowed; }
-  .pad button.del { color: var(--red); border-color: var(--red); }
-  .pad button.del:hover { background: rgba(230,57,70,0.12); }
+  .dpad-btn:hover:not(:disabled) {
+    color: var(--phos-a);
+    border-color: var(--brass);
+    box-shadow:
+      inset 0 1px 0 rgba(255,145,0,0.18),
+      inset 0 -1px 0 rgba(0,0,0,0.5),
+      0 0 8px rgba(255,145,0,0.2);
+  }
+  .dpad-btn:active:not(:disabled) {
+    transform: translateY(1px);
+    background: linear-gradient(180deg, #100d09 0%, #1c1812 100%);
+  }
+  .dpad-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+  .dpad-btn.del { color: var(--red); border-color: rgba(230,57,70,0.4); }
+  .dpad-btn.del:hover { background: linear-gradient(180deg, #2a1112 0%, #1a0a0c 100%); box-shadow: 0 0 8px rgba(230,57,70,0.3); }
 
-  /* profile slots */
-  .slots {
+  /* ─── cassette slot rack ─── */
+  .cassette-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
-    margin-top: 4px;
+    padding: 10px 12px 12px;
   }
-  .slot {
+  .cassette {
     position: relative;
-    padding: 8px 4px 8px 4px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    text-align: center;
+    background: linear-gradient(180deg, var(--ink-card-hi) 0%, var(--ink-deep) 100%);
+    border: 1px solid var(--border-hi);
     cursor: pointer;
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    transition: all 0.1s;
+    transition: all 0.12s ease;
+    overflow: hidden;
+    min-height: 72px;
+    display: flex;
+    flex-direction: column;
   }
-  .slot .n  { color: var(--amber); font-weight: 700; font-size: 12px; display: block; }
-  .slot .nm { display: block; margin-top: 3px; text-transform: uppercase;
-              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .slot.saved { border-color: var(--cyan); }
-  .slot.saved .nm { color: var(--cyan); }
-  .slot:hover { border-color: var(--border-hi); color: var(--text); }
-  .slot .save-btn {
+  .cassette::before {
+    /* notch top (cassette tab feel) */
+    content: '';
     position: absolute;
-    top: 2px;
-    right: 2px;
+    top: 0; left: 50%; transform: translateX(-50%);
+    width: 30%; height: 4px;
+    background: var(--brass-deep);
+  }
+  .cassette .tab {
+    text-align: center;
+    padding: 7px 4px 3px;
+    font-family: var(--font-stencil);
+    font-size: 14px;
+    color: var(--brass-hi);
+    letter-spacing: 0.15em;
+    border-bottom: 1px dashed var(--border-hi);
+  }
+  .cassette .nm {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--bone-faint);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cassette:hover { border-color: var(--brass); }
+  .cassette.saved {
+    border-color: var(--phos-c);
+    box-shadow: inset 0 0 0 1px rgba(0,229,255,0.18);
+  }
+  .cassette.saved::before { background: var(--phos-c); }
+  .cassette.saved .nm {
+    color: var(--phos-c);
+    text-shadow: 0 0 4px rgba(0,229,255,0.4);
+  }
+  .cassette .save-btn {
+    position: absolute;
+    top: 2px; right: 2px;
     background: transparent;
     border: 1px solid transparent;
-    color: var(--text-dim);
-    font-size: 11px;
+    color: var(--bone-faint);
+    font-size: 12px;
     line-height: 1;
     padding: 2px 4px;
     cursor: pointer;
-    border-radius: 2px;
+    z-index: 2;
   }
-  .slot .save-btn:hover {
-    color: var(--amber);
-    border-color: var(--amber);
-    background: rgba(255,184,77,0.08);
+  .cassette .save-btn:hover {
+    color: var(--phos-a);
+    border-color: var(--brass);
+    background: rgba(255,145,0,0.08);
   }
 
-  /* json drawer */
-  details.json-drawer { margin-top: 10px; }
-  details.json-drawer summary {
-    cursor: pointer;
-    color: var(--text-dim);
+  .rack-action {
+    display: block;
+    width: calc(100% - 24px);
+    margin: 0 12px 12px;
+    background: linear-gradient(180deg, var(--ink-deep) 0%, #100d09 100%);
+    border: 1px solid var(--brass-deep);
+    color: var(--brass-hi);
+    font-family: var(--font-mono);
     font-size: 11px;
-    letter-spacing: 0.1em;
+    font-weight: 500;
+    letter-spacing: 0.15em;
     text-transform: uppercase;
-    padding: 6px 0;
-    border-top: 1px dashed var(--border);
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  .rack-action:hover:not(:disabled) {
+    background: linear-gradient(180deg, #1c1812 0%, #14110d 100%);
+    border-color: var(--brass);
+    color: var(--bone);
+    box-shadow: 0 0 10px var(--brass-glow);
+  }
+  .rack-action:disabled {
+    opacity: 0.4;
+    cursor: progress;
+  }
+
+  /* ─── raw JSON drawer ─── */
+  details.rack-raw summary {
     list-style: none;
+    cursor: pointer;
+    padding: 9px 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--bone-faint);
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  details.json-drawer summary::before { content: "▸ "; color: var(--amber); }
-  details[open].json-drawer summary::before { content: "▾ "; }
+  details.rack-raw summary::-webkit-details-marker { display: none; }
+  details.rack-raw summary::before {
+    content: '▸';
+    color: var(--brass);
+    transition: transform 0.15s ease;
+  }
+  details[open].rack-raw summary::before { transform: rotate(90deg); }
+  details.rack-raw textarea {
+    width: calc(100% - 24px);
+    margin: 0 12px;
+    background: var(--ink-deep);
+    border: 1px solid var(--border-hi);
+    color: var(--phos-a);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 8px;
+    resize: vertical;
+    min-height: 60px;
+  }
+  details.rack-raw .json-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 12px;
+  }
 
-  /* dirty indicator */
-  .dirty-badge {
-    display: inline-block;
-    background: var(--red);
-    color: #fff;
-    padding: 1px 6px;
+  /* ─── sticky bottom action dock ─── */
+  .dock {
+    position: fixed;
+    left: 8px; right: 8px;
+    bottom: 64px;
+    z-index: 90;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: linear-gradient(180deg, rgba(20,17,13,0.97) 0%, rgba(10,9,7,0.97) 100%);
+    border: 1px solid var(--brass-deep);
+    box-shadow:
+      inset 0 1px 0 rgba(176,138,74,0.2),
+      0 -4px 20px rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+  }
+  .dock-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--bone-dim);
+    font-family: var(--font-mono);
     font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 8px 4px 6px;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    position: relative;
+  }
+  .dock-btn .ico {
+    font-size: 16px;
+    font-family: var(--font-mono);
+    color: var(--brass-hi);
+    line-height: 1;
+  }
+  .dock-btn:hover:not(:disabled) {
+    color: var(--bone);
+    background: rgba(176,138,74,0.08);
+  }
+  .dock-btn:active:not(:disabled) { transform: translateY(1px); }
+  .dock-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .dock-btn.active .ico { color: var(--phos-c); text-shadow: 0 0 4px var(--phos-c); }
+  .dock-btn.primary {
+    background: linear-gradient(180deg, var(--phos-a) 0%, #c46e00 100%);
+    color: #1a1006;
+    border-color: var(--brass-hi);
+    font-weight: 700;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.15);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.25),
+      inset 0 -1px 0 rgba(0,0,0,0.3),
+      0 0 16px rgba(255,145,0,0.35);
+  }
+  .dock-btn.primary .ico { color: #1a1006; }
+  .dock-btn.primary:disabled {
+    background: linear-gradient(180deg, #2a2520 0%, #1a1611 100%);
+    color: var(--bone-faint);
+    box-shadow: inset 0 1px 0 rgba(176,138,74,0.1);
+  }
+  .dock-btn.primary:disabled .ico { color: var(--bone-faint); }
+  .dock-btn .dot-dirty {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 6px var(--red);
+    display: none;
+  }
+  .dock-btn.is-dirty .dot-dirty { display: block; }
+
+  /* ─── status ticker (under dock) ─── */
+  .status-line {
+    position: fixed;
+    left: 8px; right: 8px;
+    bottom: 130px;
+    z-index: 89;
+    pointer-events: none;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
     letter-spacing: 0.1em;
-    margin-left: 6px;
+    color: var(--phos-a);
+    text-shadow: 0 0 4px rgba(255,145,0,0.4);
+    min-height: 14px;
+  }
+  .status-line:empty { display: none; }
+
+  /* ─── bottom-nav override ─── */
+  body > .bottom-nav {
+    background: linear-gradient(180deg, #0a0907 0%, #050402 100%);
+    border-top: 1px solid var(--brass-deep);
+  }
+  body > .bottom-nav a {
+    color: var(--bone-faint);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  body > .bottom-nav a.active {
+    color: var(--phos-a);
+    text-shadow: 0 0 4px rgba(255,145,0,0.4);
   }
 
-  @media (max-width: 480px) {
-    .pad { grid-template-columns: repeat(3, 1fr); }
-    .slots { grid-template-columns: repeat(5, 1fr); }
+  /* ─── responsive ─── */
+  @media (max-width: 380px) {
+    .dpad-grid { grid-template-columns: repeat(3, 1fr); }
+    .plate-digits { font-size: 26px; }
+    .doc-strip { font-size: 9px; gap: 4px; padding: 4px 10px 6px; }
+    .doc-title { font-size: 11px; letter-spacing: 0.3em; }
+    .margin-tag { font-size: 7px; }
   }
+  @media (min-width: 720px) {
+    .chart-frame { padding: 18px 8px 10px; }
+    .plate-digits { font-size: 42px; }
+    .plate-label { font-size: 22px; }
+    .cassette { min-height: 88px; }
+    .doc-title { font-size: 16px; }
+  }
+
+  /* curve draw-in animation on load */
+  @keyframes draw-curve {
+    from { stroke-dashoffset: 1200; opacity: 0; }
+    to   { stroke-dashoffset: 0; opacity: 1; }
+  }
+  .curve-active.fresh {
+    stroke-dasharray: 1200;
+    animation: draw-curve 0.9s cubic-bezier(0.32, 0.72, 0.31, 1) both;
+  }
+
+  /* phosphor pulse on digit update */
+  @keyframes phos-pulse {
+    0%   { text-shadow: 0 0 14px rgba(255,145,0,0.9), 0 0 24px rgba(255,145,0,0.5); }
+    100% { text-shadow: 0 0 6px rgba(255,145,0,0.7), 0 0 14px rgba(255,145,0,0.35); }
+  }
+  .plate-digits.bump { animation: phos-pulse 0.4s ease-out; }
 </style>
 </head>
 <body>
 
+<!-- registration marks (printer's plate corners) -->
+<div class="reg-mark tl">+</div>
+<div class="reg-mark tr">+</div>
+<div class="reg-mark bl">+</div>
+<div class="reg-mark br">+</div>
+
 <div class="topbar">
-  <span class="brand">CDI//MGPRO<span class="ver">v0.2.0</span></span>
+  <span class="brand">CDI//MGPRO<span class="ver">v0.2</span></span>
   <span class="spacer"></span>
   <span class="chip" id="topMode"><span class="dot"></span><span class="txt">—</span></span>
   <span class="chip" id="topLink">LINK <span class="dot"></span><span class="txt">…</span></span>
 </div>
 
 <main class="content">
-  <div class="page-title">
-    <h1>PETA PENGAPIAN</h1>
-    <span class="sub">// rpm → ° btdc · drag titik untuk tuning</span>
+
+  <!-- document strip — technical drawing header -->
+  <div class="doc-strip">
+    <span class="doc-id">DOC <b>IGN-MAP</b></span>
+    <span class="doc-title">PETA PENGAPIAN</span>
+    <span class="doc-rev">REV.07 / 24</span>
   </div>
 
-  <section class="panel">
-    <span class="label">[ editor kurva ]</span>
+  <!-- ═══ CHART HERO with floating telemetry plates ═══ -->
+  <section class="chart-hero">
+    <div class="chart-frame">
 
-    <div class="map-stage" id="stage">
-      <svg id="chart" viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="rgba(255,184,77,0.18)"/>
-            <stop offset="100%" stop-color="rgba(255,184,77,0)"/>
-          </linearGradient>
-          <filter id="glow"><feGaussianBlur stdDeviation="3"/></filter>
-        </defs>
-        <g id="zones"></g>
-        <g id="gridMinor"></g>
-        <g id="gridMajor"></g>
-        <g id="axes"></g>
-        <g id="labels"></g>
-        <polyline id="curveStock" class="curve-stock"/>
-        <polygon  id="curveFill"  class="curve-fill"/>
-        <polyline id="curveActive" class="curve-active"/>
-        <line id="cursorLine" class="cursor-line" x1="-10" y1="0" x2="-10" y2="360"/>
-        <circle id="cursorDot" class="cursor-glow" cx="-10" cy="-10" r="5"/>
-        <text id="coordReadout" class="coord-readout" x="0" y="0" text-anchor="middle"></text>
-        <g id="dots"></g>
-      </svg>
+      <span class="margin-tag tl">RPM·KCRPM</span>
+      <span class="margin-tag tr">°BTDC</span>
+      <span class="margin-tag bl">FLOOR · 0</span>
+      <span class="margin-tag br">CEIL · 45</span>
 
-      <div class="hud">
-        <span>DIPILIH <b id="hudSel">—</b></span> ·
-        <span>LIVE <span class="live" id="hudLive">0</span></span>
+      <!-- HUD plates float over chart -->
+      <div class="hud-plate hud-rpm">
+        <span class="plate-cap">LIVE</span>
+        <span id="hudLive" class="plate-digits">0</span>
+        <span class="plate-unit">× RPM</span>
+      </div>
+      <div class="hud-plate hud-sel">
+        <span class="plate-cap">SELECT</span>
+        <span id="hudSel" class="plate-label">—</span>
+      </div>
+
+      <div class="map-stage" id="stage">
+        <svg id="chart" viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(255,145,0,0.22)"/>
+              <stop offset="100%" stop-color="rgba(255,145,0,0)"/>
+            </linearGradient>
+            <filter id="glow"><feGaussianBlur stdDeviation="3"/></filter>
+          </defs>
+          <g id="zones"></g>
+          <g id="gridMinor"></g>
+          <g id="gridMajor"></g>
+          <g id="axes"></g>
+          <g id="labels"></g>
+          <polyline id="curveStock" class="curve-stock"/>
+          <polygon  id="curveFill"  class="curve-fill"/>
+          <polyline id="curveActive" class="curve-active"/>
+          <line id="cursorLine" class="cursor-line" x1="-10" y1="0" x2="-10" y2="360"/>
+          <circle id="cursorDot" class="cursor-glow" cx="-10" cy="-10" r="5"/>
+          <text id="coordReadout" class="coord-readout" x="0" y="0" text-anchor="middle"></text>
+          <g id="dots"></g>
+        </svg>
       </div>
     </div>
+  </section>
 
-    <!-- toolbar below chart -->
-    <div class="btn-row" style="margin-top:10px">
-      <button class="btn ghost" id="addBtn">⊕ Tambah titik</button>
-      <button class="btn ghost" id="cmpBtn">◇ Bandingkan stok</button>
-      <button class="btn ghost" id="reloadBtn">↻ Muat ulang</button>
-      <button class="btn green" id="applyBtn" disabled>✓ Terapkan<span class="dirty-badge" id="dirtyTag" style="display:none">●</span></button>
+  <!-- ═══ RACK A · PRECISION TUNE ═══ -->
+  <section class="rack">
+    <header class="rack-head">
+      <span class="rack-tag">A</span>
+      <span class="rack-title">PRECISION TUNE</span>
+      <span class="rack-meta"><b id="ptCount">0</b>/32 PT</span>
+    </header>
+    <div class="rack-readout" id="adjHint">Tap titik di chart untuk mulai tuning.</div>
+    <div class="dpad-grid">
+      <button class="dpad-btn" id="advUp">+0.5°</button>
+      <button class="dpad-btn" id="advDn">−0.5°</button>
+      <button class="dpad-btn" id="rpmDn">−100</button>
+      <button class="dpad-btn" id="rpmUp">+100</button>
+      <button class="dpad-btn del" id="delBtn">⌫ HAPUS</button>
     </div>
   </section>
 
-  <section class="panel">
-    <span class="label">[ penyesuaian halus · titik dipilih ]</span>
-    <p class="note" id="adjHint">Tap titik untuk memilih.</p>
-    <p class="note" style="font-size:9px"><span id="ptCount">0</span> / 32 titik terpakai</p>
-    <div class="pad">
-      <button id="advUp">+0.5°</button>
-      <button id="advDn">−0.5°</button>
-      <button id="rpmDn">−100 RPM</button>
-      <button id="rpmUp">+100 RPM</button>
-      <button class="del" id="delBtn">⌫ HAPUS</button>
-    </div>
-  </section>
-
-  <section class="panel">
-    <span class="label">[ slot profil ]</span>
-    <p class="note">Tap slot untuk muat. Tap <b>💾</b> untuk simpan editor ke slot.</p>
-    <div class="slots" id="slots">
-      <div class="slot" data-slot="0">
+  <!-- ═══ RACK B · PROFILE BANK ═══ -->
+  <section class="rack">
+    <header class="rack-head">
+      <span class="rack-tag">B</span>
+      <span class="rack-title">PROFILE BANK</span>
+      <span class="rack-meta">TAP MUAT · 💾 SIMPAN</span>
+    </header>
+    <div class="cassette-row" id="slots">
+      <div class="cassette" data-slot="0">
         <button class="save-btn" data-save="0" title="Simpan ke P1">💾</button>
-        <span class="n">P1</span><span class="nm">stok</span>
+        <div class="tab">P1</div>
+        <div class="nm">stok</div>
       </div>
-      <div class="slot" data-slot="1">
+      <div class="cassette" data-slot="1">
         <button class="save-btn" data-save="1" title="Simpan ke P2">💾</button>
-        <span class="n">P2</span><span class="nm">stok</span>
+        <div class="tab">P2</div>
+        <div class="nm">stok</div>
       </div>
-      <div class="slot" data-slot="2">
+      <div class="cassette" data-slot="2">
         <button class="save-btn" data-save="2" title="Simpan ke P3">💾</button>
-        <span class="n">P3</span><span class="nm">stok</span>
+        <div class="tab">P3</div>
+        <div class="nm">stok</div>
       </div>
-      <div class="slot" data-slot="3">
+      <div class="cassette" data-slot="3">
         <button class="save-btn" data-save="3" title="Simpan ke P4">💾</button>
-        <span class="n">P4</span><span class="nm">stok</span>
+        <div class="tab">P4</div>
+        <div class="nm">stok</div>
       </div>
     </div>
-    <div class="btn-row" style="margin-top:6px">
-      <button class="btn ghost" id="loadStockBtn" disabled>… memuat stok preset</button>
-    </div>
+    <button class="rack-action" id="loadStockBtn" disabled>… memuat stok preset aktif</button>
   </section>
 
-  <details class="json-drawer">
-    <summary>edit json mentah</summary>
+  <!-- ═══ RAW JSON (advanced) ═══ -->
+  <details class="rack rack-raw">
+    <summary>RAW · JSON EDITOR</summary>
     <textarea id="mapJson" rows="3" spellcheck="false"
       placeholder='[[800,10],[1500,15],…]'></textarea>
-    <div class="btn-row" style="margin-top:6px">
-      <button class="btn ghost" id="applyJsonBtn">✓ Terapkan JSON</button>
-      <span class="note" id="mapStatus" style="align-self:center"></span>
+    <div class="json-row">
+      <button class="rack-action" id="applyJsonBtn" style="margin: 0; width: auto; flex: 0 0 auto;">✓ Terapkan JSON</button>
     </div>
   </details>
+
 </main>
+
+<!-- live status ticker (floats above dock) -->
+<div class="status-line" id="mapStatus"></div>
+
+<!-- sticky bottom action dock -->
+<div class="dock">
+  <button class="dock-btn" id="addBtn">
+    <span class="ico">⊕</span>ADD
+  </button>
+  <button class="dock-btn" id="cmpBtn">
+    <span class="ico">◇</span>STOK
+  </button>
+  <button class="dock-btn" id="reloadBtn">
+    <span class="ico">↻</span>RELOAD
+  </button>
+  <button class="dock-btn primary" id="applyBtn" disabled>
+    <span class="dot-dirty" id="dirtyTag"></span>
+    <span class="ico">✓</span>APPLY
+  </button>
+</div>
 
 <nav class="bottom-nav">
   <a href="/"><span class="ico">▮</span>Dasbor</a>
@@ -282,16 +841,13 @@ const REDLINE_RPM = 10500;
 const IDLE_RPM_LO = 0, IDLE_RPM_HI = 1500;
 const MAX_POINTS = 32;                              // matches config.h MAX_ADVANCE_POINTS
 
-// Stock reference comes from whichever preset is CURRENTLY active —
-// Megapro stock for Megapro, CB150R stock for CB150R, etc. Filled
-// asynchronously via WS getPresetMap and refreshed whenever the user
-// switches preset. Stays null until the first response lands.
+// Stock reference dipopulate via WS getPresetMap, ikut preset aktif.
 let stockPoints = null;
 let stockName   = '—';
 let activePresetId = null;
 
 // SVG viewport: 720 × 360 (preserveAspectRatio scales to container)
-const V = { w: 720, h: 360, padL: 40, padR: 12, padT: 14, padB: 26 };
+const V = { w: 720, h: 360, padL: 40, padR: 14, padT: 16, padB: 28 };
 const PLOT_W = V.w - V.padL - V.padR;
 const PLOT_H = V.h - V.padT - V.padB;
 
@@ -321,13 +877,11 @@ function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
 // ─────── static elements: grid, zones, labels ───────
 function drawStaticChrome(){
-  // Zones
   let zHtml = '';
   zHtml += `<rect class="idle-zone" x="${xOf(IDLE_RPM_LO)}" y="${V.padT}" width="${xOf(IDLE_RPM_HI)-xOf(IDLE_RPM_LO)}" height="${PLOT_H}"/>`;
   zHtml += `<rect class="redline-zone" x="${xOf(REDLINE_RPM)}" y="${V.padT}" width="${xOf(RPM_MAX)-xOf(REDLINE_RPM)}" height="${PLOT_H}"/>`;
   document.getElementById('zones').innerHTML = zHtml;
 
-  // Minor grid
   let minor = '';
   for (let r = RPM_MIN; r <= RPM_MAX; r += RPM_GRID_MINOR){
     if (r % RPM_GRID_MAJOR === 0) continue;
@@ -341,7 +895,6 @@ function drawStaticChrome(){
   }
   document.getElementById('gridMinor').innerHTML = minor;
 
-  // Major grid
   let major = '';
   for (let r = RPM_MIN; r <= RPM_MAX; r += RPM_GRID_MAJOR){
     const x = xOf(r);
@@ -353,7 +906,6 @@ function drawStaticChrome(){
   }
   document.getElementById('gridMajor').innerHTML = major;
 
-  // Axes & labels
   const ax = `
     <line class="axis" x1="${V.padL}" y1="${V.padT}" x2="${V.padL}" y2="${V.padT+PLOT_H}"/>
     <line class="axis" x1="${V.padL}" y1="${V.padT+PLOT_H}" x2="${V.padL+PLOT_W}" y2="${V.padT+PLOT_H}"/>`;
@@ -361,12 +913,12 @@ function drawStaticChrome(){
 
   let lbl = '';
   for (let r = RPM_MIN; r <= RPM_MAX; r += RPM_GRID_MAJOR){
-    lbl += `<text class="axis-label" x="${xOf(r)}" y="${V.h-10}" text-anchor="middle">${r/1000}k</text>`;
+    lbl += `<text class="axis-label" x="${xOf(r)}" y="${V.h-12}" text-anchor="middle">${r/1000}K</text>`;
   }
   for (let d = DEG_MIN; d <= DEG_MAX; d += DEG_GRID_MAJOR){
-    lbl += `<text class="axis-label" x="${V.padL-6}" y="${yOf(d)+3}" text-anchor="end">${d}°</text>`;
+    lbl += `<text class="axis-label" x="${V.padL-6}" y="${yOf(d)+3}" text-anchor="end">${d}</text>`;
   }
-  lbl += `<text class="axis-unit" x="${V.padL+PLOT_W/2}" y="${V.h-1}" text-anchor="middle">RPM × 1000</text>`;
+  lbl += `<text class="axis-unit" x="${V.padL+PLOT_W/2}" y="${V.h-1}" text-anchor="middle">RPM ×1000</text>`;
   lbl += `<text class="axis-unit" x="${V.padL-30}" y="${V.padT+12}">°BTDC</text>`;
   document.getElementById('labels').innerHTML = lbl;
 }
@@ -374,7 +926,6 @@ drawStaticChrome();
 
 // ─────── curve render ───────
 function renderCurve(){
-  // sort by rpm to avoid line crossings
   points.sort((a, b) => a[0] - b[0]);
 
   const active = document.getElementById('curveActive');
@@ -385,7 +936,6 @@ function renderCurve(){
   } else {
     const seq = points.map(p => `${xOf(p[0])},${yOf(p[1])}`).join(' ');
     active.setAttribute('points', seq);
-    // fill polygon underneath
     const x0 = xOf(points[0][0]);
     const xN = xOf(points[points.length-1][0]);
     const yB = V.padT + PLOT_H;
@@ -393,9 +943,6 @@ function renderCurve(){
     fill.setAttribute('fill', 'url(#curveFill)');
   }
 
-  // stock overlay — uses the curve of whatever preset is currently
-  // active, so "Bandingkan stok" on a Megapro shows Megapro stock,
-  // on a CB150R shows CB150R stock, etc.
   const stock = document.getElementById('curveStock');
   if (showCompare && stockPoints && stockPoints.length){
     stock.setAttribute('points', stockPoints.map(p => `${xOf(p[0])},${yOf(p[1])}`).join(' '));
@@ -404,7 +951,6 @@ function renderCurve(){
     stock.style.display = 'none';
   }
 
-  // breakpoints
   const dots = document.getElementById('dots');
   let html = '';
   points.forEach((p, i) => {
@@ -417,30 +963,32 @@ function renderCurve(){
   });
   dots.innerHTML = html;
 
-  // bind drag handlers
   dots.querySelectorAll('.bp').forEach(g => {
     const i = parseInt(g.dataset.i, 10);
     g.addEventListener('pointerdown', e => startDrag(e, i));
   });
 
-  // update fine-adjust hint
+  // readout in PRECISION TUNE rack
   if (selected >= 0 && selected < points.length){
     document.getElementById('adjHint').innerHTML =
-      'P' + String(selected+1).padStart(2,'0') +
-      ' · <b style="color:var(--amber)">' + points[selected][0] + ' rpm</b> · <b style="color:var(--cyan)">' +
-      points[selected][1].toFixed(1) + '°</b>';
+      'TITIK <b>P' + String(selected+1).padStart(2,'0') + '</b> · ' +
+      '<b>' + points[selected][0] + '</b> RPM · ' +
+      '<span class="ch">' + points[selected][1].toFixed(1) + '°</span> BTDC';
   } else {
-    document.getElementById('adjHint').textContent = 'Tap titik untuk memilih.';
+    document.getElementById('adjHint').textContent = 'Tap titik di chart untuk mulai tuning.';
   }
 
-  // dirty state + counters
-  document.getElementById('applyBtn').disabled = !dirty;
-  document.getElementById('dirtyTag').style.display = dirty ? '' : 'none';
+  // dock primary state + dirty pip
+  const applyBtn = document.getElementById('applyBtn');
+  applyBtn.disabled = !dirty;
+  applyBtn.classList.toggle('is-dirty', dirty);
   document.getElementById('ptCount').textContent = points.length;
 
-  // hud selected
+  // HUD selected line
   document.getElementById('hudSel').textContent =
-    selected >= 0 ? `P${String(selected+1).padStart(2,'0')} · ${points[selected][1].toFixed(1)}°` : '—';
+    selected >= 0
+      ? 'P' + String(selected+1).padStart(2,'0') + ' · ' + points[selected][1].toFixed(1) + '°'
+      : '—';
 }
 
 // ─────── pointer-based drag ───────
@@ -484,10 +1032,9 @@ function onUp(e){
   renderCurve();
 }
 
-// stage tap to add a point in empty area
+// stage tap to deselect in empty area
 stage.addEventListener('pointerdown', e => {
-  if (e.target.closest('.bp')) return;   // clicked an existing point
-  // not used to add (require explicit Add button); just deselect
+  if (e.target.closest('.bp')) return;
   selected = -1;
   renderCurve();
 });
@@ -516,13 +1063,11 @@ async function addPoint(){
     });
     return;
   }
-  // insert between selected and next, or in mid-range
   let newRpm, newDeg;
   if (selected >= 0 && selected < points.length - 1){
     const a = points[selected], b = points[selected+1];
     newRpm = Math.round((a[0]+b[0])/2 / RPM_SNAP) * RPM_SNAP;
     newDeg = (a[1]+b[1])/2;
-    // avoid landing exactly on an existing RPM
     if (newRpm === a[0]) newRpm = a[0] + RPM_SNAP;
     if (newRpm === b[0]) newRpm = b[0] - RPM_SNAP;
   } else if (points.length === 0){
@@ -557,13 +1102,13 @@ function adjustSelected(dRpm, dDeg){
 
 function applyChanges(){
   cdi.send({ cmd: 'setMap', points: points });
-  document.getElementById('mapStatus').textContent = '› mengirim…';
+  document.getElementById('mapStatus').textContent = '› TX...';
 }
 
 function flash(msg){
   const el = document.getElementById('mapStatus');
   el.textContent = '› ' + msg;
-  setTimeout(() => { if (el.textContent === '› ' + msg) el.textContent = ''; }, 2200);
+  setTimeout(() => { if (el.textContent === '› ' + msg) el.textContent = ''; }, 2400);
 }
 
 // ─────── live RPM cursor + value lookup ───────
@@ -580,8 +1125,16 @@ function lookupDeg(rpm){
   return points[points.length-1][1];
 }
 
+let lastLiveRpm = 0;
 function updateLiveCursor(rpm, deg){
-  document.getElementById('hudLive').textContent = rpm + ' rpm';
+  const liveEl = document.getElementById('hudLive');
+  if (rpm !== lastLiveRpm){
+    liveEl.textContent = String(rpm).padStart(5, '0');
+    liveEl.classList.remove('bump');
+    void liveEl.offsetWidth;            // restart animation
+    liveEl.classList.add('bump');
+    lastLiveRpm = rpm;
+  }
   const line = document.getElementById('cursorLine');
   const dot  = document.getElementById('cursorDot');
   if (rpm > 0){
@@ -599,11 +1152,34 @@ function updateLiveCursor(rpm, deg){
 // ─────── WS plumbing ───────
 cdi.bus.on('open', () => {
   cdi.send({ cmd: 'getMap' });
-  cdi.send({ cmd: 'getPresetStatus' });   // → presets event → triggers stock fetch
+  cdi.send({ cmd: 'getPresetStatus' });
 });
 
-// When preset status arrives, fetch its curve as the stock reference.
-// Also fires when user switches preset (backend sends 'preset' event).
+cdi.bus.on('map', pts => {
+  points = pts.map(p => [+p[0], +p[1]]);
+  selected = -1; clearDirty();
+  document.getElementById('mapJson').value = JSON.stringify(points);
+  flash(points.length + ' titik dimuat');
+  renderCurve();
+  // entrance flourish
+  const c = document.getElementById('curveActive');
+  c.classList.remove('fresh');
+  void c.offsetWidth;
+  c.classList.add('fresh');
+});
+
+cdi.bus.on('mapApplied', m => {
+  clearDirty();
+  flash('diterapkan · ' + m.count + ' titik');
+  renderCurve();
+});
+
+cdi.bus.on('err', msg => { document.getElementById('mapStatus').textContent = '› ERR: ' + msg; });
+
+cdi.bus.on('telemetry', t => {
+  updateLiveCursor(t.rpm, t.advance_x10 / 10);
+});
+
 cdi.bus.on('preset', m => {
   if (m.current && m.current !== activePresetId){
     activePresetId = m.current;
@@ -611,34 +1187,24 @@ cdi.bus.on('preset', m => {
   }
 });
 
-// Curve arrives — store as the comparison reference.
 cdi.bus.on('presetMap', m => {
   stockPoints = m.points.map(p => [+p[0], +p[1]]);
   stockName   = m.name || m.id || '—';
-  // update button labels + enable now that data ready
-  const cmp = document.getElementById('cmpBtn');
-  if (cmp) cmp.textContent = '◇ Bandingkan ' + stockName;
   const ldr = document.getElementById('loadStockBtn');
   if (ldr){
     ldr.disabled = false;
-    ldr.textContent = '▼ Muat stok ' + stockName;
+    ldr.textContent = '▼ MUAT STOK · ' + stockName.toUpperCase();
   }
-  // also update the P2 slot label
-  const p2 = document.querySelector('.slot[data-slot="1"] .nm');
-  if (p2) p2.textContent = 'stok';
   if (showCompare) renderCurve();
 });
 
-// Helper: ensure stockPoints is loaded; fetch + wait if necessary.
-// Returns true if ready, false on timeout.
 function ensureStockLoaded(timeoutMs = 2000){
   return new Promise(resolve => {
     if (stockPoints && stockPoints.length){ resolve(true); return; }
-    // request what we know — preset status first, then map
     if (activePresetId){
       cdi.send({ cmd: 'getPresetMap', id: activePresetId });
     } else {
-      cdi.send({ cmd: 'getPresetStatus' });   // will chain to getPresetMap
+      cdi.send({ cmd: 'getPresetStatus' });
     }
     const deadline = Date.now() + timeoutMs;
     const poll = setInterval(() => {
@@ -651,26 +1217,6 @@ function ensureStockLoaded(timeoutMs = 2000){
   });
 }
 
-cdi.bus.on('map', pts => {
-  points = pts.map(p => [+p[0], +p[1]]);
-  selected = -1; clearDirty();
-  document.getElementById('mapJson').value = JSON.stringify(points);
-  document.getElementById('mapStatus').textContent = '› ' + points.length + ' titik dimuat';
-  renderCurve();
-});
-
-cdi.bus.on('mapApplied', m => {
-  clearDirty();
-  document.getElementById('mapStatus').textContent = '› diterapkan · ' + m.count + ' titik';
-  renderCurve();
-});
-
-cdi.bus.on('err', msg => { document.getElementById('mapStatus').textContent = '› ERR: ' + msg; });
-
-cdi.bus.on('telemetry', t => {
-  updateLiveCursor(t.rpm, t.advance_x10 / 10);
-});
-
 // ─────── button bindings ───────
 document.getElementById('addBtn').addEventListener('click', addPoint);
 document.getElementById('delBtn').addEventListener('click', deleteSelected);
@@ -680,9 +1226,7 @@ document.getElementById('rpmUp').addEventListener('click', () => adjustSelected(
 document.getElementById('rpmDn').addEventListener('click', () => adjustSelected(-RPM_SNAP, 0));
 document.getElementById('cmpBtn').addEventListener('click', () => {
   showCompare = !showCompare;
-  const b = document.getElementById('cmpBtn');
-  b.style.borderColor = showCompare ? 'var(--cyan)' : '';
-  b.style.color = showCompare ? 'var(--cyan)' : '';
+  document.getElementById('cmpBtn').classList.toggle('active', showCompare);
   renderCurve();
 });
 document.getElementById('reloadBtn').addEventListener('click', async () => {
@@ -720,25 +1264,16 @@ document.getElementById('loadStockBtn').addEventListener('click', async () => {
     });
     if (!ok) return;
   }
-  // Load the active preset's stock curve into the editor as a starting
-  // point. User can then tune and click Apply to commit.
   points = stockPoints.map(p => [...p]);
   selected = -1;
   markDirty();
   renderCurve();
-  flash('stok ' + stockName + ' dimuat ke editor — klik Terapkan untuk kirim');
+  flash('stok ' + stockName + ' dimuat ke editor');
 });
 
 // ─────── Slot system (localStorage-backed) ───────
-// Each of P1-P4 can hold a named profile. Untouched slot = "stok"
-// which means load the currently-active preset's stock curve. Saved
-// slot has a user-given name and a frozen copy of the curve at save
-// time. Survives page reload, browser close, AP reconnect — backed
-// by localStorage. Not synced to the ESP32 (yet); intent is the user
-// keeps personal experiment curves on their phone, separate from
-// what's actually flashed to the device.
 const SLOT_KEY = 'cdi.mapSlots.v1';
-let slots = [null, null, null, null];   // null = stock default
+let slots = [null, null, null, null];
 
 function loadSlots(){
   try {
@@ -760,7 +1295,7 @@ function saveSlots(){
   catch (e) { console.warn('slot save fail', e); }
 }
 function refreshSlotLabels(){
-  document.querySelectorAll('.slot').forEach(el => {
+  document.querySelectorAll('.cassette').forEach(el => {
     const i = +el.dataset.slot;
     const nm = el.querySelector('.nm');
     if (slots[i]){
@@ -773,20 +1308,17 @@ function refreshSlotLabels(){
   });
 }
 
-// LOAD action — tap the slot body (excluding the save button)
-document.querySelectorAll('.slot').forEach(el => {
+document.querySelectorAll('.cassette').forEach(el => {
   el.addEventListener('click', async (e) => {
-    if (e.target.closest('.save-btn')) return;     // handled separately
+    if (e.target.closest('.save-btn')) return;
     const i = +el.dataset.slot;
     const slot = slots[i];
 
-    // Determine source curve
     let src, srcName;
     if (slot){
       src = slot.points.map(p => [...p]);
       srcName = slot.name;
     } else {
-      // empty slot → load active preset stock
       const ready = await ensureStockLoaded();
       if (!ready){
         await cdi.modal.alert({
@@ -819,7 +1351,6 @@ document.querySelectorAll('.slot').forEach(el => {
   });
 });
 
-// SAVE action — tap the 💾 button on a slot
 document.querySelectorAll('.save-btn').forEach(btn => {
   btn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -852,7 +1383,7 @@ document.querySelectorAll('.save-btn').forEach(btn => {
       defaultValue: defaultName,
       okLabel: existing ? '↻ Ganti & simpan' : '✓ Simpan',
     });
-    if (name === null) return;            // cancelled
+    if (name === null) return;
     const cleaned = String(name).trim().slice(0, 32);
     if (!cleaned){
       flash('nama kosong, batal');
@@ -869,7 +1400,6 @@ document.querySelectorAll('.save-btn').forEach(btn => {
   });
 });
 
-// Init: load slots from localStorage and update labels
 loadSlots();
 refreshSlotLabels();
 
@@ -880,7 +1410,7 @@ document.getElementById('applyJsonBtn').addEventListener('click', () => {
   catch (e) { flash('JSON tidak valid'); return; }
   if (!Array.isArray(pts) || pts.length < 2){ flash('minimal 2 titik'); return; }
   cdi.send({ cmd: 'setMap', points: pts });
-  flash('mengirim…');
+  flash('mengirim JSON...');
 });
 
 // initial empty render
