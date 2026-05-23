@@ -40,8 +40,14 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;   /* lock iOS zoom-out on rotate */
   min-height: 100%;
-  /* iOS rubber-band scroll feel terasa lebih tight di terminal aesthetic */
-  overscroll-behavior-y: contain;
+  /* `none` = full disable browser default overscroll behaviors:
+     - Chrome Android pull-to-refresh saat scroll up dari top (annoying
+       di dashboard yang sering di-scroll bolak-balik)
+     - Chrome desktop swipe-to-navigate (back/forward gesture)
+     - iOS rubber-band bounce
+     `contain` cuma stop propagation tapi BUKAN disable refresh — itu
+     yang bikin tetap muncul refresh icon di Android. */
+  overscroll-behavior: none;
 }
 /* Avoid double-tap zoom on interactive elements */
 button, .btn, .chip, a, label.chk, .seg-group button, .slot, .snap-item {
