@@ -871,19 +871,21 @@ document.getElementById('loadStockBtn').addEventListener('click', async () => {
   points = stockPoints.map(p => [...p]);
   selected = -1;
   renderCurve();
-  cdi.send({ cmd: 'setMap', points: points });
 
   if (slotIdx >= 0){
-    // Ada slot aktif → tandai dirty supaya Apply nyala. User bisa
-    // klik Terapkan untuk simpan stok ke slot itu (dengan modal
-    // naming default 'stok <preset>'). Slot tetap amber.
+    // Ada slot aktif → JANGAN auto-send ke device. Auto-send akan
+    // trigger mapApplied event yang reset dirty=false → Apply
+    // disabled lagi (glitch nyala-mati). User intent di sini:
+    // overwrite editor dengan stok, lalu commit ke slot via Apply
+    // dengan naming modal. Send ke device terjadi saat Apply.
     markDirty();
     document.getElementById('mapStatus').textContent =
       '› stok ' + stockName + ' dimuat ke P' + (slotIdx+1) +
-      ' · Terapkan untuk simpan';
-    flash('stok dimuat ke P' + (slotIdx+1));
+      ' · Terapkan untuk simpan & kirim';
+    flash('stok dimuat ke P' + (slotIdx+1) + ' — klik Terapkan');
   } else {
-    // Tidak ada slot active → cuma device-level apply
+    // Tidak ada slot active → device-level: langsung kirim + clean
+    cdi.send({ cmd: 'setMap', points: points });
     clearDirty();
     setActiveProfile({ type: 'stock', name: stockName });
     document.getElementById('mapStatus').textContent =
