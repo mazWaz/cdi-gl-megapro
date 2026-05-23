@@ -829,28 +829,50 @@ document.getElementById('loadStockBtn').addEventListener('click', async () => {
     });
     return;
   }
+  // Detect if there's an active slot — if yes, "Muat stok" akan
+  // overwrite curve di slot tersebut dengan stock baseline. Bukan
+  // ganti profile, tapi reset content slot ke stock.
+  const slotIdx = (activeProfile && activeProfile.type === 'slot')
+                  ? activeProfile.idx : -1;
+
   if (dirty){
     const ok = await cdi.modal.confirm({
-      title: 'BUANG PERUBAHAN',
+      title: 'OVERWRITE EDITOR',
       severity: 'warn',
-      body: 'Muat kurva stok ' + stockName + ' akan membuang ' +
-            'perubahan editor yang belum di-Terapkan.',
-      okLabel: '↺ Buang & muat',
+      body: slotIdx >= 0
+        ? 'Editor P' + (slotIdx+1) + ' akan diisi ulang dengan kurva ' +
+          'stok ' + stockName + '. Perubahan yang belum disimpan akan ' +
+          'hilang. Slot tetap aktif.'
+        : 'Muat kurva stok ' + stockName + ' akan membuang ' +
+          'perubahan editor yang belum di-Terapkan.',
+      okLabel: '↺ Buang & muat stok',
     });
     if (!ok) return;
   }
-  // Load the active preset's stock curve into the editor as a starting
-  // point. User can then tune and click Apply to commit.
+
+  // Load stok preset's curve into editor.
   points = stockPoints.map(p => [...p]);
   selected = -1;
-  clearDirty();
-  setActiveProfile({ type: 'stock', name: stockName });
   renderCurve();
-  // Konsisten dengan slot tap — load = langsung kirim.
   cdi.send({ cmd: 'setMap', points: points });
-  document.getElementById('mapStatus').textContent =
-    '› stok ' + stockName + ' dimuat + dikirim ke device';
-  flash('stok ' + stockName + ' aktif');
+
+  if (slotIdx >= 0){
+    // Ada slot aktif → tandai dirty supaya Apply nyala. User bisa
+    // klik Terapkan untuk simpan stok ke slot itu (dengan modal
+    // naming default 'stok <preset>'). Slot tetap amber.
+    markDirty();
+    document.getElementById('mapStatus').textContent =
+      '› stok ' + stockName + ' dimuat ke P' + (slotIdx+1) +
+      ' · Terapkan untuk simpan';
+    flash('stok dimuat ke P' + (slotIdx+1));
+  } else {
+    // Tidak ada slot active → cuma device-level apply
+    clearDirty();
+    setActiveProfile({ type: 'stock', name: stockName });
+    document.getElementById('mapStatus').textContent =
+      '› stok ' + stockName + ' dimuat + dikirim ke device';
+    flash('stok ' + stockName + ' aktif');
+  }
 });
 
 // ─────── Slot system (localStorage-backed) ───────
