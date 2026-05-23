@@ -269,9 +269,22 @@ static cdi::micros_t s_lastCh1IsrTs = 0;   // for ISR-local period check
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     if (!s_armed) return;
     // Quickshifter active cut window — skip this fire entirely.
-    if (cdi::core::quickshift::shouldCut()) return;
+    // CRITICAL: anchor must be updated even on PLANNED skip (QS,
+    // safety pattern-cut, idle_rumble skip-fire pattern). Otherwise
+    // s_lastCh1IsrTs stays at the last-fired CH1 timestamp, and the
+    // next FIRE cycle computes inst_period = (skip_count+1) × normal.
+    // Drift gate sees that as "RPM swing >2×" and falsely rejects
+    // the next fire, then re-prime cycle eats another. Net: every
+    // planned skip becomes 2-3 actual misfires — engine very rough.
+    if (cdi::core::quickshift::shouldCut()) {
+        s_lastCh1IsrTs = t_lead;
+        return;
+    }
     // Cut-mode gate: pattern / progressive skip this cycle.
-    if (!cdi::core::safety::shouldFire()) return;
+    if (!cdi::core::safety::shouldFire()) {
+        s_lastCh1IsrTs = t_lead;
+        return;
+    }
 
     // ─── ISR-level absolute RPM ceiling guard ───
     // Tighter than safety::tick (100 ms cadence). Refuses to even

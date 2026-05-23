@@ -21,10 +21,24 @@ volatile uint16_t            s_sustainMs     = 3000;
 volatile uint16_t            s_minUptimeSec  = 60;
 
 // Runtime
+//
+// Cross-core access pattern di sini:
+//   - tick() jalan di core 1 (loop). Membaca + menulis hampir semua
+//     runtime state.
+//   - setEnabled / setMode dipanggil dari WS handler di core 0.
+//     Beberapa reset state ini (s_inBandSinceMs=0, s_cooldownUntilMs=0,
+//     s_minRpmInWindow=65535).
+// Tanpa volatile, compiler bisa cache value di register pada tick()
+// dan miss reset yang dilakukan core 0. Bug ini tidak crash sistem
+// tapi bisa bikin behavior idle_rumble inconsistent setelah user
+// toggle mode dari UI.
+//
+// Single-store 32-bit aligned writes pada Xtensa atomic di word level,
+// jadi volatile saja cukup tanpa perlu mutex.
 volatile bool      s_active        = false;
 volatile float     s_currentRetard = 0.0f;
-uint32_t           s_inBandSinceMs = 0;     // 0 = not in band
-uint32_t           s_lastSampMs    = 0;
+volatile uint32_t  s_inBandSinceMs = 0;     // 0 = not in band
+uint32_t           s_lastSampMs    = 0;     // tick-internal, single core
 
 // Skip-fire pattern counter (touched only di spark ISR via shouldFireThisCycle
 // chain). volatile for safety::shouldFire reentry.
@@ -50,9 +64,9 @@ volatile uint32_t s_isr_lcg = 0xDEADCAFE;
 //
 // Net effect: kalau idle motor user marginal, rumble auto-back-off,
 // engine recover, tidak stuck di death-spiral.
-uint32_t  s_cooldownUntilMs = 0;
-cdi::rpm_t s_minRpmInWindow = 65535;
-uint32_t  s_minWinStartMs   = 0;
+volatile uint32_t  s_cooldownUntilMs = 0;
+volatile cdi::rpm_t s_minRpmInWindow = 65535;
+uint32_t           s_minWinStartMs   = 0;   // tick-internal, single core
 
 float jitterRetard(float max){
     if (max <= 0.0f) return 0.0f;
