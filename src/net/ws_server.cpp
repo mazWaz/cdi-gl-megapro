@@ -34,9 +34,18 @@ AsyncWebSocket s_ws("/ws");
 
 void handleText(AsyncWebSocketClient* client, const String& msg) {
     JsonDocument doc;
-    if (deserializeJson(doc, msg)) return;
+    auto err = deserializeJson(doc, msg);
+    if (err) {
+        Serial.printf("[ws] JSON parse fail: %s | msg: %s\n",
+                      err.c_str(), msg.c_str());
+        return;
+    }
     const char* cmd = doc["cmd"] | "";
-    if (!*cmd) return;
+    if (!*cmd) {
+        Serial.printf("[ws] msg w/o cmd: %s\n", msg.c_str());
+        return;
+    }
+    Serial.printf("[ws] cmd=%s\n", cmd);
 
     if (!strcmp(cmd, "setMode")) {
         const char* m = doc["mode"] | "";
@@ -476,15 +485,18 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "getPresetMap")) {
-        // Return the advance curve for any preset by id (defaults to
-        // currently-active preset if id omitted). UI editor uses this
-        // to overlay the "stock" reference curve for whichever motor
-        // the user is currently tuning — Megapro stock for Megapro,
-        // CB150R stock for CB150R, etc.
         const char* id = doc["id"] | cdi::core::preset::currentId();
+        Serial.printf("[ws] getPresetMap id=%s\n", id ? id : "(null)");
         const auto* p = cdi::core::preset::find(id);
         if (!p) {
-            client->text("{\"type\":\"err\",\"msg\":\"preset not found\"}");
+            Serial.printf("[ws] getPresetMap: preset '%s' not found\n", id);
+            JsonDocument r;
+            r["type"] = "err";
+            char buf[80];
+            snprintf(buf, sizeof(buf), "preset '%s' tidak ada", id ? id : "(null)");
+            r["msg"] = buf;
+            String out; serializeJson(r, out);
+            client->text(out);
             return;
         }
         JsonDocument r;
@@ -498,6 +510,8 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
             pair.add(p->points[i].deg);
         }
         String out; serializeJson(r, out);
+        Serial.printf("[ws] getPresetMap reply: %u points (%u bytes)\n",
+                      (unsigned)p->point_count, (unsigned)out.length());
         client->text(out);
     }
     else if (!strcmp(cmd, "getPickup")) {
