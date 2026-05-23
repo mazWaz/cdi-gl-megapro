@@ -799,6 +799,14 @@ details[open] > ol {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  /* Block pull-to-refresh + scroll chaining: tanpa ini, scroll dalam
+     modal yang panjang bisa "lewat" ke body di belakang dan trigger
+     Chrome Android refresh atau scroll background. `none` = full
+     containment. */
+  overscroll-behavior: none;
+  /* Block touch event propagate ke body — anti accidental scroll
+     belakang modal */
+  touch-action: none;
   /* Scan-line bias + radial vignette so it feels like a CRT pop-up */
   background-image:
     radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.55) 100%),
@@ -827,6 +835,12 @@ details[open] > ol {
     0 0 0 1px rgba(255,184,77,0.08),
     inset 0 0 80px rgba(255,184,77,0.025);
   animation: cdi-modal-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Modal scroll mandiri — kalau body panjang (notes, prompt input),
+     scroll dalam card tidak chain ke backdrop/body */
+  overscroll-behavior: contain;
+  touch-action: pan-y;       /* allow vertikal scroll dalam card, no horizontal swipe-nav */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 @keyframes cdi-modal-slide-in {
   from { transform: translateY(12px) scale(0.985); opacity: 0; }
@@ -916,6 +930,9 @@ details[open] > ol {
   color: var(--text);
   white-space: pre-wrap;          /* honor \n in caller strings */
   word-break: break-word;
+  /* Body scroll containment — kalau body super panjang dan jadi scroll-area,
+     scroll-end tidak chain ke .cdi-modal atau backdrop. */
+  overscroll-behavior: contain;
 }
 .cdi-modal-body b { color: var(--amber); }
 .cdi-modal.sev-warn   .cdi-modal-body b { color: var(--warn); }
