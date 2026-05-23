@@ -2,50 +2,57 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-#include <LittleFS.h>
 
 #include "config.h"
 #include "telemetry/datalog.h"
 #include "scope/edge_snapshot.h"
+#include "ui_pages.h"     // gzipped UI files embedded as PROGMEM
 
 namespace cdi::net::http_server {
 namespace {
 
 AsyncWebServer s_server(cdi::config::AP_HTTP_PORT);
 
-void logReq(AsyncWebServerRequest* req, const char* file) {
-    Serial.printf("[HTTP] %s -> %s (%d B)\n",
-                  req->url().c_str(), file,
-                  LittleFS.exists(file) ? (int)LittleFS.open(file, "r").size() : -1);
+// ─── Serve embedded gzipped UI files from PROGMEM ─────────────────
+// Pattern dipinjam dari WLED. Filesystem (LittleFS) dihilangkan untuk
+// UI assets — semua di-embed di firmware binary via PROGMEM.
+//   * OTA firmware update = otomatis update UI sekaligus
+//   * Gzip ratio ~28% = 47 KB total (vs 164 KB raw)
+//   * No LittleFS corruption risk
+//   * Browser auto-decompress karena Content-Encoding: gzip
+//
+// `beginResponse_P` adalah AsyncWebServer helper untuk PROGMEM data
+// — tidak copy ke heap, langsung stream dari flash.
+void sendEmbeddedPage(AsyncWebServerRequest* req,
+                      const cdi::ui::pages::PageEntry& p) {
+    AsyncWebServerResponse* r =
+        req->beginResponse_P(200, p.mime, p.data, p.len);
+    r->addHeader("Content-Encoding", "gzip");
+    r->addHeader("Cache-Control", "max-age=300");   // 5 min, cukup untuk session
+    req->send(r);
+    Serial.printf("[HTTP] %s -> embed %s (%u B gz)\n",
+                  req->url().c_str(), p.path, (unsigned)p.len);
 }
 
-void sendIndex(AsyncWebServerRequest* req) {
-    logReq(req, "/index.html");
-    req->send(LittleFS, "/index.html", "text/html");
-}
-void sendMap(AsyncWebServerRequest* req) {
-    logReq(req, "/map.html");
-    req->send(LittleFS, "/map.html", "text/html");
-}
-void sendScope(AsyncWebServerRequest* req) {
-    logReq(req, "/scope.html");
-    req->send(LittleFS, "/scope.html", "text/html");
-}
-void sendSettings(AsyncWebServerRequest* req) {
-    logReq(req, "/settings.html");
-    req->send(LittleFS, "/settings.html", "text/html");
-}
-void sendStyle(AsyncWebServerRequest* req) {
-    logReq(req, "/style.css");
-    AsyncWebServerResponse* r = req->beginResponse(LittleFS, "/style.css", "text/css");
-    r->addHeader("Cache-Control", "no-cache");
-    req->send(r);
-}
-void sendApp(AsyncWebServerRequest* req) {
-    logReq(req, "/app.js");
-    AsyncWebServerResponse* r = req->beginResponse(LittleFS, "/app.js", "application/javascript");
-    r->addHeader("Cache-Control", "no-cache");
-    req->send(r);
+// Generic handler: lookup request path di kPages[], serve kalau match.
+void handleEmbedded(AsyncWebServerRequest* req) {
+    const char* url = req->url().c_str();
+    for (size_t i = 0; i < cdi::ui::pages::kPageCount; i++) {
+        const auto& p = cdi::ui::pages::kPages[i];
+        if (strcmp(url, p.path) == 0) {
+            sendEmbeddedPage(req, p);
+            return;
+        }
+    }
+    // Fallback: kalau path tidak dikenali, serve index "/" → dashboard.
+    for (size_t i = 0; i < cdi::ui::pages::kPageCount; i++) {
+        const auto& p = cdi::ui::pages::kPages[i];
+        if (strcmp(p.path, "/") == 0) {
+            sendEmbeddedPage(req, p);
+            return;
+        }
+    }
+    req->send(404, "text/plain", "no embedded page");
 }
 
 // ── Captive-portal probe responders ──────────────────────────────
@@ -121,16 +128,14 @@ void handleDatalogCsv(AsyncWebServerRequest* req) {
 } // anonymous
 
 void begin() {
-    // Page routes — each HTML served with correct MIME.
-    s_server.on("/",               HTTP_GET, sendIndex);
-    s_server.on("/index.html",     HTTP_GET, sendIndex);
-    s_server.on("/map.html",       HTTP_GET, sendMap);
-    s_server.on("/scope.html",     HTTP_GET, sendScope);
-    s_server.on("/settings.html",  HTTP_GET, sendSettings);
-
-    // Shared assets — explicit MIME so phone browsers parse them.
-    s_server.on("/style.css",      HTTP_GET, sendStyle);
-    s_server.on("/app.js",         HTTP_GET, sendApp);
+    // ─── Embedded UI routes ──────────────────────────────────────
+    // Register handler untuk tiap path di kPages[]. Generic
+    // handleEmbedded() lookup by path dan serve dari PROGMEM.
+    for (size_t i = 0; i < cdi::ui::pages::kPageCount; i++) {
+        s_server.on(cdi::ui::pages::kPages[i].path, HTTP_GET, handleEmbedded);
+    }
+    // Alias: /index.html → "/" (some browsers/bookmarks pakai literal name)
+    s_server.on("/index.html", HTTP_GET, handleEmbedded);
 
     // Dynamic endpoints.
     s_server.on("/datalog.csv",    HTTP_GET, handleDatalogCsv);
@@ -149,10 +154,10 @@ void begin() {
     s_server.on("/canonical.html",            HTTP_GET, probeAppleSuccess);
     s_server.on("/redirect",                  HTTP_GET, probeEmpty);
 
-    // Unknown paths → serve index.html so a legitimate browser typing
-    // a wrong URL still lands on the dashboard (won't trigger captive
-    // banner because the explicit probe routes above already won).
-    s_server.onNotFound(sendIndex);
+    // Unknown paths → serve embedded index (handleEmbedded fallback
+    // to "/" kalau path tidak match). Won't trigger captive banner
+    // karena probe routes di atas sudah match dulu.
+    s_server.onNotFound(handleEmbedded);
 
     s_server.begin();
     Serial.println("[HTTP] server started (multi-page)");
