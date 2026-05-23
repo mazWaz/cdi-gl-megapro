@@ -138,7 +138,7 @@ void setup() {
 
     Serial.printf("[CDI] setup() complete · heap=%u · uptime=%lu ms\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned long)millis());
-    Serial.println("[CDI] ready — connect to WiFi AP, open http://192.168.4.1/");
+    Serial.println("[CDI] ready — connect to WiFi AP, open http://4.3.2.1/");
 }
 
 void loop() {

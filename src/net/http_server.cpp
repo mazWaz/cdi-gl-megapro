@@ -73,7 +73,7 @@ void handleEmbedded(AsyncWebServerRequest* req) {
 //
 // Tujuan: bikin OS detect "no internet, captive portal" + biarkan
 // user pilih "Tetap terhubung tanpa internet" → setelah itu OS stop
-// spam probe. Browser bisa di-buka manual ke 192.168.4.1.
+// spam probe. Browser bisa di-buka manual ke 4.3.2.1.
 //
 // Strategi: return 200 OK + HTML portal page (BUKAN exact success
 // payload, BUKAN 302 redirect). Behaviour per-OS:
@@ -101,7 +101,7 @@ void portalProbe(AsyncWebServerRequest* req) {
         "<!DOCTYPE html><html lang=\"id\"><head>"
         "<meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<meta http-equiv=\"refresh\" content=\"0; url=http://192.168.4.1/\">"
+        "<meta http-equiv=\"refresh\" content=\"0; url=http://4.3.2.1/\">"
         "<title>CDI//MGPRO Portal</title>"
         "<style>"
         "body{font-family:monospace;background:#0a0d12;color:#e8e6df;"
@@ -116,7 +116,7 @@ void portalProbe(AsyncWebServerRequest* req) {
         "<body>"
         "<h1>▌ CDI//MGPRO</h1>"
         "<p>jaringan internal — tidak ada internet</p>"
-        "<a href=\"http://192.168.4.1/\">▶ Buka Dashboard</a>"
+        "<a href=\"http://4.3.2.1/\">▶ Buka Dashboard</a>"
         "</body></html>";
     AsyncWebServerResponse* r = req->beginResponse(200, "text/html", body);
     // Cache portal HTML SECARA SHORT — OS akan revalidate setelah 10s.

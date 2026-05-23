@@ -11,7 +11,12 @@
 namespace cdi::net::wifi_ap {
 namespace {
 
-const IPAddress kApIp(192, 168, 4, 1);
+// AP IP sengaja pakai memorable address 4.3.2.1 (dibaca "empat tiga
+// dua satu", mudah diingat saat user mau buka dashboard manual).
+// Bukan private range RFC1918 — tapi device ini AP-only, tidak ke
+// internet, jadi tidak konflik route. ESP softAP gateway = ESP itu
+// sendiri, semua traffic ke 4.3.2.1 sampai ke sini.
+const IPAddress kApIp(4, 3, 2, 1);
 const IPAddress kApMask(255, 255, 255, 0);
 
 constexpr const char* NVS_NS       = "cdiwifi";
@@ -107,7 +112,7 @@ void begin() {
     Serial.print(WiFi.softAPIP());
     Serial.print("  password=");
     Serial.println(s_password);
-    Serial.println("[AP] open http://192.168.4.1/ in Chrome");
+    Serial.println("[AP] open http://4.3.2.1/ in Chrome");
 
     s_dns.setErrorReplyCode(DNSReplyCode::NoError);
     s_dns.start(cdi::config::AP_DNS_PORT, "*", kApIp);
