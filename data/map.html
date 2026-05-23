@@ -701,14 +701,26 @@ function ensureStockLoaded(timeoutMs = 2000){
 }
 
 cdi.bus.on('map', pts => {
+  // If P1 has saved content, prefer it as the default editor state
+  // — user expectation is 'open the app and resume on my own profile'.
+  // Device map fallback only when no slot is set up yet.
+  if (slots[0]){
+    points = slots[0].points.map(p => [...p]);
+    selected = -1; clearDirty();
+    setActiveProfile({ type: 'slot', idx: 0, name: slots[0].name });
+    document.getElementById('mapJson').value = JSON.stringify(points);
+    document.getElementById('mapStatus').textContent =
+      '› ' + points.length + ' titik dimuat dari P1: ' + slots[0].name;
+    renderCurve();
+    return;
+  }
+  // No P1 saved yet — show whatever is live on the device.
   points = pts.map(p => [+p[0], +p[1]]);
   selected = -1; clearDirty();
-  // Initial getMap on page load = whatever is live on the device.
-  // Mark as 'device' profile so user sees they're editing the live
-  // ESP-resident map, not a slot copy.
   setActiveProfile({ type: 'device', name: 'live' });
   document.getElementById('mapJson').value = JSON.stringify(points);
-  document.getElementById('mapStatus').textContent = '› ' + points.length + ' titik dimuat dari device';
+  document.getElementById('mapStatus').textContent =
+    '› ' + points.length + ' titik dimuat dari device';
   renderCurve();
 });
 
