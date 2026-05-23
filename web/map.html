@@ -766,6 +766,8 @@ function ensureStockLoaded(timeoutMs = 2000){
 
 cdi.bus.on('map', pts => {
   const lastIdx = loadLastActiveSlot();
+
+  // Case 1: Last active slot HAS saved data → load slot data + active
   if (lastIdx >= 0 && slots[lastIdx]){
     points = slots[lastIdx].points.map(p => [...p]);
     selected = -1;
@@ -778,6 +780,26 @@ cdi.bus.on('map', pts => {
     renderCurve();
     return;
   }
+
+  // Case 2: Last active slot EMPTY (user tapped empty slot sebelumnya
+  // → slot di-mark active tapi tidak ada saved data). Preserve slot
+  // selection — load device curve sebagai placeholder content. Setelah
+  // presetMap arrive, ensureStockLoaded() di slot handler bisa swap
+  // ke stock. Yang penting: slot tetap nyala amber di UI.
+  if (lastIdx >= 0){
+    points = pts.map(p => [+p[0], +p[1]]);
+    selected = -1;
+    baselinePoints = null;       // empty slot → no baseline → dirty
+    setActiveProfile({ type: 'slot', idx: lastIdx, name: 'stok' });
+    document.getElementById('mapJson').value = JSON.stringify(points);
+    document.getElementById('mapStatus').textContent =
+      '› P' + (lastIdx+1) + ' (slot kosong, dimuat dari device sebagai placeholder)';
+    recomputeDirty();
+    renderCurve();
+    return;
+  }
+
+  // Case 3: No saved slot, no lastIdx → fallback ke P1 kalau ada data
   if (slots[0]){
     points = slots[0].points.map(p => [...p]);
     selected = -1;
@@ -790,7 +812,8 @@ cdi.bus.on('map', pts => {
     renderCurve();
     return;
   }
-  // No saved slot — show whatever is live on the device.
+
+  // Case 4: Fresh install / clean state → device map sebagai default
   points = pts.map(p => [+p[0], +p[1]]);
   selected = -1;
   baselinePoints = pts.map(p => [+p[0], +p[1]]);
