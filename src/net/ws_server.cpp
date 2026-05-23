@@ -516,6 +516,47 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         String out; serializeJson(r, out);
         client->text(out);
     }
+    else if (!strcmp(cmd, "setPickup")) {
+        // Manual edit pickup geometry — untuk modif rotor / pulser custom
+        // yang tidak match factory preset, sebagai alternatif untuk
+        // auto-cal. Validasi range supaya tidak set value yang bikin
+        // map lookup hasilkan delay negatif atau overflow.
+        const float magnet = doc["magnet"]  | cdi::core::pickup::magnetWidth();
+        const float maxAdv = doc["max_ref"] | cdi::core::pickup::maxAdvanceRef();
+
+        // Sanity bounds — magnet 5-40° physically, max ref 15-45° BTDC.
+        if (magnet < 5.0f || magnet > 40.0f) {
+            client->text("{\"type\":\"err\",\"msg\":\"magnet width 5-40°\"}");
+            return;
+        }
+        if (maxAdv < 15.0f || maxAdv > 45.0f) {
+            client->text("{\"type\":\"err\",\"msg\":\"max advance ref 15-45° BTDC\"}");
+            return;
+        }
+        if (magnet >= maxAdv) {
+            // base_advance = max - magnet, harus positif (>0°)
+            client->text("{\"type\":\"err\",\"msg\":\"magnet harus < max advance\"}");
+            return;
+        }
+
+        cdi::core::pickup::setMagnetWidth(magnet);
+        cdi::core::pickup::setMaxAdvanceRef(maxAdv);
+        cdi::core::pickup::setOverride(true);
+        cdi::core::pickup::setSource("user");
+        cdi::storage::config::saveNow();
+        Serial.printf("[ws] setPickup magnet=%.2f° max_ref=%.2f° (manual override)\n",
+                      magnet, maxAdv);
+
+        JsonDocument r;
+        r["type"]    = "pickup";
+        r["max_ref"] = cdi::core::pickup::maxAdvanceRef();
+        r["magnet"]  = cdi::core::pickup::magnetWidth();
+        r["base"]    = cdi::core::pickup::baseAdvanceRef();
+        r["override"]= true;
+        r["source"]  = "user";
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
     else if (!strcmp(cmd, "resetPickup")) {
         // Drop override and re-apply current preset's geometry
         cdi::core::pickup::setOverride(false);

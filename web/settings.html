@@ -489,21 +489,54 @@
   <section class="panel">
     <span class="label">[ geometri pulser ]</span>
     <p class="caption">
-      Sudut max advance + lebar magnet pulser. Otomatis di-set saat pilih
-      preset (cocok untuk motor stok). Untuk motor modif rotor/pickup,
-      jalankan <b>kalibrasi otomatis</b> dari panel <b>Motor Preset</b> di
-      atas — firmware ukur magnet width langsung dari pulser saat idle.
+      Sudut max advance + lebar magnet pulser. Tiga cara set: pilih <b>preset</b>
+      (factory), jalankan <b>kalibrasi otomatis</b> (panel Motor Preset di atas),
+      atau <b>edit manual</b> di bawah untuk modif rotor custom yang tidak match
+      preset apapun.
     </p>
-    <dl class="kv" style="margin-bottom:8px">
-      <dt>lebar magnet</dt>      <dd><span id="pkpMagnetView" class="ok">—°</span></dd>
-      <dt>max advance ref</dt>   <dd><span id="pkpMaxRefView">—° BTDC</span></dd>
-      <dt>base advance ref</dt>  <dd><span id="pkpBaseRefView">—° BTDC</span></dd>
-      <dt>sumber nilai</dt>      <dd><span id="pkpSourceView">—</span></dd>
+
+    <!-- Live readout -->
+    <dl class="kv" style="margin-bottom:10px">
+      <dt>nilai aktif</dt>
+      <dd>
+        magnet <b id="pkpMagnetView" style="color:var(--amber)">—°</b> ·
+        max ref <b id="pkpMaxRefView" style="color:var(--amber)">—°</b> ·
+        base ref <span id="pkpBaseRefView" style="color:var(--text-dim)">—°</span>
+      </dd>
+      <dt>sumber nilai</dt>
+      <dd><span id="pkpSourceView">—</span></dd>
     </dl>
+
+    <hr class="tech">
+
+    <!-- Manual edit form -->
+    <p class="note" style="font-size:10px;color:var(--text-faint);margin-bottom:4px">
+      ⚙ Edit manual (override mode = <b>user</b>):
+    </p>
+    <label class="field">lebar magnet
+      <input id="pkpMagnetInp" type="number" min="5" max="40" step="0.1" style="width:100px">
+      <span class="val">° (5–40)</span>
+    </label>
+    <label class="field">max advance ref
+      <input id="pkpMaxRefInp" type="number" min="15" max="45" step="0.1" style="width:100px">
+      <span class="val">° BTDC (15–45)</span>
+    </label>
     <p class="note" style="font-size:10px;color:var(--text-faint)">
-      Sumber <b style="color:var(--text-dim)">preset</b> = nilai factory dari engine_preset table.
-      Sumber <b style="color:var(--warn)">auto_cal</b> = hasil kalibrasi (override aktif).
-      Untuk reset ke factory, scroll ke panel Motor Preset dan klik <b>↺ Reset ke preset</b>.
+      base advance ref = max − magnet (otomatis hitung).<br>
+      <b style="color:var(--text-dim)">Cara ukur magnet width:</b> capture pulser di scope mode,
+      ukur waktu CH1 fall → CH2 fall × 360° / periode CH1.<br>
+      <b style="color:var(--text-dim)">Cara cek max advance:</b> strobe timing light di TDC mark
+      saat engine ramp ke high RPM — pembacaan max di angka peak advance.
+    </p>
+    <div class="btn-row">
+      <button class="btn green" id="pkpApplyBtn">✓ Apply override</button>
+      <button class="btn ghost" id="pkpReloadBtn">↺ Reload nilai aktif</button>
+      <button class="btn ghost" id="pkpResetBtn">⤺ Reset ke preset</button>
+      <span class="note" id="pkpStatus" style="align-self:center"></span>
+    </div>
+    <p class="note crit" style="font-size:10px;margin-top:6px">
+      ⚠ Salah set = timing seluruh map melenceng → potensi kickback / detonation.
+      Strobe verify di TDC mark setelah apply.
     </p>
   </section>
 
@@ -873,25 +906,97 @@ function renderPickup(m){
   $('pickupSrcChip').style.color       = isOverride ? 'var(--warn)' : 'var(--text-dim)';
   $('pickupResetBtn').style.display = isOverride ? '' : 'none';
 
-  // Lower [geometri pulser] panel (read-only summary view)
+  // Lower [geometri pulser] panel — view + editable inputs
   if ($('pkpMagnetView')) {
     $('pkpMagnetView').textContent =
       (typeof m.magnet === 'number') ? m.magnet.toFixed(2) + '°' : '—°';
     $('pkpMaxRefView').textContent =
-      (typeof m.max_ref === 'number') ? m.max_ref.toFixed(1) + '° BTDC' : '—° BTDC';
+      (typeof m.max_ref === 'number') ? m.max_ref.toFixed(1) + '°' : '—°';
     $('pkpBaseRefView').textContent =
-      (typeof m.base === 'number') ? m.base.toFixed(1) + '° BTDC' : '—° BTDC';
+      (typeof m.base === 'number') ? m.base.toFixed(1) + '°' : '—°';
     const src = m.source || (isOverride ? 'override' : 'preset');
     const srcEl = $('pkpSourceView');
-    srcEl.textContent = src;
-    // Color source label: amber for preset (default), warn for auto_cal/override
-    srcEl.style.color = (src === 'preset') ? 'var(--text-dim)' : 'var(--warn)';
+    // Pretty label per source kind dengan warna
+    const SRC_LABEL = {
+      'preset':   { txt: 'preset (factory)',     color: 'var(--text-dim)' },
+      'auto_cal': { txt: 'auto-cal (kalibrasi)', color: 'var(--cyan)' },
+      'user':     { txt: 'manual user override', color: 'var(--warn)' },
+      'override': { txt: 'override aktif',       color: 'var(--warn)' },
+    };
+    const info = SRC_LABEL[src] || { txt: src, color: 'var(--text)' };
+    srcEl.textContent = info.txt;
+    srcEl.style.color = info.color;
     srcEl.style.fontWeight = (src === 'preset') ? '400' : '700';
+
+    // Populate inputs HANYA kalau user belum touch (avoid override saat
+    // mereka ketik). Track via dirty flag.
+    if (!pkpFormDirty){
+      if (typeof m.magnet === 'number')  $('pkpMagnetInp').value = m.magnet.toFixed(2);
+      if (typeof m.max_ref === 'number') $('pkpMaxRefInp').value = m.max_ref.toFixed(1);
+    }
   }
 }
+let pkpFormDirty = false;
 cdi.bus.on('pickup', renderPickup);
 // Fetch initial pickup state pada open WS
 cdi.bus.on('open', () => cdi.send({cmd:'getPickup'}));
+
+// Mark form dirty saat user input → renderPickup tidak akan timpa
+['pkpMagnetInp', 'pkpMaxRefInp'].forEach(id => {
+  if ($(id)) $(id).addEventListener('input', () => { pkpFormDirty = true; });
+});
+
+// Apply manual override
+if ($('pkpApplyBtn')) {
+  $('pkpApplyBtn').addEventListener('click', async () => {
+    const magnet = parseFloat($('pkpMagnetInp').value);
+    const maxRef = parseFloat($('pkpMaxRefInp').value);
+    if (isNaN(magnet) || isNaN(maxRef)){
+      $('pkpStatus').textContent = '› isi kedua nilai';
+      return;
+    }
+    if (magnet >= maxRef){
+      $('pkpStatus').textContent = '› magnet harus < max ref';
+      return;
+    }
+    const ok = await cdi.modal.confirm({
+      title: 'OVERRIDE GEOMETRI PULSER',
+      severity: 'warn',
+      body: 'Set magnet width ke ' + magnet.toFixed(2) + '° dan max advance ref ke '
+            + maxRef.toFixed(1) + '° BTDC?\n\n'
+            + 'base ref dihitung otomatis = ' + (maxRef - magnet).toFixed(1) + '°.\n\n'
+            + 'Salah set = seluruh peta advance melenceng. WAJIB strobe verify di TDC '
+            + 'mark setelah apply.',
+      okLabel: '✓ Apply',
+    });
+    if (!ok) return;
+    cdi.send({cmd:'setPickup', magnet: magnet, max_ref: maxRef});
+    pkpFormDirty = false;
+    $('pkpStatus').textContent = '› terkirim';
+  });
+}
+if ($('pkpReloadBtn')) {
+  $('pkpReloadBtn').addEventListener('click', () => {
+    pkpFormDirty = false;
+    cdi.send({cmd:'getPickup'});
+    $('pkpStatus').textContent = '› nilai perangkat dimuat';
+  });
+}
+if ($('pkpResetBtn')) {
+  $('pkpResetBtn').addEventListener('click', async () => {
+    const ok = await cdi.modal.confirm({
+      title: 'RESET KE PRESET',
+      severity: 'warn',
+      body: 'Buang override (kalibrasi atau manual) dan kembali ke nilai preset '
+            + 'factory motor yang sedang dipilih?',
+      okLabel: '⤺ Reset',
+    });
+    if (!ok) return;
+    pkpFormDirty = false;
+    cdi.send({cmd:'resetPickup'});
+    $('pkpStatus').textContent = '› reset ke preset';
+  });
+}
 $('pickupResetBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
     title: 'RESET PICKUP',
