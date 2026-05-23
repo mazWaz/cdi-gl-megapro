@@ -226,6 +226,23 @@ body::before {
 .btn.green { color: var(--green); border-color: var(--green); }
 .btn.green:hover { background: rgba(82,183,136,0.12); }
 
+/* Disabled state — override any color variant (.green/.crit/.ghost)
+   so user sees clearly tombol tidak aktif. */
+.btn:disabled,
+.btn[disabled] {
+  color: var(--text-dim) !important;
+  border-color: var(--border) !important;
+  background: transparent !important;
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn:disabled:hover,
+.btn[disabled]:hover {
+  background: transparent !important;
+  transform: none;
+}
+
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
 
 /* ─────── INPUTS ─────── */
