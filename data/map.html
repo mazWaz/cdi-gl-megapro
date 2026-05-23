@@ -544,8 +544,25 @@ function showCoordReadout(rpm, deg){
 function hideCoordReadout(){ document.getElementById('coordReadout').textContent = ''; }
 
 // ─────── operations ───────
-function markDirty(){ dirty = true; updateHud(); }
-function clearDirty(){ dirty = false; updateHud(); }
+function markDirty(){
+  dirty = true;
+  updateHud();
+  // Sync Apply button state — sebelumnya hanya renderCurve() yang
+  // update applyBtn, jadi kalau markDirty dipanggil setelah render,
+  // tombol tidak enabled meskipun dirty=true.
+  const btn = document.getElementById('applyBtn');
+  const tag = document.getElementById('dirtyTag');
+  if (btn) btn.disabled = false;
+  if (tag) tag.style.display = '';
+}
+function clearDirty(){
+  dirty = false;
+  updateHud();
+  const btn = document.getElementById('applyBtn');
+  const tag = document.getElementById('dirtyTag');
+  if (btn) btn.disabled = true;
+  if (tag) tag.style.display = 'none';
+}
 
 function adjustSelected(dRpm, dDeg){
   if (selected < 0) return;
