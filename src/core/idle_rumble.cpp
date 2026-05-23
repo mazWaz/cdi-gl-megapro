@@ -99,12 +99,23 @@ void tick(cdi::rpm_t rpm) {
     if (!in_band) {
         // Exit segera tanpa sustain — saat user buka throttle, jangan
         // kasih bumpy acceleration karena skip-fire masih nyala.
-        if (s_active) {
+        //
+        // EXIT-LOW stall-guard: kalau exit terjadi via low-RPM side
+        // (rpm < rpmLo + 100), artinya rumble berkontribusi ke RPM
+        // drop yang mendekati stall. Set cooldown 5 detik supaya
+        // engine bisa recover stable sebelum re-engage.
+        // Exit via HIGH-RPM (user gases up) tidak trigger cooldown.
+        if (s_active && rpm < s_rpmLo + 100) {
+            s_cooldownUntilMs = now + 5000;
+            Serial.printf("[rumble] stall-guard cooldown 5s (exit-low @%u rpm)\n",
+                          (unsigned)rpm);
+        } else if (s_active) {
             Serial.printf("[rumble] disengage @ %u rpm (out of band)\n",
                           (unsigned)rpm);
         }
         s_active = false; s_currentRetard = 0.0f;
         s_inBandSinceMs = 0;
+        s_minRpmInWindow = 65535;     // reset window state
         return;
     }
 
@@ -127,8 +138,8 @@ void tick(cdi::rpm_t rpm) {
     // Track minimum RPM dalam rolling 1-detik window untuk stall detect
     if (rpm < s_minRpmInWindow) s_minRpmInWindow = rpm;
     if ((int32_t)(now - s_minWinStartMs) >= 1000) {
-        const cdi::rpm_t margin = (cdi::rpm_t)50;
-        if (s_minRpmInWindow < s_rpmLo + margin && s_active) {
+        const cdi::rpm_t margin = (cdi::rpm_t)100;
+        if (s_minRpmInWindow <= s_rpmLo + margin && s_active) {
             // RPM mendekati floor band → backoff untuk hindari stall.
             // Skip-heavy modes paling rentan; SUBTLE/NGEBASS no skip,
             // tapi heavy retard masih bisa drop RPM, jadi cooldown
