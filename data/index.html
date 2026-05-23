@@ -9,7 +9,7 @@
 <body>
 
 <div class="topbar">
-  <span class="brand">CDI//MGPRO<span class="ver">v0.3.0</span></span>
+  <span class="brand">CDI//MGPRO<span class="ver">—</span></span>
   <span class="chip" id="topPreset" style="cursor:pointer;background:var(--amber-soft);border-color:var(--amber);color:var(--amber)" onclick="location.href='/settings.html#preset'">
     <b id="topPresetName">—</b>
   </span>
@@ -108,7 +108,7 @@
       <dt>waktu aktif</dt>    <dd id="kvUptime">0 d</dd>
       <dt>hitungan pulser</dt><dd id="kvCount">0</dd>
       <dt>memori bebas</dt>   <dd id="kvHeap">— B</dd>
-      <dt>firmware</dt>       <dd>v0.2.0 · build dev</dd>
+      <dt>firmware</dt>       <dd class="fw-version">—</dd>
       <dt>sesi</dt>           <dd id="kvSession" class="ok">terhubung</dd>
     </dl>
   </section>
@@ -129,13 +129,13 @@ function fmtTime(ms){
   return (h>0 ? h+'j ' : '') + String(m).padStart(2,'0') + 'm ' + String(ss).padStart(2,'0') + 'd';
 }
 
-const MODE_ID = { 0:'BOOT', 2:'PENGAPIAN', 3:'MODE AMAN' };
-
 cdi.bus.on('telemetry', t => {
   $('rpmBig').textContent = t.rpm;
   $('advBig').textContent = (t.advance_x10/10).toFixed(1);
-  $('kvMode').textContent = MODE_ID[t.mode] || '?';
-  $('kvMode').className = t.mode === 2 ? 'warn' : t.mode === 3 ? 'crit' : '';
+  $('kvMode').textContent = cdi.MODE[t.mode] || '?';
+  // IGNITION (mode 2) is "engine running, all working" → ok (green).
+  // SAFE_HOLD (mode 3) is failsafe state → crit (red).
+  $('kvMode').className = t.mode === 2 ? 'ok' : t.mode === 3 ? 'crit' : '';
   $('kvUptime').textContent = fmtTime(t.uptime);
   $('kvCount').textContent = t.count.toLocaleString();
   $('kvHeap').textContent  = t.heap.toLocaleString() + ' B';
@@ -212,8 +212,6 @@ cdi.bus.on('idleRumble', m => {
   const pill = $('kvIr');
   if (m.enabled && m.active){
     pill.style.display = '';
-    pill.querySelector ? null : null;
-    // Label berbeda per mode untuk indikasi visual
     const modeName = ['OFF','SUBTLE','AGGR','BURBLE','NGEBASS','NGOROK','BRAP-BRAP'][m.mode | 0] || '?';
     pill.textContent = 'RUMBLE · ' + modeName;
   } else {
@@ -319,21 +317,11 @@ $('noSigChk').addEventListener('change', async e => {
   cdi.send({cmd:'setNoSignalEnabled', enabled: en});
 });
 
-// Spark polarity toggle
+// Spark polarity toggle — request initial state on connect, update
+// checkbox dari reply.
 cdi.bus.on('open', () => cdi.send({cmd:'getSparkPolarity'}));
-cdi.bus.on('hello', () => cdi.send({cmd:'getSparkPolarity'}));
-window.addEventListener('message', () => {});  // no-op, keep handler list
-cdi.bus.on('telemetry', () => {}); // already wired elsewhere
-// Custom listener for sparkPolarity messages
-const _origDispatch = null;
-function _onSparkPol(m){
-  $('sparkPolChk').checked = !!m.active_low;
-}
-// Patch bus to listen for sparkPolarity dispatched via app.js generic route
-// app.js doesn't route 'sparkPolarity' yet — handle via direct WS message hook below
-// (we'll add the route in app.js too)
 cdi.bus.on('sparkPolarity', m => {
-  _onSparkPol(m);
+  $('sparkPolChk').checked = !!m.active_low;
 });
 
 $('sparkPolChk').addEventListener('change', async e => {

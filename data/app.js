@@ -58,7 +58,9 @@ function updateTopbar(t){
     const name = MODE[t.mode] || '?';
     mp.querySelector('.txt').textContent = name;
     const dot = mp.querySelector('.dot');
-    dot.className = 'dot ' + (t.mode === 2 ? 'ok' : t.mode === 3 ? 'crit' : t.mode === 1 ? 'warn' : '');
+    // mode 0=BOOT (neutral), 2=IGNITION (ok), 3=SAFE_HOLD (crit).
+    // No mode 1 di OperatingMode enum (legacy SCOPE removed).
+    dot.className = 'dot ' + (t.mode === 2 ? 'ok' : t.mode === 3 ? 'crit' : '');
   }
   if (ml){
     const dot = ml.querySelector('.dot');
@@ -68,6 +70,23 @@ function updateTopbar(t){
 }
 bus.on('telemetry', updateTopbar);
 bus.on('connection', updateTopbar);
+
+// Inject firmware version dari hello event ke semua .ver elements.
+// Backend kirim fw sebagai uint32 = (major<<16) | (minor<<8) | patch.
+// Sebelumnya tiap HTML hard-code 'v0.x.0' di topbar — 6 lokasi tersebar
+// dengan versi tidak konsisten (mix v0.2.0 dan v0.3.0). Sumber satu
+// dari config.h sekarang propagate via WS.
+function injectVersion(fw){
+  if (!fw) return;
+  const major = (fw >> 16) & 0xFF;
+  const minor = (fw >> 8)  & 0xFF;
+  const patch = fw & 0xFF;
+  const v = 'v' + major + '.' + minor + '.' + patch;
+  document.querySelectorAll('.ver, .fw-version').forEach(el => {
+    el.textContent = v;
+  });
+}
+bus.on('hello', m => injectVersion(m.fw));
 
 // ─────── WebSocket client ───────
 let ws = null;
