@@ -225,7 +225,7 @@
       </div>
     </div>
     <div class="btn-row" style="margin-top:6px">
-      <button class="btn ghost" id="loadStockBtn">▼ Muat stok megapro</button>
+      <button class="btn ghost" id="loadStockBtn">▼ Muat stok preset aktif</button>
     </div>
     <p class="note">Penyimpanan slot persistent akan ada di T13 (storage/profile_store).</p>
   </section>
@@ -261,21 +261,13 @@ const REDLINE_RPM = 10500;
 const IDLE_RPM_LO = 0, IDLE_RPM_HI = 1500;
 const MAX_POINTS = 32;                              // matches config.h MAX_ADVANCE_POINTS
 
-// Immutable stock Megapro reference — must mirror exactly the
-// honda_megapro entry in src/core/engine_preset.cpp. Same 32-point
-// factory-calibrated curve that the backend's loadDefaultMegapro()
-// loads, so "Bandingkan stok" overlay matches what "Muat stok"
-// produces and what selecting the honda_megapro preset applies.
-const STOCK_MEGAPRO = Object.freeze([
-  [200,2],   [300,3],   [500,6],   [800,8],
-  [1000,9],  [1200,9],  [1500,10], [1800,12],
-  [2000,13], [2200,14], [2500,16], [2800,18],
-  [3000,19], [3300,21], [3500,22], [3800,24],
-  [4000,25], [4300,26], [4500,27], [4800,28],
-  [5000,29], [5300,30], [5500,31], [5800,31],
-  [6000,32], [6500,32], [7000,32], [7500,32],
-  [8000,32], [9000,32], [10500,31], [12000,30],
-]);
+// Stock reference comes from whichever preset is CURRENTLY active —
+// Megapro stock for Megapro, CB150R stock for CB150R, etc. Filled
+// asynchronously via WS getPresetMap and refreshed whenever the user
+// switches preset. Stays null until the first response lands.
+let stockPoints = null;
+let stockName   = '—';
+let activePresetId = null;
 
 // SVG viewport: 720 × 360 (preserveAspectRatio scales to container)
 const V = { w: 720, h: 360, padL: 40, padR: 12, padT: 14, padB: 26 };
@@ -289,7 +281,6 @@ const HIT_R = 16;     // touch hit-target radius
 
 // State
 let points = [];               // [[rpm,deg], …] sorted asc by rpm
-const stockPoints = STOCK_MEGAPRO.map(p => [...p]);  // immutable reference for compare
 let selected = -1;
 let dragging = -1;
 let dirty = false;
@@ -381,9 +372,11 @@ function renderCurve(){
     fill.setAttribute('fill', 'url(#curveFill)');
   }
 
-  // stock overlay
+  // stock overlay — uses the curve of whatever preset is currently
+  // active, so "Bandingkan stok" on a Megapro shows Megapro stock,
+  // on a CB150R shows CB150R stock, etc.
   const stock = document.getElementById('curveStock');
-  if (showCompare && stockPoints){
+  if (showCompare && stockPoints && stockPoints.length){
     stock.setAttribute('points', stockPoints.map(p => `${xOf(p[0])},${yOf(p[1])}`).join(' '));
     stock.style.display = '';
   } else {
@@ -583,7 +576,29 @@ function updateLiveCursor(rpm, deg){
 }
 
 // ─────── WS plumbing ───────
-cdi.bus.on('open', () => cdi.send({ cmd: 'getMap' }));
+cdi.bus.on('open', () => {
+  cdi.send({ cmd: 'getMap' });
+  cdi.send({ cmd: 'getPresetStatus' });   // → presets event → triggers stock fetch
+});
+
+// When preset status arrives, fetch its curve as the stock reference.
+// Also fires when user switches preset (backend sends 'preset' event).
+cdi.bus.on('preset', m => {
+  if (m.current && m.current !== activePresetId){
+    activePresetId = m.current;
+    cdi.send({ cmd: 'getPresetMap', id: m.current });
+  }
+});
+
+// Curve arrives — store as the comparison reference.
+cdi.bus.on('presetMap', m => {
+  stockPoints = m.points.map(p => [+p[0], +p[1]]);
+  stockName   = m.name || m.id || '—';
+  // update label on compare button so user knows which stock it is
+  const b = document.getElementById('cmpBtn');
+  if (b) b.textContent = '◇ Bandingkan ' + stockName;
+  if (showCompare) renderCurve();
+});
 
 cdi.bus.on('map', pts => {
   points = pts.map(p => [+p[0], +p[1]]);
@@ -633,16 +648,31 @@ document.getElementById('reloadBtn').addEventListener('click', async () => {
 });
 document.getElementById('applyBtn').addEventListener('click', applyChanges);
 document.getElementById('loadStockBtn').addEventListener('click', async () => {
+  if (!stockPoints || stockPoints.length === 0){
+    await cdi.modal.alert({
+      title: 'STOK BELUM TERSEDIA',
+      body: 'Data stok preset belum termuat. Coba refresh halaman.',
+      okLabel: 'OK'
+    });
+    return;
+  }
   if (dirty){
     const ok = await cdi.modal.confirm({
       title: 'BUANG PERUBAHAN',
       severity: 'warn',
-      body: 'Muat kurva stok akan membuang perubahan editor yang belum di-Terapkan.',
-      okLabel: '↺ Buang & muat stok',
+      body: 'Muat kurva stok ' + stockName + ' akan membuang ' +
+            'perubahan editor yang belum di-Terapkan.',
+      okLabel: '↺ Buang & muat',
     });
     if (!ok) return;
   }
-  cdi.send({ cmd: 'loadDefaultMap' });
+  // Load the active preset's stock curve into the editor as a starting
+  // point. User can then tune and click Apply to commit.
+  points = stockPoints.map(p => [...p]);
+  selected = -1;
+  markDirty();
+  renderCurve();
+  flash('stok ' + stockName + ' dimuat ke editor — klik Terapkan untuk kirim');
 });
 
 // profile slot taps
@@ -650,19 +680,28 @@ document.querySelectorAll('.slot').forEach(el => {
   el.addEventListener('click', async () => {
     const slot = +el.dataset.slot;
     if (slot === 0) return;                          // P1 = live (already active)
-    if (slot === 1){                                 // P2 = stock megapro (preview to editor)
+    if (slot === 1){                                 // P2 = stock (active preset)
+      if (!stockPoints || stockPoints.length === 0){
+        await cdi.modal.alert({
+          title: 'STOK BELUM TERSEDIA',
+          body: 'Data stok preset belum termuat.',
+          okLabel: 'OK'
+        });
+        return;
+      }
       if (dirty){
         const ok = await cdi.modal.confirm({
           title: 'BUANG PERUBAHAN',
           severity: 'warn',
-          body: 'Muat stok ke editor akan menimpa perubahan yang belum di-Terapkan.',
+          body: 'Muat stok ' + stockName + ' akan menimpa perubahan ' +
+                'yang belum di-Terapkan.',
           okLabel: '↺ Buang & muat',
         });
         if (!ok) return;
       }
-      points = STOCK_MEGAPRO.map(p => [...p]);
+      points = stockPoints.map(p => [...p]);
       selected = -1; markDirty(); renderCurve();
-      flash('stok dimuat ke editor — klik Terapkan untuk kirim');
+      flash('stok ' + stockName + ' dimuat — klik Terapkan untuk kirim');
       return;
     }
     flash('slot ' + (slot+1) + ' kosong · slot persistent akan ada di T13');

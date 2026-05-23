@@ -475,6 +475,31 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         String out; serializeJson(r, out);
         client->text(out);
     }
+    else if (!strcmp(cmd, "getPresetMap")) {
+        // Return the advance curve for any preset by id (defaults to
+        // currently-active preset if id omitted). UI editor uses this
+        // to overlay the "stock" reference curve for whichever motor
+        // the user is currently tuning — Megapro stock for Megapro,
+        // CB150R stock for CB150R, etc.
+        const char* id = doc["id"] | cdi::core::preset::currentId();
+        const auto* p = cdi::core::preset::find(id);
+        if (!p) {
+            client->text("{\"type\":\"err\",\"msg\":\"preset not found\"}");
+            return;
+        }
+        JsonDocument r;
+        r["type"]    = "presetMap";
+        r["id"]      = p->id;
+        r["name"]    = p->display;
+        JsonArray arr = r["points"].to<JsonArray>();
+        for (uint8_t i = 0; i < p->point_count; i++) {
+            JsonArray pair = arr.add<JsonArray>();
+            pair.add(p->points[i].rpm);
+            pair.add(p->points[i].deg);
+        }
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
     else if (!strcmp(cmd, "getPickup")) {
         JsonDocument r;
         r["type"]    = "pickup";
