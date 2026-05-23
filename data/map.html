@@ -126,24 +126,6 @@
     line-height: 1;
   }
   .slot:hover { border-color: var(--border-hi); color: var(--text); }
-  .slot .save-btn {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--text-dim);
-    font-size: 11px;
-    line-height: 1;
-    padding: 2px 4px;
-    cursor: pointer;
-    border-radius: 2px;
-  }
-  .slot .save-btn:hover {
-    color: var(--amber);
-    border-color: var(--amber);
-    background: rgba(255,184,77,0.08);
-  }
 
   /* json drawer */
   details.json-drawer { margin-top: 10px; }
@@ -249,22 +231,18 @@
 
   <section class="panel">
     <span class="label">[ slot profil ]</span>
-    <p class="note">Tap slot untuk muat. Tap <b>💾</b> untuk simpan editor ke slot.</p>
+    <p class="note">Tap slot untuk pilih tujuan. Tap <b>Terapkan</b> untuk simpan + kirim ke device.</p>
     <div class="slots" id="slots">
       <div class="slot" data-slot="0">
-        <button class="save-btn" data-save="0" title="Simpan ke P1">💾</button>
         <span class="n">P1</span><span class="nm">stok</span>
       </div>
       <div class="slot" data-slot="1">
-        <button class="save-btn" data-save="1" title="Simpan ke P2">💾</button>
         <span class="n">P2</span><span class="nm">stok</span>
       </div>
       <div class="slot" data-slot="2">
-        <button class="save-btn" data-save="2" title="Simpan ke P3">💾</button>
         <span class="n">P3</span><span class="nm">stok</span>
       </div>
       <div class="slot" data-slot="3">
-        <button class="save-btn" data-save="3" title="Simpan ke P4">💾</button>
         <span class="n">P4</span><span class="nm">stok</span>
       </div>
     </div>
@@ -604,9 +582,52 @@ function adjustSelected(dRpm, dDeg){
   markDirty(); renderCurve();
 }
 
-function applyChanges(){
+async function applyChanges(){
+  // If a slot is active, name + save it to that slot before sending.
+  // If no slot is active, just send to device without saving anywhere.
+  if (activeProfile && activeProfile.type === 'slot'){
+    const i = activeProfile.idx;
+    const existing = slots[i];
+    const defaultName = existing ? existing.name :
+                        ('P' + (i+1) + ' ' +
+                         new Date().toLocaleDateString('id-ID', {
+                           day: '2-digit', month: 'short'
+                         }));
+    const name = await cdi.modal.prompt({
+      title: existing ? 'TERAPKAN & GANTI P' + (i+1) : 'TERAPKAN & SIMPAN P' + (i+1),
+      severity: 'info',
+      body: existing
+        ? 'Slot P' + (i+1) + ' saat ini: "' + existing.name + '"\n' +
+          'Akan diganti dengan kurva editor (' + points.length + ' titik) ' +
+          'dan dikirim ke device.\n\nBeri nama profile:'
+        : 'Simpan kurva editor (' + points.length + ' titik) ke slot P' +
+          (i+1) + ' dan kirim ke device.\n\nBeri nama profile:',
+      placeholder: 'mis: pertamax warming up',
+      defaultValue: defaultName,
+      okLabel: '✓ Simpan & Kirim',
+    });
+    if (name === null){
+      document.getElementById('mapStatus').textContent = '› dibatalkan';
+      return;
+    }
+    const cleaned = String(name).trim().slice(0, 32);
+    if (!cleaned){
+      document.getElementById('mapStatus').textContent = '› nama kosong, batal';
+      return;
+    }
+    slots[i] = {
+      name: cleaned,
+      points: points.map(p => [...p]),
+      savedAt: Date.now(),
+    };
+    saveSlots();
+    setActiveProfile({ type: 'slot', idx: i, name: cleaned });
+    document.getElementById('mapStatus').textContent =
+      '› simpan P' + (i+1) + ' "' + cleaned + '" + kirim…';
+  } else {
+    document.getElementById('mapStatus').textContent = '› mengirim ke device…';
+  }
   cdi.send({ cmd: 'setMap', points: points });
-  document.getElementById('mapStatus').textContent = '› mengirim…';
 }
 
 function flash(msg){
@@ -844,10 +865,10 @@ function refreshSlotLabels(){
   });
 }
 
-// LOAD action — tap the slot body (excluding the save button)
+// LOAD action — tap slot to load its content + mark as active
+// destination. Apply button will then prompt for name and save here.
 document.querySelectorAll('.slot').forEach(el => {
-  el.addEventListener('click', async (e) => {
-    if (e.target.closest('.save-btn')) return;     // handled separately
+  el.addEventListener('click', async () => {
     const i = +el.dataset.slot;
     const slot = slots[i];
 
@@ -898,57 +919,8 @@ document.querySelectorAll('.slot').forEach(el => {
   });
 });
 
-// SAVE action — tap the 💾 button on a slot
-document.querySelectorAll('.save-btn').forEach(btn => {
-  btn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const i = +btn.dataset.save;
-    if (points.length < 2){
-      await cdi.modal.alert({
-        title: 'EDITOR KOSONG',
-        severity: 'warn',
-        body: 'Tidak ada kurva di editor untuk disimpan.',
-        okLabel: 'OK',
-      });
-      return;
-    }
-    const existing = slots[i];
-    const defaultName = existing ? existing.name :
-                        ('P' + (i+1) + ' ' +
-                         new Date().toLocaleDateString('id-ID', {
-                           day: '2-digit', month: 'short'
-                         }));
-    const name = await cdi.modal.prompt({
-      title: existing ? 'GANTI SLOT P' + (i+1) : 'SIMPAN KE P' + (i+1),
-      severity: 'info',
-      body: existing
-        ? 'Slot P' + (i+1) + ' saat ini: "' + existing.name + '"\n' +
-          'Akan diganti dengan kurva editor (' + points.length + ' titik).\n\n' +
-          'Beri nama profile baru:'
-        : 'Simpan kurva editor (' + points.length + ' titik) ke slot P' +
-          (i+1) + '.\n\nBeri nama profile:',
-      placeholder: 'mis: pertamax warming up',
-      defaultValue: defaultName,
-      okLabel: existing ? '↻ Ganti & simpan' : '✓ Simpan',
-    });
-    if (name === null) return;            // cancelled
-    const cleaned = String(name).trim().slice(0, 32);
-    if (!cleaned){
-      flash('nama kosong, batal');
-      return;
-    }
-    slots[i] = {
-      name: cleaned,
-      points: points.map(p => [...p]),
-      savedAt: Date.now(),
-    };
-    saveSlots();
-    // After saving, this slot becomes the active editing context.
-    // User just told us "this is what I want to keep working on".
-    setActiveProfile({ type: 'slot', idx: i, name: cleaned });
-    flash('disimpan ke P' + (i+1) + ' sebagai "' + cleaned + '"');
-  });
-});
+// Save action removed — now folded into Apply. User taps a slot to
+// pick destination, then Apply triggers naming + save + send.
 
 // Init: load slots from localStorage, update labels + HUD
 loadSlots();
