@@ -45,8 +45,14 @@ void onPulseCh1(cdi::micros_t ts) {
         // computes a delay based on the previous RPM regime, and
         // primes the spark ISR with a wrong-angle fire on the
         // second post-restart pulse.
+        // Also clear s_raw / s_smooth so snapshot() can't keep
+        // reporting a pre-stall RPM after the engine has actually
+        // stopped — otherwise datalog & UI freeze at the last seen
+        // value until tick()'s longer timeout fires.
         s_lastCh1    = ts;
         s_lastPeriod = 0;
+        s_raw        = 0;
+        s_smooth     = 0;
         return;
     }
     s_lastCh1 = ts;
@@ -65,9 +71,28 @@ void tick(cdi::micros_t now_us) {
     if (s_lastCh1 == 0) return;
     // 32-bit modular diff — see comment in onPulseCh1.
     const uint32_t gap = (uint32_t)now_us - (uint32_t)s_lastCh1;
+
+    // ── Two SEPARATE staleness horizons ──
+    //
+    // 1. DISPLAY (s_raw / s_smooth): zero quickly (NO_SIGNAL_TIMEOUT_MS,
+    //    500 ms) so datalog & UI don't freeze on a pre-stall value
+    //    after the engine actually stops. This is purely cosmetic /
+    //    telemetry — nothing in the spark hot-path reads these.
+    //
+    // 2. SPARK TIMING (s_lastPeriod): keep the ORIGINAL long horizon
+    //    (MAX_PERIOD_US * 2 ≈ 4 s). s_lastPeriod gates live_stats'
+    //    delay priming (live_stats.cpp: `if (periodU > 0)`). Kick-start
+    //    CH1 periods legitimately swing 72 ms → 1.8 s between falls
+    //    (see spark_scheduler.cpp), so zeroing this at 500 ms gates
+    //    spark priming mid-crank and the engine won't catch. Only a
+    //    genuine multi-second stall should clear it.
+    constexpr uint32_t DISPLAY_STALE_US =
+        (uint32_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000UL;   // 500 ms
+    if (gap > DISPLAY_STALE_US) {
+        s_raw    = 0;
+        s_smooth = 0;
+    }
     if (gap > (uint32_t)(MAX_PERIOD_US * 2)) {
-        s_raw        = 0;
-        s_smooth     = 0;
         s_lastPeriod = 0;   // gates live_stats delay computation
     }
 }

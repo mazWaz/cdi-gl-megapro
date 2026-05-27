@@ -23,6 +23,11 @@ constexpr float REV_LIMIT_RETARD_DEG = 10.0f;
 
 namespace cdi::telemetry {
 
+// Last actual fired angle (°×10), recomputed every tick when a valid
+// period exists. Read by snapshot()/datalog for diagnostic logging.
+// Single 16-bit value — atomic on Xtensa, no lock needed.
+static volatile cdi::deg_x10_t s_actualAdvX10 = 0;
+
 void tick() {
     PulserEvent ev;
     while (cdi::core::pulser::tryPop(ev)) {
@@ -178,13 +183,19 @@ void tick() {
         // second so a USB-connected user can verify the firmware is
         // actually firing where the map says it should. Disable in
         // release by setting CORE_DEBUG_LEVEL=0 in platformio.ini.
+        // Actual spark angle that will land = max_ref - (sched_delay+effective_dwell)/period × 360
+        // Recompute EVERY tick so datalog captures the real fired angle
+        // per sample (not just the 1 Hz serial print). Diverges from
+        // target when dwell is capped or advance is near max_ref.
+        const float fired_angle = cdi::core::pickup::maxAdvanceRef() -
+            ((float)(scheduler_delay_us + dwell_us) / (float)periodU) * 360.0f;
+        s_actualAdvX10 = (cdi::deg_x10_t)(fired_angle * 10.0f +
+                                          (fired_angle >= 0 ? 0.5f : -0.5f));
+
         static uint32_t s_lastDiagMs = 0;
         const uint32_t now_ms = millis();
         if (now_ms - s_lastDiagMs >= 1000) {
             s_lastDiagMs = now_ms;
-            // Actual spark angle that will land = max_ref - (sched_delay+effective_dwell)/period × 360
-            const float fired_angle = cdi::core::pickup::maxAdvanceRef() -
-                ((float)(scheduler_delay_us + dwell_us) / (float)periodU) * 360.0f;
             Serial.printf("[ign] rpm=%u target=%.1f° actual=%.1f° dwell=%uµs(cfg=%u)\n",
                           (unsigned)r_inst, adv, fired_angle,
                           (unsigned)dwell_us, (unsigned)configured_dwell);
@@ -205,6 +216,11 @@ void tick() {
             uint16_t composed = (curve_dwell < dwell_us) ? curve_dwell : (uint16_t)dwell_us;
             cdi::core::spark::setEffectiveDwellUs(composed);
         }
+    } else {
+        // No valid period (engine stopped / pre-first-pulse) — clear
+        // the diagnostic angle so the log doesn't show a stale fire
+        // angle when nothing is firing.
+        s_actualAdvX10 = 0;
     }
 }
 
@@ -220,6 +236,7 @@ LiveStats snapshot() {
     if (adv < cdi::config::ADVANCE_MIN_DEG) adv = cdi::config::ADVANCE_MIN_DEG;
     if (adv > cdi::config::ADVANCE_MAX_DEG) adv = cdi::config::ADVANCE_MAX_DEG;
     s.target_advance_x10 = (cdi::deg_x10_t)(adv * 10.0f + 0.5f);
+    s.actual_advance_x10 = s_actualAdvX10;   // real fired angle (diagnostic)
     s.pulser_count   = cdi::core::pulser::totalCount();
     s.pulser_pending = cdi::core::pulser::pending();
     s.uptime_ms      = millis();

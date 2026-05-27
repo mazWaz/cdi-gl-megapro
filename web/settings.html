@@ -145,7 +145,7 @@
     </div>
     <p class="note">
       Band antara <b>utama</b> dan <b>batas maks</b> dikelola oleh mode cut yang dipilih di bawah.
-      Di atas batas maks selalu hard cut (paksa disarm 3 cycle) untuk safety.
+      Di atas batas maks selalu hard cut 100% (paksa disarm 3 cycle) untuk safety overrev — burn-through tidak berlaku di sini.
     </p>
   </section>
 
@@ -1226,10 +1226,10 @@ cdi.bus.on('cal', m => {
 // ── Cut mode UI (segmented buttons) ──
 const CUT_DESC = {
   0: 'OFF — tidak ada pembatasan di soft band (overrev hard cut tetap aktif).',
-  1: 'Soft Retard — kurangi advance° di soft band. Power drop halus, mesin tetap fire. Cocok riding harian.',
-  2: 'Hard Cut — paksa disarm di soft band. Mesin mati di limit. Strict redline.',
+  1: 'Soft Retard — kurangi advance° di soft band. Kalau RPM tetap naik > 0.4 detik, otomatis eskalasi ke Pattern Cut. Cocok riding harian.',
+  2: '⚠ Hard Cut — pulse-skip 92% spark di limit (+8% burn-through cegah backfire). Tetap berisiko pop knalpot kalau dipakai harian; saran: pakai cuma untuk launch/track. Daily → pilih Progressive.',
   3: 'Pattern Cut — fire N siklus lalu skip M siklus. Suara "memantul" khas drag race / 2-step.',
-  4: 'Progressive — probabilitas skip naik linear dari 0% (di utama) ke 95% (di batas maks). Transisi smooth.'
+  4: 'Progressive (RECOMMENDED) — skip ramps 0→95% dalam 300 RPM di atas limit. Nempel ketat MotoGP-style, halus, backfire minim.'
 };
 let cutModeValue = 1;
 function setCutMode(mode){

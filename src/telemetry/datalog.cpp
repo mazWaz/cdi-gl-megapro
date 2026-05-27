@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "telemetry/live_stats.h"
+#include "core/spark_scheduler.h"
 
 namespace cdi::telemetry::datalog {
 namespace {
@@ -15,8 +16,13 @@ struct Entry {
     uint16_t vbat_mv;
     uint8_t  flags;          // bit0 armed, bit1 launch_active, bit2 qs, bit3 backfire
     uint8_t  state_byte;     // (cut_mode << 4) | (alvp_state & 0x0F)
+    // ── Diagnostic block (cranking / no-catch analysis) ──
+    uint16_t fires;          // low 16 bits of cumulative fire_count
+    uint16_t pulses;         // low 16 bits of cumulative pulser_count (CH1)
+    int16_t  actual_x10;     // angle spark ACTUALLY fired at (°×10)
+    uint16_t eff_dwell_us;   // effective dwell after all caps
 } __attribute__((packed));
-static_assert(sizeof(Entry) == 14, "Entry layout drift");
+static_assert(sizeof(Entry) == 22, "Entry layout drift");
 
 constexpr size_t CAP = 1500;  // 30s @ 50Hz
 Entry    s_ring[CAP];
@@ -77,6 +83,10 @@ void tick() {
                   | ((t.flags2 & 0x20) ? 0x04 : 0)   // qs_active
                   | ((t.flags3 & 0x02) ? 0x08 : 0);  // backfire_active
     e.state_byte  = (uint8_t)((t.cut_mode & 0x0F) << 4) | (t.alvp_state & 0x0F);
+    e.fires        = (uint16_t)(t.fire_count   & 0xFFFF);
+    e.pulses       = (uint16_t)(t.pulser_count & 0xFFFF);
+    e.actual_x10   = t.actual_advance_x10;
+    e.eff_dwell_us = (uint16_t)cdi::core::spark::effectiveDwellUs();
 
     s_head = (s_head + 1) % CAP;
     if (s_count < CAP) s_count++;
@@ -85,14 +95,15 @@ void tick() {
 bool fillCsv(String& out) {
     if (s_count == 0) return false;
     out = "";
-    out.reserve((size_t)s_count * 60);
-    out += "ts_ms,rpm,advance_deg,jitter_us,vbat_mv,armed,launch,qs,backfire,cut_mode,alvp_state\n";
+    out.reserve((size_t)s_count * 96);
+    out += "ts_ms,rpm,advance_deg,jitter_us,vbat_mv,armed,launch,qs,backfire,cut_mode,alvp_state,"
+           "fires,pulses,actual_deg,eff_dwell_us\n";
 
     size_t oldest = (s_head + CAP - s_count) % CAP;
     for (size_t i = 0; i < s_count; i++) {
         const Entry& e = s_ring[(oldest + i) % CAP];
-        char line[80];
-        snprintf(line, sizeof(line), "%u,%u,%.1f,%d,%u,%d,%d,%d,%d,%u,%u\n",
+        char line[128];
+        snprintf(line, sizeof(line), "%u,%u,%.1f,%d,%u,%d,%d,%d,%d,%u,%u,%u,%u,%.1f,%u\n",
                  (unsigned)e.ts_ms,
                  (unsigned)e.rpm,
                  (float)e.advance_x10 / 10.0f,
@@ -103,7 +114,11 @@ bool fillCsv(String& out) {
                  (e.flags & 0x04) ? 1 : 0,
                  (e.flags & 0x08) ? 1 : 0,
                  (unsigned)((e.state_byte >> 4) & 0x0F),
-                 (unsigned)(e.state_byte & 0x0F));
+                 (unsigned)(e.state_byte & 0x0F),
+                 (unsigned)e.fires,
+                 (unsigned)e.pulses,
+                 (float)e.actual_x10 / 10.0f,
+                 (unsigned)e.eff_dwell_us);
         out += line;
     }
     return true;

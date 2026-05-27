@@ -17,6 +17,10 @@ struct LiveStats {
     cdi::rpm_t     rpm;                 // smoothed
     cdi::rpm_t     rpm_raw;
     cdi::deg_x10_t target_advance_x10;  // 0.1° units, from advance map lookup
+    cdi::deg_x10_t actual_advance_x10;  // 0.1° units — angle the spark ACTUALLY
+                                        // fires at (from scheduled delay + dwell).
+                                        // Diverges from target when dwell-capped
+                                        // or near max_advance_ref. Diagnostic.
     uint32_t       pulser_count;
     uint32_t       pulser_pending;
     uint32_t       uptime_ms;

@@ -62,6 +62,27 @@ volatile uint8_t      s_progressivePct  = 0;   // skip probability 0-100
 volatile uint32_t     s_patternCounter = 0;
 volatile uint32_t     s_lcgState       = 0xDEADBEEF;
 
+// SOFT_RETARD hybrid-escalation state.
+// SOFT_RETARD by itself (a 10° retard, all sparks still fire) does
+// not arrest RPM on a carbureted engine under sustained throttle —
+// power only drops ~5-10 %, not enough to overcome inertia + airflow.
+// To preserve the smooth feel of SOFT_RETARD at first touch while
+// still guaranteeing arrest, we escalate to PATTERN_CUT (which DOES
+// skip sparks) if either:
+//   (a) RPM keeps climbing > 100 rpm above entry-into-limit, or
+//   (b) we've been stuck in the limiter for > SOFT_ESCALATE_MS.
+// Reset on exit from rev-limit so the next over-rev event starts
+// over from soft.
+// Tightened for MotoGP-style crisp engagement: 400 ms / +50 rpm.
+// Old 1500 ms / +100 rpm gave the engine over a second to climb
+// past the limit before pattern-cut took over — audible as a soft
+// "swell" past the stated limit instead of a hard "fffft".
+constexpr uint32_t SOFT_ESCALATE_MS         = 400;
+constexpr uint16_t SOFT_ESCALATE_RPM_RISE   = 50;
+volatile uint32_t  s_softEntryMs   = 0;     // 0 = not in soft window
+volatile cdi::rpm_t s_softEntryRpm = 0;
+volatile bool      s_softEscalated = false;
+
 } // anonymous
 
 void begin() {
@@ -142,6 +163,24 @@ void tick() {
         }
     }
 
+    // Smoothed RPM — confirmation gate for the MAIN rev-limit band.
+    //
+    // A single noisy CH1 period during the start-up catch (EMI from the
+    // first combustion event, a short/double-triggered pulse) makes the
+    // INSTANTANEOUS rpm momentarily read several thousand — we measured
+    // ~11000 phantom rpm on a real KLX crank where the true speed was
+    // <1600. With a LOW main limit (e.g. 6000) that phantom trips the
+    // limiter and cuts spark exactly when the engine is trying to fire,
+    // so the bike won't start — yet a high limit (11000) starts fine
+    // because the phantom stays under it. The EMA-smoothed rpm cannot
+    // physically reach a multi-thousand limit while cranking, so we
+    // require it to ALSO confirm before engaging the main band.
+    //
+    // Overrev protection (below) deliberately keeps using instantaneous
+    // for fast response — that's the engine-protection limit, and its
+    // 3-sample confirm already rejects lone spikes before disarming.
+    const cdi::rpm_t rpm_smooth = cdi::core::rpm::current();
+
     // ─── Absolute RPM ceiling (catches multi-tooth pickup, noise) ───
     // Bypass all configurable limits — this is a "something is broken"
     // condition, not a "rider asked for high revs" one.
@@ -190,20 +229,46 @@ void tick() {
         s_activeCutMode = cdi::CutMode::HARD_CUT;
         s_activeRetardDeg = 0.0f;
         s_progressivePct  = 100;
-    } else if (rpm > effective_main) {
+    } else if (rpm > effective_main && rpm_smooth > effective_main) {
         s_overrevHits = 0;
         if (!s_revLimited) {
-            Serial.printf("[safety] %s @ %u rpm · mode=%d\n",
+            Serial.printf("[safety] %s @ %u rpm (smooth %u) · mode=%d\n",
                           launch_active ? "launch-cut" : "rev-limit",
-                          (unsigned)rpm, (int)effective_mode);
+                          (unsigned)rpm, (unsigned)rpm_smooth, (int)effective_mode);
         }
         s_revLimited = true;
         s_activeCutMode = effective_mode;
         switch (effective_mode) {
-            case cdi::CutMode::SOFT_RETARD:
-                s_activeRetardDeg = s_mainRetardDeg;
-                s_progressivePct  = 0;
+            case cdi::CutMode::SOFT_RETARD: {
+                // First entry into the soft-retard window — latch
+                // the start time + RPM so we can detect "still
+                // climbing" or "stuck too long" on later ticks.
+                if (s_softEntryMs == 0) {
+                    s_softEntryMs   = now_ms;
+                    s_softEntryRpm  = rpm;
+                    s_softEscalated = false;
+                }
+                const bool still_climbing =
+                    rpm > (cdi::rpm_t)(s_softEntryRpm + SOFT_ESCALATE_RPM_RISE);
+                const bool too_long =
+                    (now_ms - s_softEntryMs) > SOFT_ESCALATE_MS;
+                if (still_climbing || too_long) {
+                    if (!s_softEscalated) {
+                        s_softEscalated = true;
+                        Serial.printf("[safety] SOFT_RETARD escalated → PATTERN_CUT "
+                                      "(%s, rpm=%u, entry=%u)\n",
+                                      still_climbing ? "climbing" : "timeout",
+                                      (unsigned)rpm, (unsigned)s_softEntryRpm);
+                    }
+                    s_activeCutMode   = cdi::CutMode::PATTERN_CUT;
+                    s_activeRetardDeg = 0.0f;
+                    s_progressivePct  = 0;
+                } else {
+                    s_activeRetardDeg = s_mainRetardDeg;
+                    s_progressivePct  = 0;
+                }
                 break;
+            }
             case cdi::CutMode::HARD_CUT:
                 // PULSE-cut (shouldFire returns false) — do NOT
                 // setArmed(false). For 2-step launch the rider holds
@@ -220,8 +285,19 @@ void tick() {
                 s_progressivePct  = 0;
                 break;
             case cdi::CutMode::SPARK_PROGRESSIVE: {
-                // skip pct ramps linearly across [main, overrev] band
+                // MotoGP-style tight ramp: cap the ramp band at
+                // MAX_PROGRESSIVE_BAND rpm so the limiter "nails"
+                // the main limit even when overrev is far away.
+                //
+                // Before this cap: with main=6000 / overrev=11500 the
+                // 5500-rpm band gave only 1.8 % skip at 100 rpm over —
+                // engine could climb 2000-3000 rpm before cut bit.
+                // With the cap: 0 % at main, ~95 % within 300 rpm of
+                // main, then HARD_CUT above. Audible as a flat
+                // "fffft" at exactly the stated limit.
+                constexpr uint32_t MAX_PROGRESSIVE_BAND = 300;
                 uint32_t band = s_overrevLimit - effective_main;
+                if (band > MAX_PROGRESSIVE_BAND) band = MAX_PROGRESSIVE_BAND;
                 if (band == 0) band = 1;
                 uint32_t excess = rpm - effective_main;
                 uint32_t pct = (excess * 100) / band;
@@ -237,13 +313,23 @@ void tick() {
         }
     } else {
         s_overrevHits = 0;
-        if (s_revLimited && rpm < effective_main - 200) {
+        // MotoGP-style crisp release: drop from 200 rpm to 75 rpm
+        // so the limiter bounces tight against main instead of
+        // releasing into a wide hysteresis valley. Combined with
+        // the 300-rpm progressive band, this produces the rapid
+        // engage/release cadence riders hear as a hard rev-limit.
+        constexpr uint16_t REV_RELEASE_HYSTERESIS = 75;
+        if (s_revLimited && rpm < effective_main - REV_RELEASE_HYSTERESIS) {
             Serial.println("[safety] rev-limit released");
         }
-        if (rpm < effective_main - 200) s_revLimited = false;
+        if (rpm < effective_main - REV_RELEASE_HYSTERESIS) s_revLimited = false;
         s_activeCutMode   = cdi::CutMode::OFF;
         s_activeRetardDeg = 0.0f;
         s_progressivePct  = 0;
+        // Out of rev-limit window — clear soft-retard escalation
+        // memory so the next over-rev event starts fresh in SOFT.
+        s_softEntryMs   = 0;
+        s_softEscalated = false;
     }
 }
 
@@ -306,7 +392,33 @@ bool IRAM_ATTR shouldFire() {
 
     cdi::CutMode m = s_activeCutMode;
     if (m == cdi::CutMode::OFF || m == cdi::CutMode::SOFT_RETARD) return true;
-    if (m == cdi::CutMode::HARD_CUT) return false;
+    if (m == cdi::CutMode::HARD_CUT) {
+        // HARD_CUT burn-through floor.
+        //
+        // On a carbureted engine, 100 %-skip HARD_CUT lets raw fuel
+        // accumulate in the exhaust manifold every cycle — when spark
+        // resumes, the residual ignites in the header pipe ("POP!").
+        // Sustained limiter use on the street can crack header welds
+        // and is loud enough to spook other riders.
+        //
+        // For the safety-critical paths (genuine over-rev fault, or
+        // explicit launch-control plateau) the rider expects a TRUE
+        // 100 % kill — those bypass the floor. For the daily main
+        // rev-limit case, we leak ~8 % of sparks. That's far below
+        // what could sustain acceleration (RPM still nails the limit),
+        // but enough to consume residual fuel before it builds up to
+        // backfire energy.
+        //
+        // MotoGP equivalent: factory ECUs fuel-cut instead of spark-
+        // cut. We can't (no injector control), so we simulate the
+        // "spark-fires, no fuel" outcome by inverting it: most-sparks-
+        // skipped, fuel still arrives.
+        if (s_overRevCut || cdi::core::launch::isActive()) return false;
+        constexpr uint32_t HARD_CUT_BURN_PCT = 8;
+        uint32_t s = s_lcgState * 1664525U + 1013904223U;
+        s_lcgState = s;
+        return ((s >> 16) % 100) < HARD_CUT_BURN_PCT;
+    }
     if (m == cdi::CutMode::PATTERN_CUT) {
         uint32_t c = s_patternCounter++;
         uint32_t period = (uint32_t)s_patternFireN + (uint32_t)s_patternSkipN;

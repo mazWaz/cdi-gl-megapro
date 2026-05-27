@@ -59,7 +59,10 @@ State computeState(float vbat) {
 } // anonymous
 
 void begin() {
-    adc1_config_channel_atten(cdi::pins::VBAT_SENSE_ADC, ADC_ATTEN_DB_12);
+    // ADC_ATTEN_DB_12 is the newer alias (IDF ≥ 5.x). Use DB_11 for
+    // compatibility with the Arduino-ESP32 2.0.x toolchain shipped via
+    // PlatformIO. Both map to the same ~3.6 V full-scale on ESP32.
+    adc1_config_channel_atten(cdi::pins::VBAT_SENSE_ADC, ADC_ATTEN_DB_11);
     // Pre-fill window with one read to avoid spurious low at boot.
     uint16_t r0 = (uint16_t)adc1_get_raw(cdi::pins::VBAT_SENSE_ADC);
     for (size_t i = 0; i < WIN; i++) s_buf[i] = r0;

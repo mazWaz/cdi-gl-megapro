@@ -337,8 +337,15 @@ bool apply(const char* id) {
     // Reset advance offset (clean start)
     cdi::core::spark::setAdvanceOffsetDeg(0.0f);
 
-    // Reset cut mode to safe default (soft retard 10°)
-    cdi::core::safety::setMainCutMode(cdi::CutMode::SOFT_RETARD);
+    // Default cut mode: SPARK_PROGRESSIVE.
+    // Reason: SOFT_RETARD alone (10° pull, all sparks still fire) does
+    // not arrest RPM on a carbureted engine — power only drops a few
+    // percent. SPARK_PROGRESSIVE skips sparks with a probability that
+    // ramps 0 → 95 % across the [main, overrev] band, giving smooth
+    // street feel + guaranteed arrest. SOFT_RETARD remains selectable
+    // via UI; when chosen it now escalates to PATTERN_CUT on its own
+    // if it fails to hold RPM (see safety::tick).
+    cdi::core::safety::setMainCutMode(cdi::CutMode::SPARK_PROGRESSIVE);
     cdi::core::safety::setMainRetardDeg(10.0f);
 
     strncpy(s_currentId, id, sizeof(s_currentId) - 1);
