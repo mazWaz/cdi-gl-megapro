@@ -89,7 +89,24 @@ void begin() {
     // Register the loop task with the task WDT.
     // (esp-idf v4 / arduino-esp32 v2.x signature)
     esp_task_wdt_init(cdi::config::TASK_WDT_TIMEOUT_S, true);
-    esp_task_wdt_add(NULL);
+    esp_task_wdt_add(NULL);   // monitor the loop task (firmware liveness)
+
+    // Stop the Task WDT from monitoring the FreeRTOS IDLE tasks.
+    //
+    // By default (Arduino sdkconfig CHECK_IDLE_TASK) the WDT also
+    // watches IDLE0/IDLE1. But bursty WiFi/lwIP/AsyncTCP activity on
+    // core 0 (captive-portal DNS polling, client traffic) can keep the
+    // core-0 network tasks busy long enough to starve IDLE0 — which
+    // tripped the WDT and rebooted the board in a tight loop (backtrace:
+    // prvIdleTask / esp_vApplicationIdleHook, abort on core 0), even
+    // though the engine loop itself was perfectly healthy. Rebooting the
+    // ignition for a transient network-stack hiccup is the wrong trade.
+    // We keep the loop-task WDT — the only liveness signal that actually
+    // matters for spark safety — and stop watching idle.
+    TaskHandle_t idle0 = xTaskGetIdleTaskHandleForCPU(0);
+    TaskHandle_t idle1 = xTaskGetIdleTaskHandleForCPU(1);
+    if (idle0) esp_task_wdt_delete(idle0);
+    if (idle1) esp_task_wdt_delete(idle1);
     Serial.printf("[safety] task_wdt %u s · main_limit %u · overrev %u\n",
                   (unsigned)cdi::config::TASK_WDT_TIMEOUT_S,
                   (unsigned)s_mainLimit, (unsigned)s_overrevLimit);
@@ -219,18 +236,34 @@ void tick() {
     }
 
     if (rpm > s_overrevLimit) {
-        s_overrevHits++;
-        if (s_overrevHits >= OVERREV_CONFIRM && cdi::core::spark::isArmed()) {
-            cdi::core::spark::setArmed(false);
-            s_overRevCut = true;
-            s_revLimited = true;
-            Serial.printf("[safety] OVER-REV %u rpm → hard cut\n", (unsigned)rpm);
+        // Hard ceiling — 100 % spark cut to arrest RPM, but
+        // SELF-RECOVERING (pulse-cut, NOT a sticky disarm). The engine
+        // bounces off the limiter like a real rev-limiter / MotoGP hard
+        // cut and resumes the instant RPM drops back under the ceiling —
+        // no WiFi re-arm needed.
+        //
+        // Why not disarm: a sticky disarm here stalls a running engine
+        // mid-ride (dangerous in a corner / intersection) and forces a
+        // manual re-arm. Hitting overrev is a transient event (aggressive
+        // throttle, downshift, a phantom RPM blip) — not a reason to kill
+        // ignition. Permanent disarm is reserved for genuine faults only:
+        // the absolute RPM ceiling (mechanically-impossible runaway) and
+        // the no-signal failsafe (engine ran, then pickup went silent).
+        // Pulse-cut keeps the coil de-energized above the ceiling, so it
+        // is just as safe as a disarm but recovers automatically.
+        s_overrevHits++;   // kept for telemetry/diagnostics
+        s_overRevCut = true;
+        s_revLimited = true;
+        if (s_overrevHits == OVERREV_CONFIRM) {
+            Serial.printf("[safety] OVER-REV %u rpm → hard cut (self-recovering)\n",
+                          (unsigned)rpm);
         }
         s_activeCutMode = cdi::CutMode::HARD_CUT;
         s_activeRetardDeg = 0.0f;
         s_progressivePct  = 100;
     } else if (rpm > effective_main && rpm_smooth > effective_main) {
         s_overrevHits = 0;
+        s_overRevCut  = false;   // below overrev — clear transient flag
         if (!s_revLimited) {
             Serial.printf("[safety] %s @ %u rpm (smooth %u) · mode=%d\n",
                           launch_active ? "launch-cut" : "rev-limit",
@@ -313,6 +346,7 @@ void tick() {
         }
     } else {
         s_overrevHits = 0;
+        s_overRevCut  = false;   // below limits — clear transient flag
         // MotoGP-style crisp release: drop from 200 rpm to 75 rpm
         // so the limiter bounces tight against main instead of
         // releasing into a wide hysteresis valley. Combined with

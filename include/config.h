@@ -9,8 +9,8 @@ namespace cdi::config {
 
 // ---------- Firmware identity ----------
 constexpr uint32_t FW_VERSION_MAJOR = 0;
-constexpr uint32_t FW_VERSION_MINOR = 4;
-constexpr uint32_t FW_VERSION_PATCH = 0;
+constexpr uint32_t FW_VERSION_MINOR = 5;
+constexpr uint32_t FW_VERSION_PATCH = 5;
 constexpr uint32_t FW_VERSION       = (FW_VERSION_MAJOR << 16) |
                                       (FW_VERSION_MINOR << 8)  |
                                       (FW_VERSION_PATCH);
@@ -59,12 +59,20 @@ constexpr float    ADVANCE_MAX_DEG = 45.0f;
 // ---------- Safety ----------
 constexpr uint32_t NO_SIGNAL_TIMEOUT_MS  = 500;   // pulser silent → disarm
 constexpr uint32_t SAFETY_TICK_INTERVAL_MS = 100;
-// Tightened from 5 s to 2 s: if firmware crashes mid-dwell (GPIO
-// stuck HIGH = primary coil energized continuously), 5 s of full
-// primary current would noticeably heat the coil. 2 s is still long
-// enough for legitimate loop work (heavy NVS / LittleFS ops run on
-// core 0 anyway), short enough that coil thermal damage is minimal.
-constexpr uint32_t TASK_WDT_TIMEOUT_S    = 2;
+// Loop-task watchdog. Set to 5 s (was briefly 2 s).
+//
+// The 2 s value rebooted the board whenever the loop blocked on the
+// WiFi/WebSocket stack for >2 s — which happens under marginal power
+// (bench USB) or a stalled WiFi client, where AsyncTCP/lwip back-
+// pressures a synchronous send. That produced a boot loop on the bench
+// even though the engine was perfectly fine.
+//
+// Coil-thermal safety does NOT depend on this short timeout: the spark
+// fire-OFF is driven by a dedicated hardware-timer ISR (spark_scheduler),
+// which de-energizes the coil independently of the loop. A stalled loop
+// therefore cannot strand the primary HIGH. 5 s still catches a genuine
+// firmware hang while tolerating transient network stalls.
+constexpr uint32_t TASK_WDT_TIMEOUT_S    = 5;
 
 // Absolute RPM ceiling — above this we assume something is broken
 // (multi-tooth pickup mistakenly connected, electrical noise on

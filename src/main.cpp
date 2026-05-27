@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <esp_system.h>
+#include <esp_ota_ops.h>
+#include <esp_task_wdt.h>
 
 #include "config.h"
 #include "pinmap.h"
@@ -42,9 +44,11 @@ static uint32_t s_lastScopeFrameMs = 0;
 static uint32_t s_lastTelemetryMs  = 0;
 static uint32_t s_lastSafetyMs     = 0;
 static uint32_t s_lastFlameMs      = 0;
+static uint32_t s_lastWsCleanupMs  = 0;
 
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 200;   // 5 fps
 constexpr uint32_t FLAME_INTERVAL_MS     = 500;   // 2 fps flame state push
+constexpr uint32_t WS_CLEANUP_INTERVAL_MS = 250;  // prune dead WS clients ~4x/s
 
 // Human-readable reset cause for the boot banner.
 const char* resetReasonStr(esp_reset_reason_t r) {
@@ -97,11 +101,40 @@ void setup() {
         Serial.println("[CDI] ⚠ previous boot crashed — investigate before riding");
     }
 
+    // ── OTA partition diagnostics + rollback confirmation ──
+    // Logs WHICH app slot is actually running (ota_0/ota_1) so a future
+    // "OTA succeeded but version didn't change" can be diagnosed: if the
+    // running label never flips after an OTA, the bootloader isn't
+    // honoring the new boot partition (stale otadata / partition-table
+    // mismatch from an incomplete initial flash → needs a USB reflash).
+    //
+    // mark_app_valid_cancel_rollback(): if the IDF rollback feature is
+    // active, a freshly-OTA'd image boots in PENDING_VERIFY and the
+    // bootloader reverts to the previous app on the next reset unless the
+    // app confirms itself. Calling this guarantees an OTA'd build sticks.
+    // No-op if rollback isn't enabled, so it's always safe.
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    if (running) {
+        Serial.printf("[CDI] running app partition: %s @ 0x%06x\n",
+                      running->label, (unsigned)running->address);
+    }
+    esp_ota_mark_app_valid_cancel_rollback();
+
     pinMode(pin::STATUS_LED, OUTPUT);
     digitalWrite(pin::STATUS_LED, LOW);
 
-    if (!LittleFS.begin(false)) {
-        Serial.println("[fs] LittleFS mount failed — UI assets will 404");
+    // Auto-format on mount failure (was begin(false) — no auto-format).
+    // On a device whose LittleFS partition was never initialized (fs
+    // image never flashed via `uploadfs`), begin(false) fails forever
+    // and scope snapshots can never persist. begin(true) formats the
+    // empty partition on first boot so the filesystem self-heals
+    // without needing a USB `uploadfs`. UI assets are served from
+    // PROGMEM (ui_pages.h), not LittleFS, so the format only affects
+    // scope-snapshot storage.
+    if (!LittleFS.begin(true)) {
+        Serial.println("[fs] LittleFS mount+format failed — scope snapshots disabled");
+    } else {
+        Serial.println("[fs] LittleFS mounted");
     }
     cdi::scope::snapshot::begin();
 
@@ -146,6 +179,16 @@ void setup() {
 }
 
 void loop() {
+    // Feed the task WDT at the TOP of every iteration. Previously the
+    // only feed was inside safety::tick() (gated to 100 ms), so if any
+    // single WiFi/WebSocket call in this loop blocked > TASK_WDT_TIMEOUT
+    // (captive-portal DNS flood, AsyncTCP client-mutex contention in
+    // ws cleanup), safety::tick was never reached and the WDT rebooted
+    // the board — observed as a boot loop with a backtrace in
+    // wifi_ap::poll / AsyncWebSocket::cleanupClients. Feeding here gives
+    // each iteration a fresh full budget regardless of the 100 ms gate.
+    esp_task_wdt_reset();
+
     cdi::net::wifi_ap::poll();
     cdi::telemetry::tick();             // drain pulser events → update RPM
 
@@ -177,5 +220,25 @@ void loop() {
     cdi::core::pickup_cal::tick();             // auto-cal (drains scope ring when active)
     cdi::storage::config::tick();              // debounced auto-save
 
-    cdi::net::ws_server::cleanup();
+    // Throttle WS client cleanup to ~250 ms instead of every iteration.
+    // cleanupClients() grabs the AsyncWebSocket client mutex, which the
+    // AsyncTCP task also holds while servicing connections; hammering it
+    // every loop pass maximised mutex contention and was one of the
+    // calls seen blocking long enough to trip the task WDT under client
+    // load. 250 ms is far more often than clients actually need pruning.
+    if (now - s_lastWsCleanupMs >= WS_CLEANUP_INTERVAL_MS) {
+        s_lastWsCleanupMs = now;
+        cdi::net::ws_server::cleanup();
+    }
+
+    // Yield 1 ms so the FreeRTOS IDLE task on this core gets to run.
+    // loop() is otherwise a tight busy-spin: with no WiFi client there
+    // is no network I/O to block on, so the loop never yields, the IDLE
+    // task is starved, and — because the IDLE task is subscribed to the
+    // Task WDT — the watchdog reboots the board (observed as a boot loop
+    // whose backtrace showed prvIdleTask / esp_vApplicationIdleHook).
+    // Spark timing is driven by hardware-timer ISRs, not this loop, so a
+    // 1 ms yield does NOT affect ignition timing; RPM/telemetry still
+    // update at ~1 kHz which is far faster than any CH1 event.
+    delay(1);
 }
