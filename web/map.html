@@ -797,13 +797,16 @@ cdi.bus.on('map', pts => {
   // are kept, just not auto-selected — "ganti motor = peta ke default motor".
   if (localStorage.getItem('cdi.mapForceDevice')){
     try { localStorage.removeItem('cdi.mapForceDevice'); } catch(e){}
-    try { localStorage.removeItem('cdi.activeSlot.v1'); } catch(e){}
+    // Motor baru → muat kurva DEFAULT preset & jadikan P1 profil AKTIF.
+    // Slot kosong P1 = "stok" = default motor terpilih. Slot custom lain
+    // tetap tersimpan (tidak dihapus). setActiveProfile(slot 0) menyalakan
+    // highlight P1 + simpan activeSlot=0.
     points = pts.map(p => [+p[0], +p[1]]);
     selected = -1;
-    baselinePoints = pts.map(p => [+p[0], +p[1]]);
-    setActiveProfile({ type:'device', name:'live' });
+    baselinePoints = pts.map(p => [+p[0], +p[1]]);   // clean (= device)
+    setActiveProfile({ type:'slot', idx:0, name: slots[0] ? slots[0].name : 'stok' });
     document.getElementById('mapJson').value = JSON.stringify(points);
-    document.getElementById('mapStatus').textContent = '› peta default preset baru dimuat';
+    document.getElementById('mapStatus').textContent = '› default preset baru dimuat → P1';
     recomputeDirty();
     renderCurve();
     return;
@@ -857,14 +860,16 @@ cdi.bus.on('map', pts => {
     return;
   }
 
-  // Case 4: Fresh install / clean state → device map sebagai default
+  // Case 4: Fresh / clean state (P1 kosong) → muat kurva device (default
+  // preset) & jadikan P1 profil aktif, supaya "profil default selalu di
+  // P1 & terpilih" konsisten — bukan tampil 'live' tanpa slot.
   points = pts.map(p => [+p[0], +p[1]]);
   selected = -1;
   baselinePoints = pts.map(p => [+p[0], +p[1]]);
-  setActiveProfile({ type: 'device', name: 'live' });
+  setActiveProfile({ type:'slot', idx:0, name: slots[0] ? slots[0].name : 'stok' });
   document.getElementById('mapJson').value = JSON.stringify(points);
   document.getElementById('mapStatus').textContent =
-    '› ' + points.length + ' titik dimuat dari device';
+    '› default (' + points.length + ' titik) → P1';
   recomputeDirty();
   renderCurve();
 });
