@@ -86,8 +86,11 @@ Pending s_pending = {};
 void finalizePending(uint32_t next_period_us) {
     if (!s_pending.valid) return;
 
-    // Multi-tooth check
+    // Multi-tooth check — incompatible toothed-wheel pickup. THE genuine
+    // safety case: the firmware has been firing on a geometry it cannot
+    // drive (phantom multi-edge per rev), so cut spark immediately here.
     if (s_pending.extra_falls > 0) {
+        cdi::core::spark::setArmed(false);
         s_state = State::ERR_MULTI_TOOTH;
         return;
     }
@@ -182,11 +185,20 @@ float medianOf(float* arr, uint8_t n) {
 
 bool start() {
     if (!cdi::core::pulser::isAttached()) return false;
-    cdi::core::spark::setArmed(false);   // safety — should already be off
+    // Do NOT disarm spark here. Calibration measures magnet geometry
+    // purely from pulser edge timing (scope ring) — independent of whether
+    // the firmware fires — and it REQUIRES the engine to keep idling at a
+    // steady RPM for ~target revs. Cutting spark stalled the engine within
+    // ~1 s; the decelerating revs then failed the steady-state + RPM-window
+    // filters, so the run ALWAYS timed out with 0 good revs and left the
+    // ignition off (the "kenapa kalibrasi mati" bug). Spark is force-
+    // disarmed only on ERR_MULTI_TOOTH (finalizePending) — the one genuine
+    // safety case (incompatible toothed pickup the CDI can't drive).
     resetAll();
     s_state    = State::COLLECTING;
     s_start_ms = millis();
-    Serial.printf("[cal] start: target=%u revs, RPM[%u..%u], jitter<%.1f%%\n",
+    Serial.printf("[cal] start: target=%u revs, RPM[%u..%u], jitter<%.1f%% "
+                  "(spark stays armed — engine must keep idling)\n",
                   s_target, s_min_rpm, s_max_rpm, s_max_jitter_pct);
     return true;
 }

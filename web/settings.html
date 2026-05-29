@@ -83,7 +83,8 @@
         <span class="sub">// ukur lebar magnet saat engine idle</span>
       </div>
       <p class="note warn">
-        ⚠ Pengapian akan <b>dimatikan</b> selama kalibrasi (safety).<br>
+        ✓ Pengapian <b>tetap nyala</b> selama kalibrasi — engine harus terus idle.
+        Otomatis disarm <b>hanya bila terdeteksi multi-tooth</b> (pickup tak kompatibel).<br>
         Engine harus sudah <b>idle stabil 1500-2500 RPM</b> sebelum mulai.
         Algoritma butuh ~50 putaran tanpa akselerasi / decelerasi (filter ±5% jitter).
       </p>
@@ -1163,7 +1164,7 @@ $('calStartBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
     title: 'KALIBRASI PICKUP',
     severity: 'warn',
-    body: 'Mulai kalibrasi sekarang?\n\nPengapian akan disarm otomatis selama proses. Pastikan engine sudah idle stabil di rentang 1500-2500 RPM sebelum lanjut — kalibrasi butuh ~50 putaran clean.',
+    body: 'Mulai kalibrasi sekarang?\n\nPengapian TETAP nyala — engine harus terus idle stabil di rentang 1500-2500 RPM selama proses (kalibrasi butuh ~50 putaran clean). Otomatis disarm HANYA bila terdeteksi pickup multi-tooth.',
     okLabel: '▶ Mulai',
   });
   if (!ok) return;
