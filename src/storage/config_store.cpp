@@ -103,7 +103,6 @@ void buildJson(JsonDocument& doc) {
     JsonObject rev = doc["rev"].to<JsonObject>();
     rev["main"]    = cdi::core::safety::mainLimitRpm();
     rev["overrev"] = cdi::core::safety::overrevLimitRpm();
-    rev["no_sig"]  = cdi::core::safety::noSignalEnabled();
 
     // cut mode
     JsonObject cut = doc["cut"].to<JsonObject>();
@@ -215,7 +214,6 @@ void applyJson(const JsonDocument& doc) {
             uint32_t m = rev["main"]    | cdi::core::safety::mainLimitRpm();
             uint32_t o = rev["overrev"] | cdi::core::safety::overrevLimitRpm();
             cdi::core::safety::setRevLimits(m, o);
-            cdi::core::safety::setNoSignalEnabled(rev["no_sig"] | false);
         }
     }
     // cut mode

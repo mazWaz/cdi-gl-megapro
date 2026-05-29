@@ -23,33 +23,19 @@ volatile uint32_t s_mainLimit    = cdi::config::DEFAULT_REV_LIMIT_MAIN_RPM;
 volatile uint32_t s_overrevLimit = cdi::config::DEFAULT_REV_LIMIT_OVERREV_RPM;
 
 volatile bool s_revLimited        = false;
-volatile bool s_noSignal          = false;
 volatile bool s_overRevCut        = false;
 // ALVP under-voltage full cut — SELF-RECOVERING (pulse-cut while vbat is
 // below the disarm threshold; resumes automatically on recovery). Set by
 // tick(), read by the spark ISR via shouldFire(). Never touches `armed`.
 volatile bool s_alvpHardCut       = false;
-// No-signal failsafe is OFF by default. Rev limiter + absolute RPM
-// ceiling are still active. Enable explicitly via UI when riding.
-volatile bool s_noSignalEnabled   = false;
 
 uint32_t s_overrevHits = 0;
 constexpr uint32_t OVERREV_CONFIRM = 3;
 
-// Latches once we've seen a genuinely RUNNING engine — defined as
-// RPM ≥ RPM_LATCH_THRESHOLD sustained across `VALID_RPM_STREAK_TICKS`
-// consecutive 100 ms safety ticks. Threshold is set above kick-start
-// transient territory (300-400 RPM peaks during cranking) so failed
-// start attempts don't latch and therefore don't engage the no-signal
-// failsafe. A real idling engine (≥500 RPM sustained 3 s) does latch.
-//
-// Reset by clearFlags(). The no-signal failsafe only trips after
-// this is true.
-constexpr uint16_t RPM_LATCH_THRESHOLD     = 500;  // above kick transient
-constexpr uint8_t  VALID_RPM_STREAK_TICKS  = 30;   // 30 × 100 ms = 3 s
-
-bool     s_haveSeenValidRpm  = false;
-uint8_t  s_validRpmStreak    = 0;
+// (No-signal failsafe removed: after it was made self-recovering it was
+// purely vestigial — no CH1 already means no spark, so a lost pickup
+// signal stops firing on its own and resumes when it returns, with no
+// disarm and no UI action. The RPM-latch machinery only fed it.)
 
 // Cut-mode configuration (main band only).
 volatile cdi::CutMode s_mainCutMode = cdi::CutMode::SOFT_RETARD;
@@ -120,59 +106,6 @@ void tick() {
     esp_task_wdt_reset();
 
     const uint32_t now_ms = millis();
-    const cdi::micros_t now_us = (cdi::micros_t)micros();
-
-    // ─── No-signal failsafe ───
-    // Trip ONLY when we previously had VALID engine RPM and then lost
-    // it (cable cut mid-ride, pulser failed, etc). Edge-only timestamps
-    // can't be trusted as "signal present" — GPIO34/35 are input-only
-    // and have NO internal pull-up, so a disconnected pulser pin
-    // floating from noise could spuriously update lastCh1Us and
-    // trigger a false failsafe at bench.
-    //
-    // rpm::current() applies sanity bounds (RPM_MIN_VALID..MAX_VALID)
-    // and exponential smoothing, so it stays at 0 under noise. Use it
-    // as the latch: once we've seen real RPM we know the engine ran;
-    // after that, signal staleness == genuine fault.
-    {
-        cdi::rpm_t rpm_now = cdi::core::rpm::current();
-        if (rpm_now >= RPM_LATCH_THRESHOLD) {
-            if (s_validRpmStreak < 255) s_validRpmStreak++;
-            if (s_validRpmStreak >= VALID_RPM_STREAK_TICKS && !s_haveSeenValidRpm) {
-                s_haveSeenValidRpm = true;
-                Serial.printf("[safety] engine latched as RUNNING "
-                              "(%u rpm sustained %u ticks) — no-signal failsafe now armed\n",
-                              (unsigned)rpm_now, (unsigned)s_validRpmStreak);
-            }
-        } else {
-            // RPM dropped below the running threshold. Reset the
-            // streak counter so a future re-run has to qualify again
-            // from scratch. The latch itself stays set if it was
-            // already set; only a fresh arm (clearFlags) drops it
-            // again. That way the genuine "engine ran then stalled"
-            // case still trips the no-signal failsafe at the next
-            // safety tick.
-            s_validRpmStreak = 0;
-        }
-    }
-    // No-signal handling — SELF-RECOVERING, never a sticky disarm.
-    // Rationale: forcing the rider into the UI to re-arm mid-ride is the
-    // wrong trade. No CH1 already means no spark (the scheduler has no
-    // trigger), and when the signal returns the engine resumes firing on
-    // its own because `armed` is left untouched. We only raise/clear the
-    // s_noSignal flag for the UI/telemetry indicator.
-    if (s_noSignalEnabled && cdi::core::spark::isArmed() && s_haveSeenValidRpm) {
-        cdi::micros_t last = cdi::core::rpm::lastCh1Us();
-        const bool silent = (last != 0 &&
-            (now_us - last) > (cdi::micros_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000ULL);
-        if (silent && !s_noSignal) {
-            s_noSignal = true;
-            Serial.println("[safety] NO-SIGNAL — spark paused (auto-resume on signal; NOT disarmed)");
-        } else if (!silent && s_noSignal) {
-            s_noSignal = false;
-            Serial.println("[safety] signal restored — spark resumes");
-        }
-    }
 
     // ALVP under-voltage full cut (self-recovering, NOT a disarm). While
     // vbat sits in DISARM_LOW we pulse-cut every spark via shouldFire();
@@ -255,11 +188,11 @@ void tick() {
         // mid-ride (dangerous in a corner / intersection) and forces a
         // manual re-arm. Hitting overrev is a transient event (aggressive
         // throttle, downshift, a phantom RPM blip) — not a reason to kill
-        // ignition. Permanent disarm is reserved for genuine faults only:
-        // the absolute RPM ceiling (mechanically-impossible runaway) and
-        // the no-signal failsafe (engine ran, then pickup went silent).
-        // Pulse-cut keeps the coil de-energized above the ceiling, so it
-        // is just as safe as a disarm but recovers automatically.
+        // ignition. The only sticky kills left are deliberate (panic
+        // button → SAFE_HOLD) or genuinely incompatible hardware
+        // (multi-tooth pickup → SAFE_HOLD during calibration). Pulse-cut
+        // keeps the coil de-energized above the limit but recovers
+        // automatically — just as safe as a disarm, far safer mid-ride.
         s_overrevHits++;   // kept for telemetry/diagnostics
         s_overRevCut = true;
         s_revLimited = true;
@@ -389,7 +322,6 @@ void setRevLimits(uint32_t main_rpm, uint32_t overrev_rpm) {
 uint32_t mainLimitRpm()    { return s_mainLimit; }
 uint32_t overrevLimitRpm() { return s_overrevLimit; }
 bool     isRevLimited()    { return s_revLimited; }
-bool     noSignal()        { return s_noSignal; }
 bool     overRevCut()      { return s_overRevCut; }
 
 void setMainCutMode(cdi::CutMode m) {
@@ -483,22 +415,9 @@ bool IRAM_ATTR shouldFire() {
 }
 
 void clearFlags() {
-    s_noSignal         = false;
     s_overRevCut       = false;
     s_overrevHits      = 0;
-    s_haveSeenValidRpm = false;   // fresh arm — wait for real signal again
-    s_validRpmStreak   = 0;
 }
-
-void setNoSignalEnabled(bool en) {
-    s_noSignalEnabled = en;
-    if (!en) {
-        // Drop sticky flag too so UI immediately reflects disabled state.
-        s_noSignal = false;
-    }
-    Serial.printf("[safety] no-signal failsafe = %s\n", en ? "ENABLED" : "DISABLED");
-}
-bool noSignalEnabled() { return s_noSignalEnabled; }
 
 bool flashWriteSafe() {
     // Disarmed → no live spark path to disturb.

@@ -58,7 +58,7 @@
     <p class="caption">
       Status failsafe sistem. Chip menyala saat fitur aktif: <b>LAUNCH</b>/<b>QS</b>
       (input clutch/shift), <b>BACKFIRE</b>/<b>RUMBLE</b> (audio mode), <b>VBAT</b>
-      voltage. Reset failsafe = clear latch flags setelah no-signal/overrev.
+      voltage. Reset failsafe = clear flag overrev setelah event fault.
     </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip" id="safetyPill" style="background:rgba(82,183,136,0.18);border-color:var(--green);color:var(--green)">
@@ -98,18 +98,14 @@
       <input type="checkbox" id="sparkPolChk">
       <span>Polaritas <b>ACTIVE-LOW</b> (idle HIGH, fire on rising edge) — pakai kalau pakai PNP/PMOS atau CDI module trigger LOW</span>
     </label>
-    <label class="chk" style="margin-top:6px">
-      <input type="checkbox" id="noSigChk">
-      <span>Aktifkan <b>no-signal failsafe</b> (jeda spark otomatis kalau pulser signal hilang setelah engine running; <b>auto-resume</b> saat sinyal balik — TIDAK disarm, tak perlu arm ulang)</span>
-    </label>
     <p class="note crit">
       ⚠ Mode <b>PENGAPIAN = ON</b> → spark otomatis LIVE (seperti CDI
       pasaran: hidup begitu ada power + sinyal pulser, <b>tanpa langkah arm
       manual</b>). <b>OFF/kill</b> = tombol MATIKAN di panel Kontrol, panic
       button (tahan BOOT ≥2 dtk), atau SAFE_HOLD. <b>Lepas/ground busi
-      sebelum uji bangku.</b> Fault (no-signal / under-volt / over-rev)
-      memutus spark sementara &amp; nyala lagi otomatis — tak pernah perlu
-      arm ulang.
+      sebelum uji bangku.</b> Fault (under-volt / over-rev) memutus spark
+      sementara &amp; nyala lagi otomatis — tak pernah perlu arm ulang.
+      Sinyal pulser hilang → spark berhenti sendiri &amp; lanjut saat balik.
     </p>
   </section>
 
@@ -298,24 +294,7 @@ $('testFireBtn').addEventListener('click', async () => {
   cdi.send({cmd:'testFire'});
 });
 
-// No-signal failsafe toggle
-cdi.bus.on('open', () => cdi.send({cmd:'getNoSignalEnabled'}));
-cdi.bus.on('noSignal', m => {
-  $('noSigChk').checked = !!m.enabled;
-});
-$('noSigChk').addEventListener('change', async e => {
-  const en = e.target.checked;
-  const ok = await cdi.modal.confirm({
-    title: 'NO-SIGNAL FAILSAFE',
-    severity: en ? 'warn' : 'danger',
-    body: en
-      ? 'Aktifkan no-signal failsafe?\n\nSetelah engine running ≥500 RPM untuk 3 detik, kalau pulser signal hilang spark akan auto-disarm dalam 500ms.\n\nWAJIB ON saat riding — protect dari cable cut mid-ride.'
-      : 'Matikan no-signal failsafe?\n\nSpark tidak akan auto-disarm walaupun pulser signal putus. Rev limiter + RPM ceiling tetap aktif sebagai safety.\n\nGunakan untuk bench testing saja. Ingat balikkan ON sebelum riding.',
-    okLabel: en ? '✓ Aktifkan' : '⚠ Matikan',
-  });
-  if (!ok){ e.target.checked = !en; return; }
-  cdi.send({cmd:'setNoSignalEnabled', enabled: en});
-});
+// (no-signal failsafe toggle removed — feature retired)
 
 // Spark polarity toggle — request initial state on connect, update
 // checkbox dari reply.

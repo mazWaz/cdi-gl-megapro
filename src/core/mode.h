@@ -1,12 +1,11 @@
 // Operating-mode state machine.
 //
-//   IGNITION    — pulser interrupts ON (drives both spark scheduling
-//                 and live edge-stream broadcast). Spark output gated
-//                 by a separate `spark::isArmed()` flag — arming is
-//                 an explicit user action from the dashboard UI.
-//   SAFE_HOLD   — pulser ISR detached, spark forced disarmed. Set by
-//                 safety on no-signal timeout or fault. Recovered by
-//                 explicit user action.
+//   IGNITION    — pulser interrupts ON; spark AUTO-ARMED (market-CDI:
+//                 on whenever powered in this mode, no manual arm step).
+//                 `armed` follows the mode. Faults pulse-cut only.
+//   SAFE_HOLD   — pulser ISR detached, spark forced OFF. Entered by the
+//                 panic button (GPIO0), UI KILL, or multi-tooth detection.
+//                 Left by explicit user action (UI NYALAKAN → IGNITION).
 //   BOOT        — transient before `begin()`.
 //
 // All transitions happen from loop()/WS-callback context (never ISR).

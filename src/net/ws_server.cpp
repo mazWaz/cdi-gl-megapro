@@ -295,23 +295,6 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         cdi::core::safety::clearFlags();
         client->text("{\"type\":\"ack\",\"msg\":\"failsafe cleared\"}");
     }
-    else if (!strcmp(cmd, "setNoSignalEnabled")) {
-        const bool en = doc["enabled"] | false;
-        cdi::core::safety::setNoSignalEnabled(en);
-        cdi::storage::config::markDirty();
-        JsonDocument r;
-        r["type"]    = "noSignal";
-        r["enabled"] = cdi::core::safety::noSignalEnabled();
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
-    else if (!strcmp(cmd, "getNoSignalEnabled")) {
-        JsonDocument r;
-        r["type"]    = "noSignal";
-        r["enabled"] = cdi::core::safety::noSignalEnabled();
-        String out; serializeJson(r, out);
-        client->text(out);
-    }
     else if (!strcmp(cmd, "getWifi")) {
         JsonDocument r;
         r["type"]     = "wifi";

@@ -28,7 +28,7 @@ struct LiveStats {
     uint8_t        armed;               // spark armed flag
     uint32_t       fire_count;
     int16_t        last_jitter_us;
-    uint8_t        safety_flags;        // bit0 rev_limited, bit1 no_signal, bit2 overrev_cut
+    uint8_t        safety_flags;        // bit0 rev_limited, bit1 (retired), bit2 overrev_cut
     uint16_t       main_limit_rpm;
     uint16_t       overrev_limit_rpm;
     uint16_t       dwell_us;

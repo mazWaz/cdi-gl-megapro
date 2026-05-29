@@ -175,9 +175,9 @@ the device with a real motor connected.
 | Bench  | Remove spark plug from cylinder. Either run with plug grounded to engine block, or use a dummy load (1 Ω 100 W power resistor). |
 | Bench  | Verify with oscilloscope on GPIO25 that pulse width matches `dwell_us` setting before connecting HV stage. |
 | Bench  | Set rev limit MAIN to a conservative value (e.g. 6000 RPM) until you've seen its behaviour. |
-| Bench  | Test no-signal failsafe: disconnect pulser cable while spark armed, confirm output goes LOW within 500 ms. |
-| Bench  | Test panic button: hold BOOT (GPIO0) ≥ 2 s, confirm mode jumps to SAFE_HOLD on serial + UI. |
-| Motor  | First start: engine on stand, busi grounded externally, ignition armed via UI. Listen for clean fire. |
+| Bench  | Test signal-loss recovery: disconnect pulser while "running" (sim), confirm spark stops (no CH1 = no fire) and resumes when reconnected — no re-arm needed. |
+| Bench  | Test panic button: hold BOOT (GPIO0) ≥ 2 s, confirm mode jumps to SAFE_HOLD (spark OFF) on serial + UI. Then UI NYALAKAN to resume. |
+| Motor  | First start: engine on stand, busi grounded externally. Spark is auto-live in IGNITION (market-CDI) — kill = panic/SAFE_HOLD. Listen for clean fire. |
 | Motor  | Verify timing with strobe light on factory TDC mark at idle (~1500 RPM) before opening throttle. |
 | Riding | First 5+ rides in safe area (empty lot, side street). Datalog enabled, review afterwards. |
 | Always | **Keep CDI lama / stock CDI accessible** — bring it on first rides in case of firmware fail. |

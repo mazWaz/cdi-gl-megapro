@@ -275,8 +275,7 @@ LiveStats snapshot() {
     s.last_jitter_us = (int16_t)j;
     uint8_t f = 0;
     if (cdi::core::safety::isRevLimited()) f |= 0x01;
-    if (cdi::core::safety::noSignal())     f |= 0x02;
-    if (cdi::core::safety::overRevCut())   f |= 0x04;
+    if (cdi::core::safety::overRevCut())   f |= 0x04;   // bit1 (no_signal) retired
     s.safety_flags = f;
     s.main_limit_rpm    = (uint16_t)cdi::core::safety::mainLimitRpm();
     s.overrev_limit_rpm = (uint16_t)cdi::core::safety::overrevLimitRpm();
