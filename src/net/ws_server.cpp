@@ -460,7 +460,7 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
             r["current"]  = cdi::core::preset::currentId();
             r["modified"] = false;
             String out; serializeJson(r, out);
-            client->text(out);
+            s_ws.textAll(out);   // BROADCAST: settings badge + map editor di tab lain
         }
         // Reply 2: push active map yang baru. preset::apply() sudah
         // replace advance::active() dengan kurva preset baru — tapi
@@ -473,7 +473,7 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
             JsonArray arr = r["points"].to<JsonArray>();
             cdi::core::advance::active().serialize(arr);
             String out; serializeJson(r, out);
-            client->text(out);
+            s_ws.textAll(out);   // BROADCAST: map editor di tab manapun update live
         }
     }
     else if (!strcmp(cmd, "getPresetStatus")) {
