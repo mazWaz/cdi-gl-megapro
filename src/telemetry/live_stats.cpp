@@ -68,7 +68,21 @@ void tick() {
         // Crank-assist arming: below CRANK_MODE_RPM the spark ISR fires
         // off the CH2 trailing edge (fixed base advance) instead of the
         // period-derived CH1 delay. No-op unless crank-assist enabled.
-        cdi::core::spark::armCrankCycle(r_inst < cdi::config::CRANK_MODE_RPM);
+        const bool crank = (r_inst < cdi::config::CRANK_MODE_RPM);
+        cdi::core::spark::armCrankCycle(crank);
+        if (crank) {
+            // Tier-2 (2A): precompute the plausible CH1→CH2 width band from
+            // the per-motor magnet geometry + this period, so the CH2 ISR
+            // only integer-compares. Loose band — cranking width/period CV
+            // is high (~84%); the floor rejects EMI edges far too close.
+            const float w_exp = (cdi::core::pickup::magnetWidth() / 360.0f)
+                              * (float)periodU;
+            uint32_t lo = (uint32_t)(0.30f * w_exp);
+            if (lo < 150) lo = 150;
+            uint32_t hi = (uint32_t)(4.0f * w_exp);
+            if (hi >= (uint32_t)periodU) hi = (uint32_t)periodU - 1;
+            cdi::core::spark::setCrankWidthBand(lo, hi);
+        }
 
         float adv = cdi::core::advance::active().lookup(r_inst);
         // Cut-mode retard (T9 — configurable per active cut mode).

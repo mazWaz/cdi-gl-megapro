@@ -125,6 +125,10 @@ void IRAM_ATTR onPulseCh2FromIsr(cdi::micros_t t_trail);
 void setCrankAssist(bool en);
 bool crankAssist();
 void armCrankCycle(bool en);
+// Tier-2 (2A): plausible CH1→CH2 width band (µs) for the crank-assist
+// CH2-fire. Precomputed by live_stats from the magnet geometry so the
+// CH2 ISR only integer-compares. (0,0) = check disabled (fail-open).
+void setCrankWidthBand(uint32_t lo_us, uint32_t hi_us);
 
 // ─── Telemetry ───
 uint32_t totalFires();

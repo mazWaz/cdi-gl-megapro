@@ -52,6 +52,8 @@ volatile bool     s_dwellInProgress = false;   // GPIO is in active (charging) s
 volatile bool     s_crankAssist    = false;  // master enable
 volatile bool     s_crankArmCycle  = false;  // live_stats: this cycle rpm < CRANK_MODE_RPM
 volatile bool     s_ch2FirePending = false;  // dwell charging, awaiting CH2 fire-off
+volatile uint32_t s_crankWidthLo   = 0;      // Tier-2 2A: valid CH1→CH2 width band
+volatile uint32_t s_crankWidthHi   = 0;      // (0 = check disabled / fail-open)
 
 constexpr uint32_t MIN_DELAY_US = 50;        // safety floor
 // Ceiling must accommodate cranking RPM. At 30 rpm (period 2 s) a
@@ -563,6 +565,17 @@ void forceLow() {
 void IRAM_ATTR onPulseCh2FromIsr(cdi::micros_t t_trail) {
     // No-op unless crank-assist armed a CH2 fire this cycle.
     if (!s_ch2FirePending) return;
+    // Tier-2 (2A) validity: reject an implausibly-timed CH2 (EMI / false
+    // trailing edge). Band precomputed by live_stats from magnet geometry
+    // + last period (ISR stays integer-only). On reject, KEEP pending so a
+    // real CH2 — or the anti-strand cap timer — still fires near base
+    // advance: no lost spark, just not on this bad edge.
+    {
+        const uint32_t width = (uint32_t)(t_trail - s_lastCh1IsrTs);
+        if (s_crankWidthHi > 0 && (width < s_crankWidthLo || width > s_crankWidthHi)) {
+            return;
+        }
+    }
     s_ch2FirePending = false;
     // Cancel the anti-strand cap timer — CH2 arrived first (normal case).
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -586,5 +599,9 @@ void setCrankAssist(bool en) {
 }
 bool crankAssist() { return s_crankAssist; }
 void armCrankCycle(bool en) { s_crankArmCycle = en; }
+void setCrankWidthBand(uint32_t lo_us, uint32_t hi_us) {
+    s_crankWidthLo = lo_us;
+    s_crankWidthHi = hi_us;
+}
 
 } // namespace cdi::core::spark
