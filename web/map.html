@@ -741,6 +741,9 @@ cdi.bus.on('preset', m => {
     stockPoints    = null;     // force refetch — kurva stok beda preset
     baselinePoints = null;
     try { localStorage.removeItem('cdi.activeSlot.v1'); } catch(e){}
+    // Force the pushed 'map' (next event) into Case 0 → device curve,
+    // bypassing the slots[0] fallback that would otherwise reload P1.
+    try { localStorage.setItem('cdi.mapForceDevice','1'); } catch(e){}
     activeProfile = null;      // bus.on('map') akan set ulang ke device
     document.getElementById('mapStatus').textContent =
       '› preset diganti → editor dimuat ulang dari peta baru';
@@ -788,6 +791,24 @@ function ensureStockLoaded(timeoutMs = 2000){
 }
 
 cdi.bus.on('map', pts => {
+  // Case 0: a motor/preset change just happened (flag set by settings.html
+  // "ganti motor", or by the in-page switch handler). Discard any saved-slot
+  // preference and load the device's NEW default curve. Saved slots P1..P4
+  // are kept, just not auto-selected — "ganti motor = peta ke default motor".
+  if (localStorage.getItem('cdi.mapForceDevice')){
+    try { localStorage.removeItem('cdi.mapForceDevice'); } catch(e){}
+    try { localStorage.removeItem('cdi.activeSlot.v1'); } catch(e){}
+    points = pts.map(p => [+p[0], +p[1]]);
+    selected = -1;
+    baselinePoints = pts.map(p => [+p[0], +p[1]]);
+    setActiveProfile({ type:'device', name:'live' });
+    document.getElementById('mapJson').value = JSON.stringify(points);
+    document.getElementById('mapStatus').textContent = '› peta default preset baru dimuat';
+    recomputeDirty();
+    renderCurve();
+    return;
+  }
+
   const lastIdx = loadLastActiveSlot();
 
   // Case 1: Last active slot HAS saved data → load slot data + active

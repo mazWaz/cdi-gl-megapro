@@ -870,6 +870,21 @@ function renderCurrent(){
   $('presetResetBtn').style.display = mod ? '' : 'none';
 }
 
+// Ganti motor = semua setting preset-scope ke default motor terpilih.
+// 1) setPreset → firmware muat ulang advance map / rev / dwell / geometri.
+// 2) flag cdi.mapForceDevice → map editor (halaman lain) buang preferensi
+//    slot localStorage & muat kurva default preset baru saat dibuka.
+// 3) reload halaman ini supaya field dwell/rev/cut/offset (pola init-sekali)
+//    ikut re-sync ke nilai default motor baru, bukan nilai lama.
+function applyPresetAndRefresh(pid){
+  cdi.send({cmd:'setPreset', id:pid});
+  try {
+    localStorage.setItem('cdi.mapForceDevice','1');
+    localStorage.removeItem('cdi.activeSlot.v1');
+  } catch(e){}
+  setTimeout(() => location.reload(), 700);
+}
+
 function openPresetModal(){
   if (!presetData){ cdi.send({cmd:'getPresetList'}); return; }
   // group by category
@@ -929,7 +944,7 @@ function openPresetModal(){
         okLabel,
       });
       if (!ok) return;
-      cdi.send({cmd:'setPreset', id:pid});
+      applyPresetAndRefresh(pid);
       $('presetModal').style.display = 'none';
     });
   });
@@ -946,7 +961,7 @@ $('presetResetBtn').addEventListener('click', async () => {
     okLabel: '⤺ Reset',
   });
   if (!ok) return;
-  cdi.send({cmd:'setPreset', id: presetData.current});
+  applyPresetAndRefresh(presetData.current);
 });
 
 cdi.bus.on('open', () => { cdi.send({cmd:'getPresetList'}); cdi.send({cmd:'getPickup'}); cdi.send({cmd:'getWifi'}); });
