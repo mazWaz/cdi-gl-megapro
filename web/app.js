@@ -178,7 +178,8 @@ function decodeBinary(buf){
       alvp_derate: buf.byteLength >= 67 ? v.getUint8(66) / 10.0 : 10.5,
       alvp_disarm: buf.byteLength >= 68 ? v.getUint8(67) / 10.0 :  9.0,
       flags4:      buf.byteLength >= 69 ? v.getUint8(68) : 0,
-      alvp_derate_rpm: buf.byteLength >= 71 ? v.getUint16(69, true) : 4000
+      alvp_derate_rpm: buf.byteLength >= 71 ? v.getUint16(69, true) : 4000,
+      pickup_anomalies: buf.byteLength >= 73 ? v.getUint16(71, true) : 0
     };
     state.telemetry = t;
     bus.emit('telemetry', t);

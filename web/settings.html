@@ -494,6 +494,10 @@
       Default OFF. Berubah seketika &amp; tersimpan ke NVS. <b>WAJIB verifikasi
       strobe di mesin</b> sebelum dipakai jalan — ini mengubah timing pengapian.
     </p>
+    <p class="note" style="margin-top:4px">
+      diagnostik pickup · EMI/anomali sinyal: <b id="emiCount">—</b>
+      <span class="val">(0 = bersih · naik di bawah beban = pickup butuh shielding/ground)</span>
+    </p>
     <div class="btn-row">
       <button class="btn green" id="applyTuningBtn">✓ Terapkan</button>
       <button class="btn ghost" id="reloadTuningBtn">↻ Muat ulang</button>
@@ -819,6 +823,7 @@ cdi.bus.on('telemetry', t => {
     $('crankAssistChk').checked = !!(t.flags4 & 0x04);
     tuningInit = true;
   }
+  if (t.pickup_anomalies !== undefined) $('emiCount').textContent = t.pickup_anomalies;
 });
 $('reloadTuningBtn').addEventListener('click', () => {
   $('dwellInp').value  = cdi.state.telemetry.dwell_us;

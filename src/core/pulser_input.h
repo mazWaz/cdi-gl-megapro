@@ -46,4 +46,9 @@ uint32_t pendingScope();
 // Useful as a diagnostic — non-zero means UI consumer is too slow.
 uint32_t scopeOverruns();
 
+// Tier-2 2B: cumulative pickup signal anomalies since boot (spurious
+// CH1 + extra/lone CH2). A health indicator for pickup wiring/shielding;
+// a rising count under load points at EMI on the pulser line.
+uint32_t pickupAnomalies();
+
 } // namespace cdi::core::pulser

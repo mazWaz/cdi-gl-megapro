@@ -127,9 +127,18 @@ akal. EMI melanggar salah satunya:
   CH2, cek `width` dalam band (band dihitung loop, ISR cuma integer
   compare). Implausible → jangan fire, biar CH2 real / cap-timer yang fire.
   Melindungi Tier-1 dari CH2 palsu.
-- **2B — loop validator + gate rpm + counter (sedang).** Hanya pass valid
-  meng-update `rpm_calc` → RPM/period bersih. Counter `emi_rejects` ke
-  telemetry → indikator kesehatan wiring (shielding pickup).
+- **2B — pickup-anomaly counter (TER-IMPLEMENTASI).** `pulser` menghitung
+  anomali TEGAS: CH1 lebih rapat dari ceiling (spurious leading edge) +
+  CH2 tanpa CH1 pending (extra/lone trailing). MISSING-CH2 (sinyal lemah
+  cranking) **tidak** dihitung → motor sehat baca ~0 walau cranking.
+  Diekspos `pulser::pickupAnomalies()` → telemetry `pickup_anomalies`
+  (byte 71-72, backward-compat) → readout di settings.html (indikator
+  kesehatan wiring/shielding pickup).
+  **Catatan desain:** "gate rpm_calc pada valid-pass" dari rencana awal
+  **TIDAK** dikerjakan — `rpm_calc` sudah menolak periode <4.6ms DAN
+  menjaga anchor (proteksi phantom dominan sudah ada), jadi re-gate
+  bernilai marginal kecil + risiko regresi jalur running (99% bersih).
+  2B = counter diagnostik (nilai unik: visibilitas EMI).
 
 **Risiko:** false-reject saat cranking (band longgar + fail-open);
 "missing CH2" (sinyal lemah) ≠ EMI, jangan dihitung reject; EMI real-firing

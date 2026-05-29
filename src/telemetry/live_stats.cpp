@@ -318,6 +318,8 @@ LiveStats snapshot() {
                         | (cdi::core::spark::autoArm()    ? 0x02 : 0)
                         | (cdi::core::spark::crankAssist()? 0x04 : 0);
     s.alvp_derate_rpm   = cdi::core::alvp::derateLimitRpm();
+    const uint32_t anom = cdi::core::pulser::pickupAnomalies();
+    s.pickup_anomalies  = (uint16_t)(anom > 65535 ? 65535 : anom);
     return s;
 }
 

@@ -56,8 +56,9 @@ struct LiveStats {
     uint8_t        alvp_state;          // 0 NORMAL, 1 DERATE, 2 DISARM_LOW
     uint8_t        alvp_derate_v_x10;
     uint8_t        alvp_disarm_v_x10;
-    uint8_t        flags4;              // bit0 alvp_enabled, bit1 auto_arm
+    uint8_t        flags4;              // bit0 alvp_enabled, bit1 auto_arm, bit2 crank_assist
     uint16_t       alvp_derate_rpm;
+    uint16_t       pickup_anomalies;   // Tier-2 2B: cumulative EMI/edge-anomaly count
 };
 
 void       tick();

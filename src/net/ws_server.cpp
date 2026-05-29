@@ -1009,7 +1009,7 @@ void tickTelemetry() {
     }
 
     auto t = cdi::telemetry::snapshot();
-    uint8_t buf[71];
+    uint8_t buf[73];
     buf[0]  = cdi::config::WS_MAGIC_TELEMETRY;
     buf[1]  = (uint8_t)t.mode;
     memcpy(&buf[2],  &t.rpm,                2);
@@ -1048,7 +1048,8 @@ void tickTelemetry() {
     buf[66] = t.alvp_derate_v_x10;
     buf[67] = t.alvp_disarm_v_x10;
     buf[68] = t.flags4;
-    memcpy(&buf[69], &t.alvp_derate_rpm, 2);
+    memcpy(&buf[69], &t.alvp_derate_rpm,  2);
+    memcpy(&buf[71], &t.pickup_anomalies, 2);   // Tier-2 2B
     s_ws.binaryAll(buf, sizeof(buf));
 }
 
