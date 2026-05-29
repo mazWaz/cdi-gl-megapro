@@ -303,11 +303,11 @@ void applyJson(const JsonDocument& doc) {
         if (!ir.isNull()) {
             cdi::core::idle_rumble::setMode(
                 (cdi::IdleRumbleMode)(ir["mode"] | (int)cdi::IdleRumbleMode::SUBTLE));
-            cdi::core::idle_rumble::setRpmBand(ir["rpm_lo"] | 1000, ir["rpm_hi"] | 2000);
-            cdi::core::idle_rumble::setMaxRetardDeg(ir["retard"] | 3.0f);
-            cdi::core::idle_rumble::setSkipPattern(ir["skip_n"] | 7);
-            cdi::core::idle_rumble::setSustainMs(ir["sustain_ms"] | 3000);
-            cdi::core::idle_rumble::setMinUptimeSec(ir["min_uptime"] | 60);
+            cdi::core::idle_rumble::setRpmBand(ir["rpm_lo"] | 800, ir["rpm_hi"] | 2500);
+            cdi::core::idle_rumble::setMaxRetardDeg(ir["retard"] | 6.0f);
+            cdi::core::idle_rumble::setSkipPattern(ir["skip_n"] | 4);
+            cdi::core::idle_rumble::setSustainMs(ir["sustain_ms"] | 1500);
+            cdi::core::idle_rumble::setMinUptimeSec(ir["min_uptime"] | 15);
             cdi::core::idle_rumble::setEnabled(ir["enabled"] | false);
         }
     }

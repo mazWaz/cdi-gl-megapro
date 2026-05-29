@@ -13,12 +13,12 @@ namespace {
 // dan spark ISR (core 1) baca runtime state. volatile + word-atomic.
 volatile bool                s_enabled       = false;
 volatile cdi::IdleRumbleMode s_mode          = cdi::IdleRumbleMode::SUBTLE;
-volatile cdi::rpm_t          s_rpmLo         = 1000;
-volatile cdi::rpm_t          s_rpmHi         = 2000;
-volatile float               s_maxRetardDeg  = 3.0f;
-volatile uint8_t             s_skipFireN     = 7;       // fire 7, skip 1
-volatile uint16_t            s_sustainMs     = 3000;
-volatile uint16_t            s_minUptimeSec  = 60;
+volatile cdi::rpm_t          s_rpmLo         = 800;
+volatile cdi::rpm_t          s_rpmHi         = 2500;
+volatile float               s_maxRetardDeg  = 6.0f;
+volatile uint8_t             s_skipFireN     = 4;       // fire 4, skip 1 (~20%)
+volatile uint16_t            s_sustainMs     = 1500;
+volatile uint16_t            s_minUptimeSec  = 15;
 
 // Runtime
 //
@@ -184,13 +184,20 @@ void tick(cdi::rpm_t rpm) {
         float r = 0.0f;
         switch (s_mode) {
             case cdi::IdleRumbleMode::SUBTLE:
-            case cdi::IdleRumbleMode::AGGRESSIVE:
-                r = jitterRetard(s_maxRetardDeg);
+                r = jitterRetard(s_maxRetardDeg);          // halus: jitter 0..max
                 break;
+            case cdi::IdleRumbleMode::AGGRESSIVE: {
+                // Lebih DALAM dari SUBTLE + floor 6° → terasa walau slider
+                // retard di-set kecil. Pusat ~m, amplitudo jitter besar.
+                const float m = (s_maxRetardDeg < 6.0f) ? 6.0f : s_maxRetardDeg;
+                r = m * 0.45f + jitterRetard(m * 0.55f);
+                break;
+            }
             case cdi::IdleRumbleMode::DRAG_BURBLE: {
-                float max = s_maxRetardDeg * 2.0f;
-                if (max > 12.0f) max = 12.0f;
-                r = jitterRetard(max);
+                float m = s_maxRetardDeg * 2.0f;
+                if (m < 10.0f) m = 10.0f;
+                if (m > 14.0f) m = 14.0f;
+                r = m * 0.3f + jitterRetard(m * 0.7f);     // dalam, floor tinggi
                 break;
             }
             case cdi::IdleRumbleMode::NGEBASS: {
@@ -204,22 +211,22 @@ void tick(cdi::rpm_t rpm) {
                 const float sine = sinf(t * 2.0f * 3.14159265f);
                 float depth = s_maxRetardDeg * 1.5f;
                 if (depth > 10.0f) depth = 10.0f;
-                if (depth < 0.5f)  depth = 0.5f;       // floor minimal supaya audible
+                if (depth < 2.0f)  depth = 2.0f;       // floor lebih tinggi supaya 'wub' jelas
                 r = (sine * 0.5f + 0.5f) * depth;
                 break;
             }
             case cdi::IdleRumbleMode::NGOROK: {
                 // Random retard 0-4°, mostly low. Burst skip handled di
                 // shouldFireThisCycle untuk efek 'snoring' tidak monoton.
-                r = jitterRetard(s_maxRetardDeg < 4.0f ? 4.0f : s_maxRetardDeg);
+                r = jitterRetard(s_maxRetardDeg < 5.0f ? 5.0f : s_maxRetardDeg);
                 break;
             }
             case cdi::IdleRumbleMode::BRAP_BRAP: {
                 // Heavy retard 4-8°, dikombinasi dengan frequent skip.
-                const float base = 4.0f;
-                const float jit  = (s_maxRetardDeg < 4.0f ? 4.0f : s_maxRetardDeg);
+                const float base = 5.0f;
+                const float jit  = (s_maxRetardDeg < 5.0f ? 5.0f : s_maxRetardDeg);
                 r = base + jitterRetard(jit);
-                if (r > 10.0f) r = 10.0f;
+                if (r > 14.0f) r = 14.0f;
                 break;
             }
             default:
