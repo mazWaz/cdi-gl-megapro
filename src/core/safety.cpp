@@ -193,7 +193,14 @@ void tick() {
         // (multi-tooth pickup → SAFE_HOLD during calibration). Pulse-cut
         // keeps the coil de-energized above the limit but recovers
         // automatically — just as safe as a disarm, far safer mid-ride.
-        s_overrevHits++;   // kept for telemetry/diagnostics
+        // NOTE: the cut engages on the FIRST instantaneous sample above
+        // the ceiling (deliberately — overrev is a fast safety backstop).
+        // OVERREV_CONFIRM only debounces the LOG line below, it does NOT
+        // gate the cut (audit LOW1: the counter is diagnostic, not a
+        // spike-reject). The progressive main-limiter already bites below
+        // this ceiling, and the cut is self-recovering, so a lone phantom
+        // blip costs at most one ~100 ms tick of cut, never a stall.
+        s_overrevHits++;
         s_overRevCut = true;
         s_revLimited = true;
         if (s_overrevHits == OVERREV_CONFIRM) {
@@ -212,7 +219,10 @@ void tick() {
                           (unsigned)rpm, (unsigned)rpm_smooth, (int)effective_mode);
         }
         s_revLimited = true;
-        s_activeCutMode = effective_mode;
+        // Compute the mode locally and publish s_activeCutMode LAST (after
+        // its companion fields below) so the CH1 ISR can't read a NEW mode
+        // paired with STALE s_progressivePct/s_activeRetardDeg (audit LOW2).
+        cdi::CutMode pub_mode = effective_mode;
         switch (effective_mode) {
             case cdi::CutMode::SOFT_RETARD: {
                 // First entry into the soft-retard window — latch
@@ -235,7 +245,7 @@ void tick() {
                                       still_climbing ? "climbing" : "timeout",
                                       (unsigned)rpm, (unsigned)s_softEntryRpm);
                     }
-                    s_activeCutMode   = cdi::CutMode::PATTERN_CUT;
+                    pub_mode          = cdi::CutMode::PATTERN_CUT;
                     s_activeRetardDeg = 0.0f;
                     s_progressivePct  = 0;
                 } else {
@@ -286,6 +296,7 @@ void tick() {
                 s_progressivePct  = 0;
                 break;
         }
+        s_activeCutMode = pub_mode;   // publish mode LAST (audit LOW2)
     } else {
         s_overrevHits = 0;
         s_overRevCut  = false;   // below limits — clear transient flag

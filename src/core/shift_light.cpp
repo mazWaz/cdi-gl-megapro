@@ -44,8 +44,9 @@ void setEnabled(bool e) {
 
 void setThresholds(cdi::rpm_t warn, cdi::rpm_t shift) {
     if (warn  < 500)   warn  = 500;
+    if (warn  > 14800) warn  = 14800;   // clamp warn FIRST so shift=warn+200 ≤ 15000
     if (shift <= warn) shift = warn + 200;
-    if (shift > 15000) shift = 15000;
+    if (shift > 15000) shift = 15000;   // (audit LOW11: warn>shift inverted band)
     s_rpmWarn  = warn;
     s_rpmShift = shift;
 }

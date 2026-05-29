@@ -257,10 +257,18 @@ LiveStats snapshot() {
     s.rpm            = cdi::core::rpm::current();
     s.rpm_raw        = cdi::core::rpm::raw();
     float adv        = cdi::core::advance::active().lookup(s.rpm);
-    // Display must match actual fired advance — same chain as tick().
+    // Display must match actual fired advance — SAME chain as tick()
+    // (audit M10: previously omitted backfire/idle_rumble/flame retards and
+    // the flame -20° floor, so the dashboard target diverged from the angle
+    // actually fired whenever those features were retarding).
     adv -= cdi::core::safety::currentRetardDeg();
+    adv -= cdi::core::backfire::currentRetardDeg();
+    adv -= cdi::core::idle_rumble::currentRetardDeg();
+    adv -= cdi::core::flame::currentRetardDeg();
     adv += cdi::core::spark::advanceOffsetDeg();
-    if (adv < cdi::config::ADVANCE_MIN_DEG) adv = cdi::config::ADVANCE_MIN_DEG;
+    const float min_adv_eff = cdi::core::flame::isActive()
+        ? -20.0f : cdi::config::ADVANCE_MIN_DEG;
+    if (adv < min_adv_eff) adv = min_adv_eff;
     if (adv > cdi::config::ADVANCE_MAX_DEG) adv = cdi::config::ADVANCE_MAX_DEG;
     s.target_advance_x10 = (cdi::deg_x10_t)(adv * 10.0f + 0.5f);
     s.actual_advance_x10 = s_actualAdvX10;   // real fired angle (diagnostic)

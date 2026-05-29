@@ -233,6 +233,8 @@ void tick(cdi::rpm_t rpm) {
                 r = 0.0f;
                 break;
         }
+        if (r > 10.0f) r = 10.0f;   // respect the 10° anti-stall ceiling
+                                    // (DRAG/BRAP floors could reach 14°) — audit LOW9
         s_currentRetard = r;
         s_lastSampMs = now;
     }

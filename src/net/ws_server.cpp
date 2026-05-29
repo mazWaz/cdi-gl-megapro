@@ -98,17 +98,18 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
                 client->text("{\"type\":\"err\",\"msg\":\"setiap titik harus [rpm,deg]\"}");
                 return;
             }
-            tmp[n].rpm = (cdi::rpm_t)(pair[0].as<int>());
+            const int rpm_in = pair[0].as<int>();
             tmp[n].deg = pair[1].as<float>();
-            // Range check per point with explicit message
-            if (tmp[n].rpm < cdi::config::RPM_MIN_VALID ||
-                tmp[n].rpm > cdi::config::RPM_MAX_VALID) {
+            // Range check the RAW int BEFORE narrowing to rpm_t (uint16):
+            // a value >65535 would otherwise wrap into range (audit LOW4).
+            if (rpm_in < (int)cdi::config::RPM_MIN_VALID ||
+                rpm_in > (int)cdi::config::RPM_MAX_VALID) {
                 JsonDocument r;
                 r["type"] = "err";
                 char buf[80];
                 snprintf(buf, sizeof(buf),
-                         "titik %u: RPM %u di luar %u-%u",
-                         (unsigned)(n+1), (unsigned)tmp[n].rpm,
+                         "titik %u: RPM %d di luar %u-%u",
+                         (unsigned)(n+1), rpm_in,
                          (unsigned)cdi::config::RPM_MIN_VALID,
                          (unsigned)cdi::config::RPM_MAX_VALID);
                 r["msg"] = buf;
@@ -116,6 +117,7 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
                 client->text(out);
                 return;
             }
+            tmp[n].rpm = (cdi::rpm_t)rpm_in;
             if (tmp[n].deg < cdi::config::ADVANCE_MIN_DEG ||
                 tmp[n].deg > cdi::config::ADVANCE_MAX_DEG) {
                 JsonDocument r;

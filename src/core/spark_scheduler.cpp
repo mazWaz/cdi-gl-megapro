@@ -317,7 +317,7 @@ constexpr uint32_t MIN_PERIOD_HARD_US = 60000000UL / 13000;  // 13000 rpm ceilin
 // next cycle once a fresh period is available).
 constexpr uint32_t MAX_PERIOD_HARD_US = 2000000UL;
 
-static cdi::micros_t s_lastCh1IsrTs = 0;   // for ISR-local period check
+static volatile cdi::micros_t s_lastCh1IsrTs = 0;   // shared CH1↔CH2 ISR — volatile to match siblings (audit LOW13)
 
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     if (!s_armed) return;

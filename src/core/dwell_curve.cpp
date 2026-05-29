@@ -70,7 +70,7 @@ uint16_t lookup(cdi::rpm_t rpm) {
             float t = (float)(rpm - pts[i].rpm) /
                       (float)(pts[i+1].rpm - pts[i].rpm);
             float us = pts[i].dwell_us + t * (pts[i+1].dwell_us - pts[i].dwell_us);
-            return (uint16_t)us;
+            return (uint16_t)(us + 0.5f);   // round, not truncate (audit LOW12)
         }
     }
     return pts[n-1].dwell_us;

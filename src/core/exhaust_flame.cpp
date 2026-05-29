@@ -269,8 +269,8 @@ void tick(cdi::rpm_t rpm) {
 bool IRAM_ATTR shouldFireThisCycle() {
     if (!s_active) return true;
 
-    s_fireCounter++;
-    const uint32_t c = s_fireCounter;
+    const uint32_t c = s_fireCounter++;   // post-increment: first cycle is c=0
+                                          // so the documented phase holds (audit LOW10)
 
     // SAFE: fire, fire, skip → 33% skip rate
     // AGGRESSIVE: fire, skip, skip → 67% skip rate

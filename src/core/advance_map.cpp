@@ -159,7 +159,13 @@ bool Map::loadFromJson(const JsonArrayConst& arr) {
         if (!v.is<JsonArrayConst>()) return false;
         JsonArrayConst pair = v.as<JsonArrayConst>();
         if (pair.size() != 2) return false;
-        tmp[n].rpm = (cdi::rpm_t)(pair[0].as<int>());
+        const int rpm_in = pair[0].as<int>();
+        // Range-check the RAW int BEFORE narrowing to rpm_t (uint16): a
+        // value >65535 would otherwise wrap into range and pass inRange
+        // with a corrupted breakpoint (audit LOW4).
+        if (rpm_in < (int)cdi::config::RPM_MIN_VALID ||
+            rpm_in > (int)cdi::config::RPM_MAX_VALID) return false;
+        tmp[n].rpm = (cdi::rpm_t)rpm_in;
         tmp[n].deg = pair[1].as<float>();
         n++;
     }
@@ -167,10 +173,20 @@ bool Map::loadFromJson(const JsonArrayConst& arr) {
 }
 
 void Map::serialize(JsonArray out) const {
-    for (size_t i = 0; i < count_; i++) {
+    // Snapshot under the spinlock (can't hold it across JSON allocation),
+    // then build the array from the local copy — otherwise a concurrent
+    // core-0 set() could be observed mid-update as count_/points_ mismatch
+    // and persist a torn curve (audit LOW3).
+    Point snap[cdi::config::MAX_ADVANCE_POINTS];
+    size_t n;
+    portENTER_CRITICAL(const_cast<portMUX_TYPE*>(&s_mapMux));
+    n = count_;
+    for (size_t i = 0; i < n; i++) snap[i] = points_[i];
+    portEXIT_CRITICAL(const_cast<portMUX_TYPE*>(&s_mapMux));
+    for (size_t i = 0; i < n; i++) {
         JsonArray pair = out.add<JsonArray>();
-        pair.add(points_[i].rpm);
-        pair.add(points_[i].deg);
+        pair.add(snap[i].rpm);
+        pair.add(snap[i].deg);
     }
 }
 

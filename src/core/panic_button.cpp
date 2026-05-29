@@ -56,7 +56,6 @@ void poll() {
     }
 }
 
-bool tripped()   { return s_tripped; }
-void clearTrip() { s_tripped = false; }
+bool tripped()   { return s_tripped; }   // momentary: true only while held past threshold
 
 } // namespace cdi::core::panic

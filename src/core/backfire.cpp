@@ -53,6 +53,10 @@ cdi::BackfireTrigger trigger() { return s_trigger; }
 void setTrigger(cdi::BackfireTrigger t) {
     s_trigger = t;
     s_activeUntilMs = 0;
+    // Re-baseline the DECEL detector so a mid-ride switch to DECEL doesn't
+    // compute drop against a stale high s_lastRpm → spurious pop (audit LOW8).
+    s_lastRpm    = 0;
+    s_lastSampMs = 0;
 }
 
 void setRpmRange(cdi::rpm_t lo, cdi::rpm_t hi) {
