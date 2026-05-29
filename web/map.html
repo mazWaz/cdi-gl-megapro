@@ -548,9 +548,9 @@ function renderLimits(){
   const HH = 30;   // tinggi grab-tab di puncak garis (zona bebas titik)
   const tab = (x, color, lim, label, val) =>
       `<line x1="${x}" y1="${yT}" x2="${x}" y2="${yB}" stroke="${color}" stroke-width="2" stroke-dasharray="5 4" style="pointer-events:none"/>` +
-      `<rect class="limit-hit" data-lim="${lim}" x="${x-15}" y="${yT-3}" width="30" height="${HH}" rx="4" fill="${color}" style="cursor:ew-resize"/>` +
-      `<text x="${x}" y="${yT+9}"  text-anchor="middle" fill="#050709" style="font-size:9px;font-weight:bold;pointer-events:none">${label}</text>` +
-      `<text x="${x}" y="${yT+21}" text-anchor="middle" fill="#050709" style="font-size:9px;font-weight:bold;pointer-events:none">${val}</text>`;
+      `<rect class="limit-hit" data-lim="${lim}" x="${x-15}" y="${yB-HH}" width="30" height="${HH}" rx="4" fill="${color}" style="cursor:ew-resize"/>` +
+      `<text x="${x}" y="${yB-HH+12}" text-anchor="middle" fill="#050709" style="font-size:9px;font-weight:bold;pointer-events:none">${label}</text>` +
+      `<text x="${x}" y="${yB-HH+24}" text-anchor="middle" fill="#050709" style="font-size:9px;font-weight:bold;pointer-events:none">${val}</text>`;
   let h = '';
   // zona (pointer-events:none → tidak blok grab titik di bawahnya)
   h += `<rect x="${xOver}" y="${yT}" width="${Math.max(0, xOf(RPM_MAX)-xOver)}" height="${PLOT_H}" fill="rgba(230,57,70,0.10)" style="pointer-events:none"/>`;
