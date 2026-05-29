@@ -291,10 +291,6 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         String out; serializeJson(r, out);
         client->text(out);
     }
-    else if (!strcmp(cmd, "clearFailsafe")) {
-        cdi::core::safety::clearFlags();
-        client->text("{\"type\":\"ack\",\"msg\":\"failsafe cleared\"}");
-    }
     else if (!strcmp(cmd, "getWifi")) {
         JsonDocument r;
         r["type"]     = "wifi";

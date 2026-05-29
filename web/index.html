@@ -54,11 +54,11 @@
   </section>
 
   <section class="panel">
-    <span class="label">[ keamanan ]</span>
+    <span class="label">[ status ]</span>
     <p class="caption">
-      Status failsafe sistem. Chip menyala saat fitur aktif: <b>LAUNCH</b>/<b>QS</b>
+      Status operasional live. Chip menyala saat fitur aktif: <b>LAUNCH</b>/<b>QS</b>
       (input clutch/shift), <b>BACKFIRE</b>/<b>RUMBLE</b> (audio mode), <b>VBAT</b>
-      voltage. Reset failsafe = clear flag overrev setelah event fault.
+      voltage. Rev-limit &amp; cut self-recovering — tak perlu reset manual.
     </p>
     <div class="btn-row" style="margin-bottom:6px">
       <span class="chip" id="safetyPill" style="background:rgba(82,183,136,0.18);border-color:var(--green);color:var(--green)">
@@ -72,9 +72,6 @@
       <span class="chip" id="kvBf" style="display:none">BACKFIRE</span>
       <span class="chip" id="kvIr" style="display:none;background:rgba(82,183,136,0.18);border-color:var(--green);color:var(--green)">RUMBLE</span>
       <span class="chip" id="kvVbat">VBAT <b id="kvVbatVal">—</b> V</span>
-    </div>
-    <div class="btn-row">
-      <button class="btn ghost" id="clearFsBtn">↺ Reset failsafe</button>
     </div>
   </section>
 
@@ -280,8 +277,6 @@ cdi.bus.on('presetList', m => {
 
 // (auto-arm toggle dihapus — IGNITION mode kini selalu armed otomatis,
 // jadi preferensi auto-arm tidak relevan lagi di UI.)
-
-$('clearFsBtn').addEventListener('click', () => cdi.send({cmd:'clearFailsafe'}));
 
 $('testFireBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
