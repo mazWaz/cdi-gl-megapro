@@ -183,8 +183,11 @@
     #rotateGate {
       display: flex; flex-direction: column; align-items: center;
       justify-content: center; gap: 14px; text-align: center; padding: 28px;
-      position: fixed; inset: 0; z-index: 9999; background: #0a0d12;
+      position: fixed; top: 0; left: 0; right: 0;
+      bottom: calc(56px + env(safe-area-inset-bottom));   /* sisakan bottom-nav agar navigasi tetap bisa diklik */
+      z-index: 9999; background: #0a0d12;
     }
+    .bottom-nav { z-index: 10000; }   /* di atas overlay → navigate tetap aktif saat portrait */
     #rotateGate .ico { font-size: 60px; color: var(--amber);
       animation: rotGate 2.2s ease-in-out infinite; transform-origin: 50% 50%; }
     #rotateGate b { font-size: 17px; color: var(--amber); letter-spacing: 0.04em; }
@@ -198,7 +201,7 @@
 <div id="rotateGate">
   <div class="ico">⟲</div>
   <b>Putar ke Landscape</b>
-  <span>Map editor butuh layar lebar. Putar HP ke posisi mendatar untuk mengedit kurva advance &amp; rev-limit.</span>
+  <span>Map editor butuh layar lebar. Putar HP ke landscape untuk mengedit kurva advance &amp; rev-limit — atau pakai navigasi di bawah untuk pindah halaman.</span>
 </div>
 
 <div class="topbar">
