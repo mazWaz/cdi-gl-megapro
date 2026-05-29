@@ -300,8 +300,9 @@ LiveStats snapshot() {
     s.alvp_state        = (uint8_t)cdi::core::alvp::state();
     s.alvp_derate_v_x10 = (uint8_t)(cdi::core::alvp::derateThresholdV() * 10.0f + 0.5f);
     s.alvp_disarm_v_x10 = (uint8_t)(cdi::core::alvp::disarmThresholdV() * 10.0f + 0.5f);
-    s.flags4            = (cdi::core::alvp::isEnabled() ? 0x01 : 0)
-                        | (cdi::core::spark::autoArm()  ? 0x02 : 0);
+    s.flags4            = (cdi::core::alvp::isEnabled()   ? 0x01 : 0)
+                        | (cdi::core::spark::autoArm()    ? 0x02 : 0)
+                        | (cdi::core::spark::crankAssist()? 0x04 : 0);
     s.alvp_derate_rpm   = cdi::core::alvp::derateLimitRpm();
     return s;
 }

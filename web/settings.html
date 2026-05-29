@@ -485,6 +485,15 @@
       <input id="offsetInp" type="number" min="-10" max="10" step="0.5" style="width:90px">
       <span class="val">° BTDC</span>
     </label>
+    <label class="chk" style="margin-top:6px">
+      <input type="checkbox" id="crankAssistChk"> crank-assist · fire dari CH2 saat start (eksperimental)
+    </label>
+    <p class="note crit">
+      Saat cranking (&lt; ~1500 rpm) spark dipicu di edge <b>CH2</b> (advance dasar
+      mekanis tetap, period-independent) — mengatasi start susah seperti CDI stok.
+      Default OFF. Berubah seketika &amp; tersimpan ke NVS. <b>WAJIB verifikasi
+      strobe di mesin</b> sebelum dipakai jalan — ini mengubah timing pengapian.
+    </p>
     <div class="btn-row">
       <button class="btn green" id="applyTuningBtn">✓ Terapkan</button>
       <button class="btn ghost" id="reloadTuningBtn">↻ Muat ulang</button>
@@ -807,13 +816,19 @@ cdi.bus.on('telemetry', t => {
   if (!tuningInit && t.dwell_us){
     $('dwellInp').value  = t.dwell_us;
     $('offsetInp').value = (t.adv_offset_x10 / 10).toFixed(1);
+    $('crankAssistChk').checked = !!(t.flags4 & 0x04);
     tuningInit = true;
   }
 });
 $('reloadTuningBtn').addEventListener('click', () => {
   $('dwellInp').value  = cdi.state.telemetry.dwell_us;
   $('offsetInp').value = (cdi.state.telemetry.adv_offset_x10 / 10).toFixed(1);
+  $('crankAssistChk').checked = !!(cdi.state.telemetry.flags4 & 0x04);
   $('tuningStatus').textContent = '› nilai perangkat dimuat';
+});
+$('crankAssistChk').addEventListener('change', e => {
+  cdi.send({cmd:'setCrankAssist', enabled: e.target.checked});
+  $('tuningStatus').textContent = '› crank-assist ' + (e.target.checked ? 'ON' : 'OFF');
 });
 $('applyTuningBtn').addEventListener('click', () => {
   const dwell  = parseInt($('dwellInp').value, 10);
