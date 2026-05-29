@@ -238,6 +238,19 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         String out; serializeJson(r, out);
         client->text(out);
     }
+    else if (!strcmp(cmd, "setCrankAssist")) {
+        // Opt-in dual-edge cranking: fire off the CH2 trailing edge below
+        // CRANK_MODE_RPM (fixed base advance). Immediate save — it changes
+        // ignition behaviour, user expects it to persist a reset.
+        const bool en = doc["enabled"] | false;
+        cdi::core::spark::setCrankAssist(en);
+        cdi::storage::config::saveNow();
+        JsonDocument r;
+        r["type"]    = "crankAssist";
+        r["enabled"] = cdi::core::spark::crankAssist();
+        String out; serializeJson(r, out);
+        client->text(out);
+    }
     else if (!strcmp(cmd, "testFire")) {
         // Optional `dwell` override in µs for diagnostic spark (e.g.
         // 10000 = 10 ms long-dwell to make a visible arc on bench

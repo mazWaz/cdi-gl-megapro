@@ -57,8 +57,11 @@ void IRAM_ATTR isrCh2() {
     ev.ts_us   = t;
     ev.channel = cdi::PulserChannel::CH2;
     ev.level   = lvl;
-    // CH2 is reference-only for scope/pickup-cal — never feeds the
-    // ignition consumer.
+    // CH2 falling edge feeds the spark scheduler's crank-assist path
+    // (fire at the fixed mechanical base advance). Cheap no-op there
+    // unless crank-assist is enabled AND armed this cycle. Still goes to
+    // the scope ring for the diagnostic UI / pickup-cal as before.
+    if (lvl == 0) cdi::core::spark::onPulseCh2FromIsr(t);
     if (!s_scopeRing.pushFromIsr(ev)) s_scopeOverruns++;
     s_total++;
 }

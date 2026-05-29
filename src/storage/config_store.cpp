@@ -119,6 +119,7 @@ void buildJson(JsonDocument& doc) {
     sp["auto_arm"]       = cdi::core::spark::autoArm();
     sp["active_low"]     = cdi::core::spark::activeLow();
     sp["inductive"]      = cdi::core::spark::inductive();
+    sp["crank_assist"]   = cdi::core::spark::crankAssist();
 
     // shift light
     JsonObject sh = doc["shift"].to<JsonObject>();
@@ -239,6 +240,7 @@ void applyJson(const JsonDocument& doc) {
             cdi::core::spark::setAutoArm(sp["auto_arm"] | false);
             cdi::core::spark::setActiveLow(sp["active_low"] | false);
             cdi::core::spark::setInductive(sp["inductive"]  | true);
+            cdi::core::spark::setCrankAssist(sp["crank_assist"] | false);
         }
     }
     // shift light

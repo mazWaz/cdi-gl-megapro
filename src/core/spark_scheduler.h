@@ -109,6 +109,23 @@ bool inductive();
 // ─── ISR entry — called from pulser CH1 falling-edge ISR ───
 void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead);
 
+// ─── ISR entry — called from pulser CH2 falling-edge ISR ───
+// Cheap no-op unless crank-assist armed a CH2 fire this cycle, in which
+// case it ends the dwell HERE → spark fires at the CH2 mechanical base
+// advance (pickup::baseAdvanceRef), period-independent.
+void IRAM_ATTR onPulseCh2FromIsr(cdi::micros_t t_trail);
+
+// ── Crank-assist (opt-in dual-edge cranking; default OFF) ──
+// When enabled, below config::CRANK_MODE_RPM the scheduler charges from
+// CH1 and fires at the CH2 trailing edge (fixed base advance, period-
+// independent) instead of the CH1+delay path — whose drift gate rejects
+// most cranking sparks (validated 56%→75% useful spark on real crank
+// data). No effect on the running CH1 path. armCrankCycle() is called by
+// live_stats each tick with (rpm < CRANK_MODE_RPM).
+void setCrankAssist(bool en);
+bool crankAssist();
+void armCrankCycle(bool en);
+
 // ─── Telemetry ───
 uint32_t totalFires();
 int32_t  lastJitterUs();   // scheduled - actual (signed; positive = late)

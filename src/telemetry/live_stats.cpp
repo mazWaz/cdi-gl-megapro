@@ -65,6 +65,11 @@ void tick() {
         cdi::rpm_t r_inst = (cdi::rpm_t)(60000000ULL / periodU);
         if (r_inst > 65535) r_inst = 65535;
 
+        // Crank-assist arming: below CRANK_MODE_RPM the spark ISR fires
+        // off the CH2 trailing edge (fixed base advance) instead of the
+        // period-derived CH1 delay. No-op unless crank-assist enabled.
+        cdi::core::spark::armCrankCycle(r_inst < cdi::config::CRANK_MODE_RPM);
+
         float adv = cdi::core::advance::active().lookup(r_inst);
         // Cut-mode retard (T9 — configurable per active cut mode).
         adv -= cdi::core::safety::currentRetardDeg();
@@ -228,6 +233,7 @@ void tick() {
         // the diagnostic angle so the log doesn't show a stale fire
         // angle when nothing is firing.
         s_actualAdvX10 = 0;
+        cdi::core::spark::armCrankCycle(false);
     }
 }
 

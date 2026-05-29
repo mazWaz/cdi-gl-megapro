@@ -56,6 +56,13 @@ constexpr uint32_t RPM_MAX_VALID = 13000;
 constexpr float    ADVANCE_MIN_DEG = 0.0f;
 constexpr float    ADVANCE_MAX_DEG = 45.0f;
 
+// Crank-assist (opt-in, default OFF): below this RPM the spark scheduler
+// fires off the CH2 trailing edge (fixed mechanical base advance, period-
+// independent) instead of the CH1+delay path whose drift gate rejects
+// most cranking sparks. Threshold sits just above idle so the entire
+// cranking + low-idle band (advance ≤ base advance) uses the CH2 ref.
+constexpr uint32_t CRANK_MODE_RPM = 1500;
+
 // ---------- Safety ----------
 constexpr uint32_t NO_SIGNAL_TIMEOUT_MS  = 500;   // pulser silent → disarm
 constexpr uint32_t SAFETY_TICK_INTERVAL_MS = 100;

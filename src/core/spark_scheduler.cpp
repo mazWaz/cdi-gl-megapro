@@ -48,12 +48,23 @@ volatile int32_t  s_lastJitterUs  = 0;
 volatile cdi::micros_t s_scheduledFireUs = 0;
 volatile bool     s_dwellInProgress = false;   // GPIO is in active (charging) state
 
+// ── Crank-assist (opt-in, default OFF) — dual-edge CH2 cranking fire ──
+volatile bool     s_crankAssist    = false;  // master enable
+volatile bool     s_crankArmCycle  = false;  // live_stats: this cycle rpm < CRANK_MODE_RPM
+volatile bool     s_ch2FirePending = false;  // dwell charging, awaiting CH2 fire-off
+
 constexpr uint32_t MIN_DELAY_US = 50;        // safety floor
 // Ceiling must accommodate cranking RPM. At 30 rpm (period 2 s) a
 // 30° delay = 167 ms, well above the old 50 ms cap that was clamping
 // every cranking-speed fire to the wrong timing. 500 ms is large
 // enough for 20 rpm cranking at full magnet_width delay.
 constexpr uint32_t MAX_DELAY_US = 500000;    // 500 ms ceiling
+
+// Crank-assist max dwell = also the CH2-miss fallback fire point. Sized
+// so even at ~200 rpm the fallback fire stays ≤~20° BTDC (no kickback);
+// at normal crank speed the CH2 edge arrives first and fires exactly at
+// base advance. Also caps coil charge time during the (brief) crank.
+constexpr uint32_t CRANK_MAX_DWELL_US = 10000;
 
 inline void gpioHigh(uint8_t pin) { GPIO.out_w1ts = (1U << pin); }
 inline void gpioLow(uint8_t pin)  { GPIO.out_w1tc = (1U << pin); }
@@ -106,6 +117,9 @@ void IRAM_ATTR isrFireOff() {
     sparkIdle(cdi::pins::SPARK_OUT);
     gpioLow(cdi::pins::MODE_LED);
     s_dwellInProgress = false;
+    // If this fire-off is the crank-assist cap (CH2 never arrived), clear
+    // the pending flag so a late CH2 edge can't fire a second spark.
+    s_ch2FirePending = false;
     s_fireCount++;
 
 #if ESP_ARDUINO_VERSION_MAJOR < 3
@@ -352,6 +366,38 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     }
     s_lastCh1IsrTs = t_lead;
 
+    // ─── Crank-assist (opt-in): charge from CH1, fire AT CH2 ───
+    // Below the cranking RPM threshold the previous-period delay is
+    // meaningless — real crank captures swing >2× between consecutive
+    // pulses, so the drift gate below rejects most sparks (measured 56%
+    // useful) or fires them at the wrong angle. Instead, charge the coil
+    // now and let the CH2 trailing edge fire the spark at the FIXED
+    // mechanical base advance (pickup::baseAdvanceRef, ~14° on Megapro) —
+    // period-independent, exactly like a stock CDI. If CH2 never arrives
+    // this rev, the cap timer (CRANK_MAX_DWELL_US) fires near base advance
+    // anyway — bounded, no kickback, no stranded coil. Deliberately
+    // bypasses the delay-primed + drift gates; every safety gate ABOVE
+    // (armed, QS, shouldFire, absolute ceiling, stall re-anchor) still
+    // applies. Default OFF → this whole branch is skipped and the running
+    // CH1 path below is untouched.
+    if (s_crankAssist && s_crankArmCycle && !s_dwellInProgress) {
+        s_scheduledFireUs = t_lead;
+        sparkActive(cdi::pins::SPARK_OUT);
+        gpioHigh(cdi::pins::MODE_LED);
+        s_dwellInProgress = true;
+        s_ch2FirePending  = true;
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        timerWrite(s_fireOffTimer, 0);
+        timerAlarm(s_fireOffTimer, CRANK_MAX_DWELL_US, false, 0);
+#else
+        timerAlarmDisable(s_fireOffTimer);
+        timerRestart(s_fireOffTimer);
+        timerAlarmWrite(s_fireOffTimer, CRANK_MAX_DWELL_US, false);
+        timerAlarmEnable(s_fireOffTimer);
+#endif
+        return;
+    }
+
     // ─── No fire until live_stats has primed a valid delay ───
     // setNextDelayUs() is only called when periodU > 0 in live_stats
     // (i.e. rpm_calc has computed at least one valid period). On a
@@ -512,5 +558,33 @@ void forceLow() {
     if (s_fireOffTimer) timerAlarmDisable(s_fireOffTimer);
 #endif
 }
+
+// ─── CH2 trailing-edge ISR entry (crank-assist fire point) ───
+void IRAM_ATTR onPulseCh2FromIsr(cdi::micros_t t_trail) {
+    // No-op unless crank-assist armed a CH2 fire this cycle.
+    if (!s_ch2FirePending) return;
+    s_ch2FirePending = false;
+    // Cancel the anti-strand cap timer — CH2 arrived first (normal case).
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    if (s_fireOffTimer) timerStop(s_fireOffTimer);
+#else
+    if (s_fireOffTimer) timerAlarmDisable(s_fireOffTimer);
+#endif
+    // End dwell on THIS edge → spark fires at the CH2 mechanical base
+    // advance. Jitter ≈ 0 (we fire exactly at the captured edge).
+    sparkIdle(cdi::pins::SPARK_OUT);
+    gpioLow(cdi::pins::MODE_LED);
+    s_dwellInProgress = false;
+    s_fireCount++;
+    s_lastJitterUs = (int32_t)((cdi::micros_t)micros() - t_trail);
+}
+
+void setCrankAssist(bool en) {
+    s_crankAssist = en;
+    if (!en) s_crankArmCycle = false;
+    Serial.printf("[spark] crank-assist (CH2) = %s\n", en ? "ON" : "OFF");
+}
+bool crankAssist() { return s_crankAssist; }
+void armCrankCycle(bool en) { s_crankArmCycle = en; }
 
 } // namespace cdi::core::spark
