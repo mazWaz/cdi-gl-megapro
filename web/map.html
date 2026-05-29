@@ -217,8 +217,8 @@
         <line id="cursorLine" class="cursor-line" x1="-10" y1="0" x2="-10" y2="360"/>
         <circle id="cursorDot" class="cursor-glow" cx="-10" cy="-10" r="5"/>
         <text id="coordReadout" class="coord-readout" x="0" y="0" text-anchor="middle"></text>
-        <g id="limits"></g>
         <g id="dots"></g>
+        <g id="limits"></g>
       </svg>
 
       <div class="hud">
@@ -538,24 +538,27 @@ function renderCurve(){
 let mainLimit    = REDLINE_RPM;   // default sampai telemetry tiba
 let overrevLimit = 11500;
 let dragLimit    = null;          // 'main' | 'overrev'
+let limitPid     = null;          // pointerId di-capture svg saat drag
 
 function renderLimits(){
   const g = document.getElementById('limits');
   if (!g) return;
   const xMain = xOf(mainLimit), xOver = xOf(overrevLimit);
   const yT = V.padT, yB = V.padT + PLOT_H;
+  const HH = 30;   // tinggi grab-tab di puncak garis (zona bebas titik)
+  const tab = (x, color, lim, label, val) =>
+      `<line x1="${x}" y1="${yT}" x2="${x}" y2="${yB}" stroke="${color}" stroke-width="2" stroke-dasharray="5 4" style="pointer-events:none"/>` +
+      `<rect class="limit-hit" data-lim="${lim}" x="${x-15}" y="${yT-3}" width="30" height="${HH}" rx="4" fill="${color}" style="cursor:ew-resize"/>` +
+      `<text x="${x}" y="${yT+9}"  text-anchor="middle" fill="#050709" style="font-size:9px;font-weight:bold;pointer-events:none">${label}</text>` +
+      `<text x="${x}" y="${yT+21}" text-anchor="middle" fill="#050709" style="font-size:9px;font-weight:bold;pointer-events:none">${val}</text>`;
   let h = '';
-  // zona hard-cut (di atas MAX) + zona soft (MAIN..MAX)
-  h += `<rect x="${xOver}" y="${yT}" width="${Math.max(0, xOf(RPM_MAX)-xOver)}" height="${PLOT_H}" fill="rgba(230,57,70,0.10)"/>`;
-  h += `<rect x="${xMain}" y="${yT}" width="${Math.max(0, xOver-xMain)}" height="${PLOT_H}" fill="rgba(244,160,0,0.07)"/>`;
-  // garis + label
-  h += `<line x1="${xMain}" y1="${yT}" x2="${xMain}" y2="${yB}" stroke="var(--amber)" stroke-width="2" stroke-dasharray="5 4"/>`;
-  h += `<text x="${xMain}" y="${yT+12}" text-anchor="middle" fill="var(--amber)" style="font-size:10px;font-weight:bold">MAIN ${mainLimit}</text>`;
-  h += `<line x1="${xOver}" y1="${yT}" x2="${xOver}" y2="${yB}" stroke="var(--red)" stroke-width="2" stroke-dasharray="5 4"/>`;
-  h += `<text x="${xOver}" y="${yT+24}" text-anchor="middle" fill="var(--red)" style="font-size:10px;font-weight:bold">MAX ${overrevLimit}</text>`;
-  // hit area lebar (transparan) untuk grab/drag
-  h += `<rect class="limit-hit" data-lim="main"    x="${xMain-9}" y="${yT}" width="18" height="${PLOT_H}" fill="transparent" style="cursor:ew-resize"/>`;
-  h += `<rect class="limit-hit" data-lim="overrev" x="${xOver-9}" y="${yT}" width="18" height="${PLOT_H}" fill="transparent" style="cursor:ew-resize"/>`;
+  // zona (pointer-events:none → tidak blok grab titik di bawahnya)
+  h += `<rect x="${xOver}" y="${yT}" width="${Math.max(0, xOf(RPM_MAX)-xOver)}" height="${PLOT_H}" fill="rgba(230,57,70,0.10)" style="pointer-events:none"/>`;
+  h += `<rect x="${xMain}" y="${yT}" width="${Math.max(0, xOver-xMain)}" height="${PLOT_H}" fill="rgba(244,160,0,0.07)" style="pointer-events:none"/>`;
+  // garis full-height (visual, non-interaktif) + grab-tab di puncak chart
+  // (zona deg tinggi yang bebas titik) sebagai target geser yang mudah.
+  h += tab(xMain, 'var(--amber)', 'main',    'MAIN', mainLimit);
+  h += tab(xOver, 'var(--red)',   'overrev', 'MAX',  overrevLimit);
   g.innerHTML = h;
   g.querySelectorAll('.limit-hit').forEach(el => {
     el.addEventListener('pointerdown', e => startLimitDrag(e, el.dataset.lim));
@@ -564,11 +567,13 @@ function renderLimits(){
 
 function startLimitDrag(e, which){
   e.preventDefault(); e.stopPropagation();
-  dragLimit = which;
-  e.target.setPointerCapture(e.pointerId);
-  e.target.addEventListener('pointermove', onLimitMove);
-  e.target.addEventListener('pointerup', onLimitUp);
-  e.target.addEventListener('pointercancel', onLimitUp);
+  dragLimit = which; limitPid = e.pointerId;
+  // Capture di SVG (elemen stabil) — BUKAN tab, karena renderLimits()
+  // membangun-ulang tab tiap gerakan → capture putus = "susah digeser".
+  try { svg.setPointerCapture(e.pointerId); } catch(_){}
+  svg.addEventListener('pointermove', onLimitMove);
+  svg.addEventListener('pointerup', onLimitUp);
+  svg.addEventListener('pointercancel', onLimitUp);
 }
 function onLimitMove(e){
   if (!dragLimit) return;
@@ -584,9 +589,11 @@ function onLimitMove(e){
 function onLimitUp(e){
   if (!dragLimit) return;
   dragLimit = null;
-  e.target.removeEventListener('pointermove', onLimitMove);
-  e.target.removeEventListener('pointerup', onLimitUp);
-  e.target.removeEventListener('pointercancel', onLimitUp);
+  svg.removeEventListener('pointermove', onLimitMove);
+  svg.removeEventListener('pointerup', onLimitUp);
+  svg.removeEventListener('pointercancel', onLimitUp);
+  try { if (limitPid !== null) svg.releasePointerCapture(limitPid); } catch(_){}
+  limitPid = null;
   cdi.send({ cmd:'setRevLimit', main: mainLimit, overrev: overrevLimit });
   document.getElementById('mapStatus').textContent =
     '› rev-limit dikirim: MAIN ' + mainLimit + ' · MAX ' + overrevLimit + ' rpm';
