@@ -130,10 +130,16 @@ matters to you.
    ```
 3. Connect phone WiFi → `CDI-Megapro` → enter the password from `platformio.ini`
 4. Open browser → `http://192.168.4.1/` (auto-redirects via captive portal)
-6. Dashboard appears, default mode = IGNITION but spark disarmed
+6. Dashboard appears, mode = IGNITION → **spark is LIVE automatically**
+   (market-CDI behaviour: armed whenever powered in IGNITION, no manual
+   arm step). **Keep busi grounded/removed on the bench.** The only OFF
+   is the panic button (hold BOOT/GPIO0 ≥2 s) or the SAFE_HOLD button.
 7. Settings → Motor Preset → pick your motor
-8. Settings → Pickup → "Kalibrasi sekarang" once engine idle (optional, refines magnet width)
-9. Dashboard → "Aktifkan pengapian" to arm (with confirmation)
+8. Settings → Pickup → "Kalibrasi sekarang" once engine idle (optional,
+   refines magnet width; runs with spark live, auto-kills only on
+   multi-tooth)
+9. (No arm step.) Faults pulse-cut and self-recover — they never disarm,
+   so you never have to re-arm from the UI mid-ride.
 
 ---
 

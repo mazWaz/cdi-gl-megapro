@@ -20,7 +20,13 @@ volatile OperatingMode s_mode = OperatingMode::BOOT;
 
 void enterIgnition() {
     cdi::core::pulser::begin();
-    // armed stays whatever it was — UI must explicitly arm
+    // Market-CDI behaviour: IGNITION mode IS "on" → arm automatically.
+    // The rider never does a separate "arm" step — powering up (or
+    // booting) in IGNITION makes spark live, exactly like a stock CDI.
+    // The only OFF/kill is SAFE_HOLD (panic button GPIO0, or UI). Faults
+    // pulse-cut (self-recovering) and never clear `armed`. ⚠ Spark is
+    // LIVE in this mode — keep busi grounded/removed on the bench.
+    cdi::core::spark::setArmed(true);
 }
 
 void enterSafeHold() {

@@ -9,6 +9,7 @@
 #include "core/pulser_input.h"
 #include "core/spark_scheduler.h"
 #include "core/rpm_calc.h"
+#include "core/mode.h"
 
 namespace cdi::core::pickup_cal {
 namespace {
@@ -90,7 +91,12 @@ void finalizePending(uint32_t next_period_us) {
     // safety case: the firmware has been firing on a geometry it cannot
     // drive (phantom multi-edge per rev), so cut spark immediately here.
     if (s_pending.extra_falls > 0) {
-        cdi::core::spark::setArmed(false);
+        // Incompatible toothed pickup → KILL via SAFE_HOLD, not a bare
+        // disarm. SAFE_HOLD latches off; otherwise the always-on IGNITION
+        // auto-arm (mode::enterIgnition) would immediately re-enable firing
+        // on a pickup this CDI cannot drive. User must fix wiring/preset
+        // and explicitly re-enter IGNITION.
+        cdi::core::mode::set(cdi::OperatingMode::SAFE_HOLD);
         s_state = State::ERR_MULTI_TOOTH;
         return;
     }

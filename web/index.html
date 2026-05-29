@@ -102,17 +102,18 @@
     </label>
     <label class="chk" style="margin-top:6px">
       <input type="checkbox" id="noSigChk">
-      <span>Aktifkan <b>no-signal failsafe</b> (auto-disarm kalau pulser signal hilang setelah engine running) — wajib ON saat riding, OFF di bench</span>
+      <span>Aktifkan <b>no-signal failsafe</b> (jeda spark otomatis kalau pulser signal hilang setelah engine running; <b>auto-resume</b> saat sinyal balik — TIDAK disarm, tak perlu arm ulang)</span>
     </label>
     <label class="chk" style="margin-top:8px">
       <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
     </label>
     <p class="note crit">
-      ⚠ Mengaktifkan akan menyalakan output trigger GPIO25 ke MOSFET
-      driver koil pengapian. Wajib mode PENGAPIAN. Lepas busi dari
-      silinder sebelum uji bangku.<br><br>
-      <b>Auto-arm</b>: device langsung armed setelah power on (cocok untuk
-      install permanen di motor — ESP32 dapat power dari kunci kontak).
+      ⚠ Mode <b>PENGAPIAN = ON</b> → spark otomatis LIVE (seperti CDI
+      pasaran: hidup begitu ada power + sinyal pulser, tanpa langkah arm
+      manual). OFF/kill = panic button (tahan BOOT ≥2 dtk) atau tombol
+      SAFE_HOLD. <b>Lepas/ground busi sebelum uji bangku.</b><br><br>
+      <b>Auto-arm</b>: kini perilaku baku (IGNITION selalu armed) — toggle
+      ini legacy, tak perlu lagi diaktifkan manual.
       Saat aktif, spark fire begitu pulser detected. Disable saat
       bench-test / development.
     </p>
