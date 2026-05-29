@@ -108,7 +108,7 @@ void tick() {
 
         // ── Effective dwell selection ──
         //
-        // Three constraints on dwell for an inductive ignition stage:
+        // Four constraints on dwell for an inductive ignition stage:
         //   1. Thermal: dwell ≤ 40 % of period so primary coil never
         //      stays energized between cycles.
         //   2. Advance preservation: spark fires at end of dwell;
@@ -121,6 +121,11 @@ void tick() {
         //   3. Spark energy floor: below ~200 µs primary doesn't
         //      charge enough for a useful spark. Honor the floor even
         //      if it means slightly retarded timing.
+        //   4. RPM-compensated dwell curve (T10, optional): a per-RPM
+        //      override that may only SHORTEN dwell. Composed in (min)
+        //      BEFORE constraint 2 so the SINGLE final value flows into
+        //      both the effective dwell and the scheduler-delay
+        //      subtraction below.
         //
         // For capacitive (CDI/SCR) ignition, constraint #2 doesn't
         // apply — spark fires on the rising edge, dwell is just the
@@ -138,6 +143,24 @@ void tick() {
         uint32_t dwell_us = (uint32_t)((float)configured_dwell *
                                        cdi::core::alvp::dwellMultiplier());
         if (dwell_us > safe_dwell_cap) dwell_us = safe_dwell_cap;
+
+        // Constraint 4 — RPM-compensated dwell curve (T10).
+        // MUST be folded in HERE, before the advance-budget cap and the
+        // scheduler_delay computation, so the same final dwell value is
+        // BOTH written as the effective dwell AND subtracted from
+        // spark_delay below. Previously the curve was applied after
+        // setNextDelayUs(), leaving scheduler_delay computed against the
+        // pre-curve dwell: on a TCI stage the fire-off then landed early
+        // by (pre_curve_dwell − curve_dwell) µs → spark OVER-ADVANCED
+        // (e.g. ~7° at 2000 rpm with a 1000 µs idle-curve point, exactly
+        // the documented "shorter dwell at idle" use case). The curve may
+        // only ever SHORTEN dwell (take the min), so the rider can never
+        // exceed their configured cap through it; toggling the curve off
+        // restores the user's s_dwellUs intent untouched.
+        if (cdi::core::dwell::isEnabled()) {
+            const uint32_t curve_dwell = cdi::core::dwell::lookup(r_inst);
+            if (curve_dwell < dwell_us) dwell_us = curve_dwell;
+        }
 
         if (cdi::core::spark::inductive()) {
             // Pre-compute spark_delay to check the advance constraint.
@@ -199,22 +222,6 @@ void tick() {
             Serial.printf("[ign] rpm=%u target=%.1f° actual=%.1f° dwell=%uµs(cfg=%u)\n",
                           (unsigned)r_inst, adv, fired_angle,
                           (unsigned)dwell_us, (unsigned)configured_dwell);
-        }
-
-        // T10: dwell-compensation curve.
-        // Write to EFFECTIVE only — leaves the user-configured value
-        // (s_dwellUs, persisted in NVS) untouched so toggling the curve
-        // off restores the user's intent. Curve values are clamped by
-        // setEffectiveDwellUs to ≤ configured anyway, so the rider can
-        // never accidentally exceed their own dwell cap through the
-        // curve.
-        if (cdi::core::dwell::isEnabled()) {
-            uint16_t curve_dwell = cdi::core::dwell::lookup(r_inst);
-            // Take the SMALLER of (live cap dwell_us we already computed
-            // above) and (curve value) so all three constraints —
-            // thermal cap, advance budget, RPM curve — compose safely.
-            uint16_t composed = (curve_dwell < dwell_us) ? curve_dwell : (uint16_t)dwell_us;
-            cdi::core::spark::setEffectiveDwellUs(composed);
         }
     } else {
         // No valid period (engine stopped / pre-first-pulse) — clear

@@ -78,6 +78,15 @@ void IRAM_ATTR isrFireOn() {
 
     // Arm fire-off timer for now + dwell.
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
+    // Reset the counter to 0 BEFORE arming. In arduino-esp32 v3 the
+    // GPTimer alarm value is an ABSOLUTE count, so without this the
+    // alarm fires relative to wherever the free-running counter happens
+    // to be — i.e. never (count already past it) or immediately — on
+    // every cycle after the first. The v2 path below does the same via
+    // timerRestart(). (This whole branch is dormant on the current
+    // arduino-esp32 2.0.17 build; it activates only on a framework
+    // upgrade, where this reset prevents silent spark mis-timing.)
+    timerWrite(s_fireOffTimer, 0);
     timerAlarm(s_fireOffTimer, s_effectiveDwellUs, false, 0);
 #else
     timerAlarmDisable(s_fireOffTimer);
@@ -168,10 +177,22 @@ bool autoArm() { return s_autoArm; }
 void setNextDelayUs(uint32_t d, uint32_t basis_period_us) {
     if (d < MIN_DELAY_US) d = MIN_DELAY_US;
     if (d > MAX_DELAY_US) d = MAX_DELAY_US;
+    // Publish ordering. The pulser CH1 ISR runs on the SAME core as this
+    // loop-side caller and can preempt between any two of these stores.
+    // It gates on s_delayPrimed before reading the (s_nextDelayUs,
+    // s_delayBasisPeriodUs) pair, so clear the gate FIRST: a mid-update
+    // preemption then sees primed==false and cleanly skips that one fire
+    // (s_lastCh1IsrTs is still advanced earlier in the ISR, so period
+    // tracking stays in sync — no cascade) instead of acting on a
+    // new-delay / stale-basis mix whose drift-gate check would be
+    // computed against the wrong basis. Re-arm the gate LAST, once both
+    // payload fields are coherent. All three are volatile, so the
+    // compiler preserves this store order. Cost: a sub-µs primed==false
+    // window per loop tick → on the order of one skipped spark every few
+    // minutes at peak RPM, inaudible.
+    s_delayPrimed        = false;
     s_nextDelayUs        = d;
     s_delayBasisPeriodUs = basis_period_us;
-    // Live_stats called us, which means it has a valid period. From
-    // here on the ISR is allowed to fire on s_nextDelayUs.
     s_delayPrimed        = true;
 }
 
@@ -230,6 +251,7 @@ void manualFire(uint32_t dwell_override_us) {
 
     s_scheduledFireUs = (cdi::micros_t)micros() + 100;
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
+    timerWrite(s_fireOnTimer, 0);   // v3 alarm is absolute — reset count first (see isrFireOn)
     timerAlarm(s_fireOnTimer, 100, false, 0);
 #else
     timerAlarmDisable(s_fireOnTimer);
@@ -402,6 +424,7 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
         gpioHigh(cdi::pins::MODE_LED);
         s_dwellInProgress = true;
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
+        timerWrite(s_fireOffTimer, 0);   // v3 alarm is absolute — reset count first (see isrFireOn)
         timerAlarm(s_fireOffTimer, s_effectiveDwellUs, false, 0);
 #else
         timerAlarmDisable(s_fireOffTimer);
@@ -416,6 +439,7 @@ void IRAM_ATTR onPulseCh1FromIsr(cdi::micros_t t_lead) {
     s_scheduledFireUs = t_lead + delay;
 
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
+    timerWrite(s_fireOnTimer, 0);   // v3 alarm is absolute — reset count first (see isrFireOn)
     timerAlarm(s_fireOnTimer, delay, false, 0);
 #else
     timerAlarmDisable(s_fireOnTimer);

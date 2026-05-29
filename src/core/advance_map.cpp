@@ -79,24 +79,32 @@ bool Map::set(const Point* pts, size_t n) {
         Serial.printf("[advance] map rejected: %s\n", err);
         return false;
     }
-    // Cross-core critical section: live_stats::tick (core 1) reads
-    // points_/count_ via lookup() concurrently with this write
-    // (called from WS handler on core 0). Without the spinlock the
-    // reader could see a torn copy mid-update and fire spark at a
-    // wrong crank angle for one cycle.
-    portENTER_CRITICAL(&s_mapMux);
-    for (size_t i = 0; i < n; i++) points_[i] = pts[i];
-    count_ = n;
-    // sort by rpm ascending (insertion-sort is plenty for n <= 32)
-    for (size_t i = 1; i < count_; i++) {
-        Point key = points_[i];
+    // Sort into a LOCAL buffer OUTSIDE the spinlock. The insertion sort
+    // is O(n²) for up to 32 points; running it inside portENTER_CRITICAL
+    // (as it used to) held interrupts disabled on the spinning core for
+    // the whole sort — hundreds of operations — which could stall the
+    // pulser CH1 ISR on core 1 long enough to jitter one spark cycle
+    // (~6° at high RPM) whenever a map edit on core 0 collided with a
+    // fire. Build the sorted result here, then publish with a copy-only
+    // critical section (~n word-copies, sub-µs).
+    Point sorted[cdi::config::MAX_ADVANCE_POINTS];
+    for (size_t i = 0; i < n; i++) sorted[i] = pts[i];
+    for (size_t i = 1; i < n; i++) {
+        Point key = sorted[i];
         size_t j = i;
-        while (j > 0 && points_[j - 1].rpm > key.rpm) {
-            points_[j] = points_[j - 1];
+        while (j > 0 && sorted[j - 1].rpm > key.rpm) {
+            sorted[j] = sorted[j - 1];
             j--;
         }
-        points_[j] = key;
+        sorted[j] = key;
     }
+    // Cross-core publish: live_stats::tick (core 1) reads points_/count_
+    // via lookup() concurrently with this write (called from a WS handler
+    // on core 0). The spinlock prevents the reader from seeing a torn
+    // copy mid-update and firing at a wrong crank angle for one cycle.
+    portENTER_CRITICAL(&s_mapMux);
+    for (size_t i = 0; i < n; i++) points_[i] = sorted[i];
+    count_ = n;
     portEXIT_CRITICAL(&s_mapMux);
     return true;
 }
