@@ -310,9 +310,17 @@ void tick() {
 }
 
 void setRevLimits(uint32_t main_rpm, uint32_t overrev_rpm) {
+    // The overrev hard-cut must stay REACHABLE. rpm is derived from a
+    // period floored at 60e6/RPM_MAX_VALID, so the max measurable rpm is
+    // ~RPM_MAX_VALID; an overrev above that is dead code (audit M8 — two
+    // drag presets shipped 13500 > max-observable 13001). Cap overrev a
+    // little below the ceiling and keep main below that so they stay
+    // ordered and both reachable.
+    constexpr uint32_t OVERREV_CEIL = cdi::config::RPM_MAX_VALID - 100;   // 12900
     if (main_rpm < 1000) main_rpm = 1000;
+    if (main_rpm > OVERREV_CEIL - 200) main_rpm = OVERREV_CEIL - 200;
     if (overrev_rpm < main_rpm + 200) overrev_rpm = main_rpm + 200;
-    if (overrev_rpm > 20000) overrev_rpm = 20000;
+    if (overrev_rpm > OVERREV_CEIL) overrev_rpm = OVERREV_CEIL;
     s_mainLimit    = main_rpm;
     s_overrevLimit = overrev_rpm;
     Serial.printf("[safety] limits updated · main=%u · overrev=%u\n",

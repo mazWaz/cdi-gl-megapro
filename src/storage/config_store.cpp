@@ -253,10 +253,12 @@ void applyJson(const JsonDocument& doc) {
     {
         JsonObjectConst dc = doc["dwell_curve"];
         if (!dc.isNull()) {
+            bool loaded = true;
             if (dc["points"].is<JsonArrayConst>()) {
-                cdi::core::dwell::loadFromJson(dc["points"].as<JsonArrayConst>());
+                loaded = cdi::core::dwell::loadFromJson(dc["points"].as<JsonArrayConst>());
             }
-            cdi::core::dwell::setEnabled(dc["enabled"] | false);
+            // Enable only if the persisted curve validated (audit M7).
+            cdi::core::dwell::setEnabled(loaded && (dc["enabled"] | false));
         }
     }
     // launch

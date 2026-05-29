@@ -57,7 +57,11 @@ constexpr adc1_channel_t VBAT_SENSE_ADC = ADC1_CHANNEL_4;
 
 // ---------- Voltage divider ratios (for ALVP / gear sense conversion) ----------
 constexpr float VBAT_DIVIDER_RATIO = 4.0f;   // 12V → 3V at ADC pin
-constexpr float ADC_VREF_V         = 3.3f;
+// DB_11 attenuation full-scale on ESP32 is ~3.55 V (NOT 3.3 V). Using 3.3
+// here under-read vbat by ~8% and saturated at 13.2 V (audit M4). 3.55 is
+// the nominal DB_11 FS; for per-chip accuracy a future change should use
+// the eFuse-calibrated analogReadMilliVolts()/esp_adc_cal path.
+constexpr float ADC_VREF_V         = 3.55f;
 constexpr uint16_t ADC_FULL_SCALE  = 4095;
 
 } // namespace cdi::pins

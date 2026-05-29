@@ -56,9 +56,10 @@ void setTrigger(cdi::BackfireTrigger t) {
 }
 
 void setRpmRange(cdi::rpm_t lo, cdi::rpm_t hi) {
-    if (lo < 500)  lo = 500;
+    if (lo < 500)   lo = 500;
+    if (lo > 14800) lo = 14800;     // clamp lo FIRST so hi=lo+200 ≤ 15000
     if (hi <= lo + 200) hi = lo + 200;
-    if (hi > 15000) hi = 15000;
+    if (hi > 15000) hi = 15000;     // (audit M5: lo>hi could disable backfire)
     s_rpmLo = lo;
     s_rpmHi = hi;
 }

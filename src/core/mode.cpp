@@ -1,6 +1,8 @@
 #include "core/mode.h"
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "config.h"
 #include "core/pulser_input.h"
@@ -17,6 +19,14 @@ namespace {
 // branches on the next iteration. Enum + uint8 backing is atomic
 // at the word level on Xtensa.
 volatile OperatingMode s_mode = OperatingMode::BOOT;
+
+// Serializes set() across the two tasks that call it — WS handler (core 0)
+// and panic/pickup_cal pollers (core-1 loop). Without it, a UI arm and a
+// concurrent panic SAFE_HOLD can interleave so the panic reads a stale
+// s_mode and early-returns (kill swallowed → spark stays LIVE) — audit M9.
+// A FreeRTOS mutex (not portMUX) so we can safely hold it across the
+// attachInterrupt/detachInterrupt inside enterIgnition/enterSafeHold.
+SemaphoreHandle_t s_modeMux = nullptr;
 
 void enterIgnition() {
     cdi::core::pulser::begin();
@@ -37,6 +47,7 @@ void enterSafeHold() {
 } // anonymous
 
 void begin() {
+    if (!s_modeMux) s_modeMux = xSemaphoreCreateMutex();
     s_mode = OperatingMode::IGNITION;
     enterIgnition();
     Serial.println("[mode] IGNITION (default)");
@@ -45,15 +56,24 @@ void begin() {
 OperatingMode current() { return s_mode; }
 
 bool set(OperatingMode m) {
-    if (m == s_mode) return true;
-    switch (m) {
-        case OperatingMode::IGNITION:  enterIgnition();  break;
-        case OperatingMode::SAFE_HOLD: enterSafeHold();  break;
-        default:                       return false;
+    // Atomic {read s_mode → side-effects → write s_mode} across both
+    // calling tasks (audit M9), so a competing transition can't observe a
+    // stale mode and no-op while this one is mid-flight.
+    if (s_modeMux) xSemaphoreTake(s_modeMux, portMAX_DELAY);
+    bool ok = true;
+    if (m != s_mode) {
+        switch (m) {
+            case OperatingMode::IGNITION:  enterIgnition();  break;
+            case OperatingMode::SAFE_HOLD: enterSafeHold();  break;
+            default:                       ok = false;       break;
+        }
+        if (ok) {
+            s_mode = m;
+            Serial.printf("[mode] -> %s\n", name(m));
+        }
     }
-    s_mode = m;
-    Serial.printf("[mode] -> %s\n", name(m));
-    return true;
+    if (s_modeMux) xSemaphoreGive(s_modeMux);
+    return ok;
 }
 
 const char* name(OperatingMode m) {

@@ -900,13 +900,19 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
     else if (!strcmp(cmd, "setDwellCurve")) {
         bool en = doc["enabled"] | false;
         JsonArrayConst arr = doc["points"].as<JsonArrayConst>();
+        bool loaded = true;
         if (!arr.isNull()) {
-            cdi::core::dwell::loadFromJson(arr);
+            loaded = cdi::core::dwell::loadFromJson(arr);
         }
-        cdi::core::dwell::setEnabled(en);
+        // Only enable if the new curve actually validated — otherwise we'd
+        // run the STALE/old curve while telling the UI the new one is on
+        // (audit M7). On reject, disable (live_stats falls back to base dwell).
+        cdi::core::dwell::setEnabled(loaded && en);
         cdi::storage::config::markDirty();
         JsonDocument r;
         r["type"]    = "dwellCurve";
+        r["ok"]      = loaded;
+        if (!loaded) r["msg"] = "curve ditolak (titik invalid 500-8000us) — dwell dimatikan";
         r["enabled"] = cdi::core::dwell::isEnabled();
         JsonArray out_arr = r["points"].to<JsonArray>();
         cdi::core::dwell::serialize(out_arr);
