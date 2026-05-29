@@ -48,8 +48,8 @@
       pulser detach + spark force-off, untuk diagnostic/maintenance.
     </p>
     <div class="btn-row">
-      <button class="btn" id="ignBtn">▶ Pengapian</button>
-      <button class="btn crit" id="safeBtn">⏻ Mode aman</button>
+      <button class="btn green" id="ignBtn">⚡ NYALAKAN (ON)</button>
+      <button class="btn crit" id="safeBtn">⏻ MATIKAN (KILL)</button>
     </div>
   </section>
 
@@ -81,18 +81,16 @@
   <section class="panel">
     <span class="label">[ output pengapian ]</span>
     <p class="caption">
-      <b>Arm</b> = aktifkan trigger GPIO25 ke MOSFET koil. <b>Test fire</b>
-      = 1 tembakan untuk verify wiring (bench only — busi lepas). Auto-arm
-      = langsung armed saat power on (untuk install permanen di motor).
+      Status pengapian + <b>test fire</b> (1 tembakan untuk verify wiring —
+      bench only, busi lepas). ON/KILL ada di panel <b>Kontrol</b> di atas;
+      pengapian hidup otomatis di mode PENGAPIAN (tanpa langkah arm).
     </p>
     <div class="readout-row" style="grid-template-columns:1fr 1fr 1fr;background:transparent;border:0;padding:0">
-      <div class="readout"><span class="num" id="armState" style="font-size:24px">MATI</span><span class="unit">status arm</span></div>
+      <div class="readout"><span class="num" id="armState" style="font-size:24px">MATI</span><span class="unit">pengapian</span></div>
       <div class="readout"><span class="num cyan" id="fireCount" style="font-size:24px">0</span><span class="unit">tembakan</span></div>
       <div class="readout"><span class="num green" id="jitterUs" style="font-size:24px">—</span><span class="unit">µs jitter</span></div>
     </div>
     <div class="btn-row">
-      <button class="btn crit" id="armBtn">⚡ Aktifkan pengapian</button>
-      <button class="btn ghost" id="disarmBtn">✕ Nonaktifkan</button>
       <button class="btn ghost" id="testFireBtn">⚡ Uji 1× (dwell config)</button>
       <button class="btn ghost" id="testFireLongBtn">⚡ Uji 1× (10ms long-dwell)</button>
     </div>
@@ -104,18 +102,14 @@
       <input type="checkbox" id="noSigChk">
       <span>Aktifkan <b>no-signal failsafe</b> (jeda spark otomatis kalau pulser signal hilang setelah engine running; <b>auto-resume</b> saat sinyal balik — TIDAK disarm, tak perlu arm ulang)</span>
     </label>
-    <label class="chk" style="margin-top:8px">
-      <input type="checkbox" id="autoArmChk"> auto-arm setelah boot
-    </label>
     <p class="note crit">
       ⚠ Mode <b>PENGAPIAN = ON</b> → spark otomatis LIVE (seperti CDI
-      pasaran: hidup begitu ada power + sinyal pulser, tanpa langkah arm
-      manual). OFF/kill = panic button (tahan BOOT ≥2 dtk) atau tombol
-      SAFE_HOLD. <b>Lepas/ground busi sebelum uji bangku.</b><br><br>
-      <b>Auto-arm</b>: kini perilaku baku (IGNITION selalu armed) — toggle
-      ini legacy, tak perlu lagi diaktifkan manual.
-      Saat aktif, spark fire begitu pulser detected. Disable saat
-      bench-test / development.
+      pasaran: hidup begitu ada power + sinyal pulser, <b>tanpa langkah arm
+      manual</b>). <b>OFF/kill</b> = tombol MATIKAN di panel Kontrol, panic
+      button (tahan BOOT ≥2 dtk), atau SAFE_HOLD. <b>Lepas/ground busi
+      sebelum uji bangku.</b> Fault (no-signal / under-volt / over-rev)
+      memutus spark sementara &amp; nyala lagi otomatis — tak pernah perlu
+      arm ulang.
     </p>
   </section>
 
@@ -262,29 +256,21 @@ cdi.bus.on('close', () => {
   $('kvIr').style.display = 'none';
 });
 
-$('ignBtn').addEventListener('click',   () => cdi.send({cmd:'setMode', mode:'ignition'}));
-$('safeBtn').addEventListener('click',  async () => {
+// NYALAKAN = masuk mode IGNITION (spark auto-live, seperti CDI pasaran).
+// Confirm karena meng-energize HV.
+$('ignBtn').addEventListener('click', async () => {
   const ok = await cdi.modal.confirm({
-    title: 'MODE AMAN',
-    severity: 'warn',
-    body: 'Masuk MODE AMAN?\nSemua output dimatikan dan pulser ISR di-detach. Engine tidak akan fire sampai keluar dari mode ini.',
-    okLabel: '⏻ Masuk SAFE_HOLD',
-  });
-  if (!ok) return;
-  cdi.send({cmd:'setMode', mode:'safehold'});
-});
-
-$('armBtn').addEventListener('click', async () => {
-  const ok = await cdi.modal.confirm({
-    title: 'AKTIFKAN PENGAPIAN',
+    title: 'NYALAKAN PENGAPIAN',
     severity: 'danger',
-    body: 'GPIO25 akan pulse setiap siklus pulser ke MOSFET driver. Koil pengapian akan menembak setiap revolusi.\n\nLanjutkan HANYA dengan beban aman:\n• busi lepas dari silinder, atau\n• resistor dummy (1 Ω 100W) di output koil, atau\n• bench test dengan ground secure.',
-    okLabel: '⚡ Aktifkan',
+    body: 'Pengapian akan LIVE — GPIO25 nembak koil tiap pulser (seperti CDI biasa, tanpa arm manual).\n\nLanjut HANYA dengan beban aman:\n• busi lepas/ground dari silinder, atau\n• dummy load (1 Ω 100W) di output koil, atau\n• memang siap start mesin.',
+    okLabel: '⚡ Nyalakan',
   });
   if (!ok) return;
-  cdi.send({cmd:'setArmed', armed:true});
+  cdi.send({cmd:'setMode', mode:'ignition'});
 });
-$('disarmBtn').addEventListener('click', () => cdi.send({cmd:'setArmed', armed:false}));
+// MATIKAN/KILL = instan, tanpa confirm (menghentikan spark selalu aman;
+// ini + panic button GPIO0 adalah dua jalur kill).
+$('safeBtn').addEventListener('click', () => cdi.send({cmd:'setMode', mode:'safehold'}));
 
 // preset badge
 cdi.bus.on('open', () => cdi.send({cmd:'getPresetStatus'}));
@@ -296,25 +282,8 @@ cdi.bus.on('presetList', m => {
   if (p) $('topPresetName').textContent = p.name.replace(/Honda |Yamaha |Suzuki |Kawasaki /g, '').toUpperCase().substring(0, 22);
 });
 
-let autoArmInit = false;
-cdi.bus.on('telemetry', t => {
-  if (!autoArmInit){
-    $('autoArmChk').checked = !!(t.flags4 & 0x02);
-    autoArmInit = true;
-  }
-});
-$('autoArmChk').addEventListener('change', async e => {
-  if (e.target.checked){
-    const ok = await cdi.modal.confirm({
-      title: 'AUTO-ARM',
-      severity: 'warn',
-      body: 'Aktifkan auto-arm?\n\nDevice akan langsung armed setiap power-on, tanpa konfirmasi UI. Cocok untuk install permanen di motor.\n\nJangan aktifkan saat bench-test dengan koil terhubung.',
-      okLabel: '✓ Aktifkan auto-arm',
-    });
-    if (!ok){ e.target.checked = false; return; }
-  }
-  cdi.send({cmd:'setAutoArm', enabled: e.target.checked});
-});
+// (auto-arm toggle dihapus — IGNITION mode kini selalu armed otomatis,
+// jadi preferensi auto-arm tidak relevan lagi di UI.)
 
 $('clearFsBtn').addEventListener('click', () => cdi.send({cmd:'clearFailsafe'}));
 
