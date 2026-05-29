@@ -8,7 +8,9 @@
 // Decay: if the last CH1 event is older than 2× the max valid period
 // (~1.2 s @ 100 rpm floor), RPM is forced to 0.
 //
-// All public functions are non-ISR — call from `live_stats::tick()`.
+// Mostly called from `live_stats::tick()` (loop). EXCEPTION: current()
+// is IRAM_ATTR (defined in .cpp) and IS ISR-callable — the quickshifter
+// GPIO ISR reads it (audit H2).
 #pragma once
 
 #include "types.h"
@@ -17,7 +19,7 @@ namespace cdi::core::rpm {
 
 void      onPulseCh1(cdi::micros_t ts_us);   // feed CH1 falling-edge ts
 void      tick(cdi::micros_t now_us);        // call ~every loop to decay stale RPM
-cdi::rpm_t current();                         // smoothed
+cdi::rpm_t current();                         // smoothed — IRAM_ATTR, ISR-safe (see .cpp)
 cdi::rpm_t raw();                             // last instantaneous
 cdi::micros_t lastCh1Us();
 cdi::micros_t lastPeriodUs();

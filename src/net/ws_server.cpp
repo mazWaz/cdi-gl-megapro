@@ -257,8 +257,14 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         // when the configured dwell is too short to see).
         uint32_t override_dwell = doc["dwell"] | 0;
         Serial.printf("[ws] test fire requested (override=%u)\n", (unsigned)override_dwell);
-        cdi::core::spark::manualFire(override_dwell);
-        client->text("{\"type\":\"ack\",\"msg\":\"fired\"}");
+        // manualFire is bench-only — it refuses while armed (audit H3).
+        // Tell the UI the truth instead of always claiming "fired".
+        if (cdi::core::spark::isArmed()) {
+            client->text("{\"type\":\"ack\",\"ok\":false,\"msg\":\"test fire ditolak — spark armed (bench-only)\"}");
+        } else {
+            cdi::core::spark::manualFire(override_dwell);
+            client->text("{\"type\":\"ack\",\"ok\":true,\"msg\":\"fired\"}");
+        }
     }
     else if (!strcmp(cmd, "setSparkPolarity")) {
         const bool al = doc["active_low"] | false;

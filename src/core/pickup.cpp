@@ -18,6 +18,10 @@ namespace {
 // effect until the next context switch or function-boundary spill.
 // 32-bit aligned writes on Xtensa are atomic at the word level, so
 // no additional locking is needed for these primitives.
+// The two float geometry numbers ARE read cross-core (live_stats core 1
+// reads them per cycle; WS handlers core 0 write them) → volatile.
+// The source string below is core-0/WS-only (UI display) and owns its
+// storage, so it does not need volatile.
 volatile float       s_max_advance_ref_deg = cdi::config::MAX_ADVANCE_FROM_CH1_DEG;
 volatile float       s_magnet_width_deg    = cdi::config::MAGNET_ANGULAR_WIDTH_DEG;
 volatile bool        s_override            = false;

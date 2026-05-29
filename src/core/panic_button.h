@@ -23,8 +23,10 @@ namespace cdi::core::panic {
 void begin();
 void poll();   // call from loop — debounce + state machine
 
-// True from the moment a long-press triggers SAFE_HOLD until the
-// user explicitly re-arms via UI. Sticky.
+// True only while a long-press is being held past the trip threshold;
+// cleared on button release so a SECOND emergency press re-fires the
+// kill (the hardware kill must never be single-shot — audit C1). Used
+// for per-press de-bounce of the action, not as a UI-latched state.
 bool tripped();
 void clearTrip();
 
