@@ -731,22 +731,21 @@ cdi.bus.on('preset', m => {
   }
 
   if (isSwitch){
-    // User benar-benar switch preset → reset editor context tapi
-    // PRESERVE saved slots P1..P4 (user boleh mau coba kurva yang
-    // sama di preset lain). Firmware sudah ganti advance::active()
-    // ke preset baru dan akan push 'map' event berikutnya. Kita
-    // reset active slot context supaya bus.on('map') handler fall
-    // through ke device fallback (case 4) → editor load fresh kurva
-    // preset baru sebagai starting point.
+    // Ganti motor → RESET slot P1-P4 ke default motor baru. Kurva tersimpan
+    // di slot itu di-tune untuk motor LAMA (geometri/redline beda) → tidak
+    // valid dibawa ke motor baru. Slot kosong = "stok" = dinamis ikut
+    // preset baru. Firmware sudah ganti advance::active() & broadcast 'map';
+    // flag cdi.mapForceDevice memaksa 'map' berikutnya ke Case 0 → muat
+    // kurva default motor baru ke P1.
     stockPoints    = null;     // force refetch — kurva stok beda preset
     baselinePoints = null;
-    try { localStorage.removeItem('cdi.activeSlot.v1'); } catch(e){}
-    // Force the pushed 'map' (next event) into Case 0 → device curve,
-    // bypassing the slots[0] fallback that would otherwise reload P1.
+    slots = [null, null, null, null];   // wipe in-memory (tab terbuka)
+    saveSlots();                          // persist wipe ke localStorage
+    refreshSlotLabels();                  // P1-P4 → label "stok" (motor baru)
     try { localStorage.setItem('cdi.mapForceDevice','1'); } catch(e){}
-    activeProfile = null;      // bus.on('map') akan set ulang ke device
+    activeProfile = null;      // bus.on('map') Case 0 akan set P1
     document.getElementById('mapStatus').textContent =
-      '› preset diganti → editor dimuat ulang dari peta baru';
+      '› motor diganti → P1-P4 reset ke default motor baru';
   }
 });
 

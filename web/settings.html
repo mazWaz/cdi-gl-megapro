@@ -881,6 +881,7 @@ function applyPresetAndRefresh(pid){
   try {
     localStorage.setItem('cdi.mapForceDevice','1');
     localStorage.removeItem('cdi.activeSlot.v1');
+    localStorage.removeItem('cdi.mapSlots.v1');   // P1-P4 reset ke default motor baru
   } catch(e){}
   setTimeout(() => location.reload(), 700);
 }
