@@ -198,23 +198,14 @@ void tick() {
     // 3-sample confirm already rejects lone spikes before disarming.
     const cdi::rpm_t rpm_smooth = cdi::core::rpm::current();
 
-    // ─── Absolute RPM ceiling (catches multi-tooth pickup, noise) ───
-    // Bypass all configurable limits — this is a "something is broken"
-    // condition, not a "rider asked for high revs" one.
-    if (rpm > cdi::config::ABSOLUTE_RPM_CEILING) {
-        if (cdi::core::spark::isArmed()) {
-            cdi::core::spark::setArmed(false);
-            Serial.printf("[safety] RPM RUNAWAY %u rpm (> ceiling %u) → DISARM. "
-                          "Cek pickup wiring / pilih preset benar (motor FI multi-tooth tidak kompatibel).\n",
-                          (unsigned)rpm, (unsigned)cdi::config::ABSOLUTE_RPM_CEILING);
-        }
-        s_overRevCut = true;
-        s_revLimited = true;
-        s_activeCutMode   = cdi::CutMode::HARD_CUT;
-        s_activeRetardDeg = 0.0f;
-        s_progressivePct  = 100;
-        return;   // skip the rest of the normal rev-limit ladder
-    }
+    // (Absolute RPM ceiling removed — it was a dead + redundant guard.
+    // ABSOLUTE_RPM_CEILING equalled RPM_MAX_VALID, so rpm_calc's period
+    // clamp meant `rpm` could never exceed it (it never fired). Its
+    // intended job is already covered: genuine over-rev by the self-
+    // recovering overrev cut below; a broken/multi-tooth pickup by
+    // rpm_calc rejecting the short phantom periods → no valid RPM → the
+    // engine simply doesn't fire on un-trustable signal. Over-rev is a
+    // self-recovering pulse-cut, not a sticky disarm.)
 
     // Effective limit determined by stacked overrides:
     //   - launch active → launch_rpm + HARD_CUT (highest priority, drag start)

@@ -22,7 +22,7 @@ real-motor / road validation incomplete. See "Safety" section.
 ✓  Dual-core: persist + snapshot tasks on core 0 (mutex + binary semaphore)
 ✓  Hardware emergency kill (GPIO0 long-press → SAFE_HOLD)
 ✓  WPA2 password protection (auto-gen first boot, NVS-persisted)
-✓  Absolute RPM ceiling guard (catches multi-tooth FI pickup)
+✓  Multi-tooth/EMI rejection (short phantom periods dropped → no fire)
 ─  Real motor validation, strobe timing, EMI testing — see Safety
 ```
 
@@ -184,9 +184,11 @@ the device with a real motor connected.
   compromised.
 - **Multi-tooth FI motors (CB150R FI, Vario FI, R15, etc) are NOT
   compatible**. Firmware detects this during auto-calibration
-  (ERR_MULTI_TOOTH) and there is an absolute RPM ceiling guard
-  (16000 RPM → auto-disarm) but **do not assume protection** —
-  use only on single-magnet 2-edge pickups (karbu single-cyl 4T).
+  (ERR_MULTI_TOOTH → disarm), and at runtime the extra teeth produce
+  periods too short to be real (implied RPM above `RPM_MAX_VALID`) that
+  `rpm_calc` rejects as noise → no valid RPM → the engine simply won't
+  fire. But **do not assume protection** — use only on single-magnet
+  2-edge pickups (karbu single-cyl 4T).
 - **No regulatory certification**. WiFi 2.4 GHz device requires
   Postel / SDPPI compliance in Indonesia for commercial sale.
 

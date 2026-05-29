@@ -90,12 +90,11 @@ constexpr uint32_t SAFETY_TICK_INTERVAL_MS = 100;
 // coil driver — see README wiring notes.
 constexpr uint32_t TASK_WDT_TIMEOUT_S    = 5;
 
-// Absolute RPM ceiling — above this we assume something is broken
-// (multi-tooth pickup mistakenly connected, electrical noise on
-// CH1, math bug, etc) and disarm instantly. 16000 RPM > redline of
-// every single-cylinder bike in the preset library, but still well
-// inside what rpm_calc can sanely report (RPM_MAX_VALID 15000).
-constexpr uint32_t ABSOLUTE_RPM_CEILING = 13000;
+// (ABSOLUTE_RPM_CEILING removed — was a dead/redundant guard: it equalled
+// RPM_MAX_VALID so rpm_calc's clamp meant it never fired, and over-rev is
+// already handled by the self-recovering overrev cut while a broken/
+// multi-tooth pickup is rejected as noise by rpm_calc → no fire. See
+// safety::tick.)
 constexpr float    ALVP_DERATE_BELOW_V   = 10.5f;
 constexpr float    ALVP_DISARM_BELOW_V   = 9.0f;
 constexpr uint32_t ALVP_LOW_DURATION_MS  = 2000;  // hysteresis
