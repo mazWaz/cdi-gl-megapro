@@ -1,5 +1,7 @@
 #include "core/rpm_calc.h"
 
+#include <Arduino.h>     // IRAM_ATTR
+
 #include "config.h"
 
 namespace cdi::core::rpm {
@@ -8,10 +10,14 @@ namespace {
 constexpr cdi::micros_t MIN_PERIOD_US = 60000000UL / cdi::config::RPM_MAX_VALID;
 constexpr cdi::micros_t MAX_PERIOD_US = 60000000UL / cdi::config::RPM_MIN_VALID;
 
-cdi::micros_t s_lastCh1     = 0;
-cdi::micros_t s_lastPeriod  = 0;
-cdi::rpm_t    s_raw         = 0;
-cdi::rpm_t    s_smooth      = 0;
+// volatile: ditulis core-1 (onPulseCh1/tick di loop), tapi dibaca
+// lintas-core oleh edge_snapshot saver task (core 0, via flashWriteSafe)
+// dan dari QS GPIO ISR (current()). Konvensi cross-core codebase (audit
+// M1). Word-aligned → store/load atomik di Xtensa.
+volatile cdi::micros_t s_lastCh1     = 0;
+volatile cdi::micros_t s_lastPeriod  = 0;
+volatile cdi::rpm_t    s_raw         = 0;
+volatile cdi::rpm_t    s_smooth      = 0;
 
 } // anonymous
 
@@ -97,7 +103,9 @@ void tick(cdi::micros_t now_us) {
     }
 }
 
-cdi::rpm_t    current()       { return s_smooth; }
+// IRAM_ATTR: dipanggil dari quickshifter GPIO ISR (audit H2) — wajib
+// IRAM-resident agar tidak fetch flash saat erase/write berlangsung.
+cdi::rpm_t IRAM_ATTR current() { return s_smooth; }
 cdi::rpm_t    raw()           { return s_raw; }
 cdi::micros_t lastCh1Us()     { return s_lastCh1; }
 cdi::micros_t lastPeriodUs()  { return s_lastPeriod; }

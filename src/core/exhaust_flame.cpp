@@ -264,7 +264,9 @@ void tick(cdi::rpm_t rpm) {
 }
 
 // ── Spark ISR chain — called dari safety::shouldFire ─────────────
-bool shouldFireThisCycle() {
+// IRAM_ATTR: dipanggil dari CH1 GPIO ISR — wajib IRAM-resident supaya
+// tidak fetch flash saat erase/write berlangsung (audit H1).
+bool IRAM_ATTR shouldFireThisCycle() {
     if (!s_active) return true;
 
     s_fireCounter++;

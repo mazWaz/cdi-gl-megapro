@@ -7,10 +7,12 @@
 namespace cdi::core::launch {
 namespace {
 
-bool       s_enabled    = false;
-cdi::rpm_t s_launchRpm  = 5000;
-bool       s_active     = false;
-uint32_t   s_lastChangeMs = 0;
+// volatile: ditulis WS handler (core 0), dibaca tick() + CH1 ISR
+// (core 1) — sesuai konvensi cross-core codebase (audit H7).
+volatile bool       s_enabled    = false;
+volatile cdi::rpm_t s_launchRpm  = 5000;
+volatile bool       s_active     = false;
+uint32_t            s_lastChangeMs = 0;   // poll() (core-1 loop) only
 
 constexpr uint32_t DEBOUNCE_MS = 30;
 
@@ -22,7 +24,8 @@ void begin() {
 
 bool       isEnabled()  { return s_enabled; }
 cdi::rpm_t launchRpm()  { return s_launchRpm; }
-bool       isActive()   { return s_active; }
+// IRAM_ATTR: read dari CH1 GPIO ISR via safety::shouldFire (audit H1).
+bool IRAM_ATTR isActive() { return s_active; }
 
 void setEnabled(bool e) {
     s_enabled = e;

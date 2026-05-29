@@ -301,6 +301,12 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "setWifiSsid")) {
+        // Synchronous NVS write — refuse while the engine turns: a flash
+        // erase stalls the spark core and can strand a live dwell (audit H1).
+        if (!cdi::core::safety::flashWriteSafe()) {
+            client->text("{\"type\":\"wifi\",\"ok\":false,\"msg\":\"matikan mesin dulu (engine running)\"}");
+            return;
+        }
         const char* s = doc["ssid"] | "";
         const bool ok = cdi::net::wifi_ap::setSsid(s);
         JsonDocument r;
@@ -315,6 +321,10 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "setWifiPassword")) {
+        if (!cdi::core::safety::flashWriteSafe()) {
+            client->text("{\"type\":\"wifi\",\"ok\":false,\"msg\":\"matikan mesin dulu (engine running)\"}");
+            return;
+        }
         const char* pwd = doc["password"] | "";
         const bool ok = cdi::net::wifi_ap::setPassword(pwd);
         JsonDocument r;
@@ -329,6 +339,10 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "resetWifi")) {
+        if (!cdi::core::safety::flashWriteSafe()) {
+            client->text("{\"type\":\"wifi\",\"ok\":false,\"msg\":\"matikan mesin dulu (engine running)\"}");
+            return;
+        }
         cdi::net::wifi_ap::resetToDefaults();
         JsonDocument r;
         r["type"]     = "wifi";
@@ -412,6 +426,11 @@ void handleText(AsyncWebSocketClient* client, const String& msg) {
         client->text(out);
     }
     else if (!strcmp(cmd, "deleteSnap")) {
+        // Synchronous LittleFS erase — refuse while the engine turns (audit H1).
+        if (!cdi::core::safety::flashWriteSafe()) {
+            client->text("{\"type\":\"err\",\"msg\":\"matikan mesin dulu (engine running)\"}");
+            return;
+        }
         const String name = cdi::scope::snapshot::sanitize(doc["name"] | "");
         const bool ok = cdi::scope::snapshot::remove(name);
         JsonDocument r;

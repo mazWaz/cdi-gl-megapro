@@ -46,8 +46,13 @@ void poll() {
             Serial.println("[panic] BOOT BUTTON HELD ≥2s → SAFE_HOLD, spark disarmed");
         }
     } else {
-        // Released.
+        // Released. Clear the press timer AND re-arm the latch so a
+        // SECOND emergency long-press works again — the hardware kill
+        // must never be single-shot (audit C1). The disarm/SAFE_HOLD
+        // action already fired on the press; s_tripped only needs to be
+        // true for the duration of one press to debounce repeat-action.
         s_pressedSince = 0;
+        s_tripped      = false;
     }
 }
 

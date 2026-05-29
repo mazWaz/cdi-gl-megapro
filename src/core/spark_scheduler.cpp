@@ -255,6 +255,16 @@ void setAdvanceOffsetDeg(float deg) {
 float advanceOffsetDeg() { return s_advanceOffsetDeg; }
 
 void manualFire(uint32_t dwell_override_us) {
+    // BENCH-ONLY. Refuse while armed: this reprograms the SAME fire-on
+    // hw-timer the live CH1 ISR drives (core-0 vs core-1 register race →
+    // wrong-angle spark/kickback) and mutates the shared effective-dwell
+    // up to 20 ms (coil over-saturation), with a blocking delay() in the
+    // AsyncTCP callback. Only safe with the engine stopped (audit H3).
+    if (s_armed) {
+        Serial.println("[spark] manualFire ignored — armed (bench-only test)");
+        return;
+    }
+
     // Optional dwell override for bench diagnostic — temporarily
     // swap s_dwellUs, schedule fire, restore after the fire-off ISR
     // would have completed. (Worst-case dwell + safety margin.)

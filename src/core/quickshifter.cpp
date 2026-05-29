@@ -23,8 +23,8 @@ volatile uint32_t s_cutUntilMs = 0;
 volatile uint32_t s_shiftCount = 0;
 
 void IRAM_ATTR isrTrigger() {
-    // RPM check uses cached snapshot read — rpm::current() is just
-    // a memory load, ISR-safe.
+    // rpm::current() is now IRAM_ATTR (audit H2) so this flash-safe call
+    // can't fault if a shift edge lands during a flash erase/write.
     cdi::rpm_t r = cdi::core::rpm::current();
     if (r < s_minRpm || r > s_maxRpm) return;
     s_cutUntilMs = millis() + s_cutMs;

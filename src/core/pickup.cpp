@@ -1,5 +1,7 @@
 #include "core/pickup.h"
 
+#include <cstring>       // strncpy
+
 #include "config.h"
 
 namespace cdi::core::pickup {
@@ -19,7 +21,12 @@ namespace {
 volatile float       s_max_advance_ref_deg = cdi::config::MAX_ADVANCE_FROM_CH1_DEG;
 volatile float       s_magnet_width_deg    = cdi::config::MAGNET_ANGULAR_WIDTH_DEG;
 volatile bool        s_override            = false;
-const char* volatile s_source              = "preset";
+// OWNED copy, not a borrowed pointer: config_store::applyJson passes a
+// const char* that points into a transient JsonDocument freed when
+// load() returns — storing that pointer would dangle (use-after-free in
+// buildJson/getPickup, garbage persisted to NVS). Copy into a fixed
+// buffer instead (audit H5).
+char s_source_buf[16] = "preset";
 
 } // anonymous
 
@@ -32,7 +39,11 @@ float magnetWidth()               { return s_magnet_width_deg; }
 void setOverride(bool v) { s_override = v; }
 bool hasOverride()       { return s_override; }
 
-void        setSource(const char* s) { s_source = s ? s : "preset"; }
-const char* source()                 { return s_source; }
+void setSource(const char* s) {
+    if (!s) s = "preset";
+    strncpy(s_source_buf, s, sizeof(s_source_buf) - 1);
+    s_source_buf[sizeof(s_source_buf) - 1] = '\0';
+}
+const char* source()                 { return s_source_buf; }
 
 } // namespace cdi::core::pickup

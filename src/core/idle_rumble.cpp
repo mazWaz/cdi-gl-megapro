@@ -240,7 +240,10 @@ void tick(cdi::rpm_t rpm) {
 
 // ── Spark ISR chain — called from safety::shouldFire ──────────────
 // Per-mode skip pattern. Active state sudah di-cek upstream.
-bool shouldFireThisCycle() {
+// IRAM_ATTR: dipanggil dari CH1 GPIO ISR (lewat safety::shouldFire),
+// jadi HARUS resident di IRAM — kalau flash di-erase (NVS/LittleFS),
+// fetch instruksi dari flash di tengah ISR = crash (audit H1).
+bool IRAM_ATTR shouldFireThisCycle() {
     if (!s_active) return true;       // not engaged, never block fire
 
     switch (s_mode) {

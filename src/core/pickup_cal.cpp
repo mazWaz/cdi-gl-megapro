@@ -55,6 +55,25 @@ float    s_widths[MAX_MEASUREMENTS];
 uint32_t s_periods_us[MAX_MEASUREMENTS];
 uint8_t  s_n                   = 0;
 
+// Deferred bidirectional-width measurement (finalized on the NEXT CH1
+// close — see finalizePending). At file scope so resetAll() can clear it
+// between runs; previously a stale extra_falls survived into a clean run
+// and re-killed the engine (audit H4).
+struct Pending {
+    cdi::micros_t open_ts;
+    cdi::micros_t gap_us;
+    uint32_t      prev_period_us;   // close - open
+    uint8_t       extra_falls;
+    bool          valid;
+};
+Pending s_pending = {};
+
+// Multi-tooth confirm — latch SAFE_HOLD only after this many CONSECUTIVE
+// revs each show an extra CH2 fall; one lone EMI glitch rev must not kill
+// a healthy engine (audit M2).
+constexpr uint8_t MULTITOOTH_CONFIRM = 3;
+uint8_t s_multiToothHits = 0;
+
 void resetAll() {
     s_state          = State::IDLE;
     s_start_ms       = 0;
@@ -66,6 +85,8 @@ void resetAll() {
     s_prev_ch1_ts    = 0;
     s_have_prev_ch1  = false;
     s_n              = 0;
+    s_pending        = Pending{};   // audit H4: was leaking stale extra_falls
+    s_multiToothHits = 0;
 }
 
 // Called when a CH1 fall closes the current revolution. `prev_ch1_ts`
@@ -75,14 +96,8 @@ void resetAll() {
 // We defer the measurement: when current rev closes, we just stash
 // the (gap, prev_period) pair, and finalize it on the NEXT close
 // when we know next_period.
-struct Pending {
-    cdi::micros_t open_ts;
-    cdi::micros_t gap_us;
-    uint32_t      prev_period_us;   // close - open
-    uint8_t       extra_falls;
-    bool          valid;
-};
-Pending s_pending = {};
+// (Pending struct + s_pending live in the statics block above so
+//  resetAll() can clear them between runs — audit H4.)
 
 void finalizePending(uint32_t next_period_us) {
     if (!s_pending.valid) return;
@@ -91,15 +106,23 @@ void finalizePending(uint32_t next_period_us) {
     // safety case: the firmware has been firing on a geometry it cannot
     // drive (phantom multi-edge per rev), so cut spark immediately here.
     if (s_pending.extra_falls > 0) {
-        // Incompatible toothed pickup → KILL via SAFE_HOLD, not a bare
-        // disarm. SAFE_HOLD latches off; otherwise the always-on IGNITION
-        // auto-arm (mode::enterIgnition) would immediately re-enable firing
-        // on a pickup this CDI cannot drive. User must fix wiring/preset
-        // and explicitly re-enter IGNITION.
-        cdi::core::mode::set(cdi::OperatingMode::SAFE_HOLD);
-        s_state = State::ERR_MULTI_TOOTH;
+        // Multi-tooth must be CONFIRMED across several consecutive revs
+        // before we latch (audit M2): a lone EMI glitch rev (double CH2)
+        // must not kill a healthy engine. Once confirmed → KILL via
+        // SAFE_HOLD (latches off; otherwise the always-on IGNITION auto-arm
+        // would re-enable firing on a pickup this CDI cannot drive — user
+        // must fix wiring/preset and explicitly re-enter IGNITION).
+        if (++s_multiToothHits >= MULTITOOTH_CONFIRM) {
+            cdi::core::mode::set(cdi::OperatingMode::SAFE_HOLD);
+            s_state = State::ERR_MULTI_TOOTH;
+            s_pending.valid = false;       // audit H4: clear, don't leak
+            return;
+        }
+        // Not yet confirmed — drop this rev as a bad measurement.
+        s_pending.valid = false;
         return;
     }
+    s_multiToothHits = 0;   // clean rev → reset the confirm counter
 
     const uint32_t prev = s_pending.prev_period_us;
     const uint32_t next = next_period_us;
