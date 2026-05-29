@@ -40,12 +40,12 @@ void begin() {}
 
 bool isEnabled() { return s_enabled; }
 void setEnabled(bool e) {
+    // Only flip the enable flag from this (core-0 WS) context. All runtime
+    // output state (s_active/s_currentRetard/s_activeUntilMs) is owned
+    // EXCLUSIVELY by tick() on core 1, which zeros it on its next pass when
+    // it sees !s_enabled — avoids the core0/core1 lost-update race where
+    // core 1 could write a fresh retard right after core 0 zeroed it (LOW7).
     s_enabled = e;
-    if (!e) {
-        s_active = false;
-        s_currentRetard = 0.0f;
-        s_activeUntilMs = 0;
-    }
     Serial.printf("[backfire] enabled=%d\n", e ? 1 : 0);
 }
 
@@ -92,7 +92,10 @@ float currentRetardDeg() { return s_currentRetard; }
 
 void tick(cdi::rpm_t rpm) {
     if (!s_enabled || s_trigger == cdi::BackfireTrigger::OFF) {
-        s_active = false; s_currentRetard = 0.0f;
+        // Single-writer cleanup (LOW7): also clear the window timestamp so a
+        // stale future s_activeUntilMs can't reopen a spurious window when
+        // backfire is re-enabled.
+        s_active = false; s_currentRetard = 0.0f; s_activeUntilMs = 0;
         return;
     }
 

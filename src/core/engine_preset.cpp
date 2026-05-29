@@ -311,22 +311,24 @@ bool apply(const char* id) {
         return false;
     }
 
-    // Apply advance map
-    cdi::core::advance::Map fresh;
-    for (uint8_t i = 0; i < p->point_count; i++) {
-        fresh.addPoint(p->points[i].rpm, p->points[i].deg);
-    }
-    cdi::core::advance::active() = fresh;
-
-    // Apply pickup geometry — but ONLY if the user hasn't already
-    // calibrated their own values on top. A measured magnet width
-    // for the actual physical motor must take priority over factory
-    // spec carried by the preset.
+    // Apply pickup geometry FIRST, then publish the advance map — so
+    // live_stats (core 1) never combines a freshly-published map with a
+    // stale max_advance_ref for one spark cycle (audit LOW15). Geometry is
+    // applied ONLY if the user hasn't calibrated their own values on top:
+    // a measured magnet width for the actual physical motor must take
+    // priority over factory spec carried by the preset.
     if (!cdi::core::pickup::hasOverride()) {
         cdi::core::pickup::setMaxAdvanceRef(p->max_advance_deg);
         cdi::core::pickup::setMagnetWidth(p->magnet_width_deg);
         cdi::core::pickup::setSource("preset");
     }
+
+    // Apply advance map (published last of the two)
+    cdi::core::advance::Map fresh;
+    for (uint8_t i = 0; i < p->point_count; i++) {
+        fresh.addPoint(p->points[i].rpm, p->points[i].deg);
+    }
+    cdi::core::advance::active() = fresh;
 
     // Apply rev limits
     cdi::core::safety::setRevLimits(p->rev_main_rpm, p->rev_overrev_rpm);
