@@ -67,6 +67,14 @@ ESP32 GPIO25 → opto-isolator → SCR gate → HV stage (existing module)
 - Opto-isolation on GPIO25 → SCR gate (mandatory, do not direct-drive)
 - Shielding of pulser cable run (low-mV VRS signal vulnerable to RF)
 - Conformal coating / IP65 enclosure for vibration + moisture
+- **Hardware max-dwell / current-limit backstop on the coil driver**
+  (e.g. a monostable that forces the gate LOW after ~8–10 ms, or a
+  current-limited driver). Software cannot guarantee the primary is
+  de-energized in every case: a flash erase (NVS/LittleFS/OTA) stalls
+  the spark core for the erase duration, and the firmware only *mitigates*
+  this by deferring flash writes while the engine fires. A hardware
+  backstop is the only thing that protects the coil against a stranded
+  dwell from any firmware stall/crash, full stop.
 
 ---
 

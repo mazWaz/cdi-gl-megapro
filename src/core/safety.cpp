@@ -486,4 +486,18 @@ void setNoSignalEnabled(bool en) {
 }
 bool noSignalEnabled() { return s_noSignalEnabled; }
 
+bool flashWriteSafe() {
+    // Disarmed → no live spark path to disturb.
+    if (!cdi::core::spark::isArmed()) return true;
+    // Armed + engine turning → a flash stall could strand a live dwell.
+    if (cdi::core::rpm::current() > 0) return false;
+    // The EMA can read 0 on the first crank pulses before it settles, so
+    // also treat a very recent CH1 edge as "still turning". 32-bit
+    // modular diff (micros() wraps every ~71 min — see rpm_calc.cpp).
+    const cdi::micros_t last = cdi::core::rpm::lastCh1Us();
+    if (last == 0) return true;                  // never seen a pulse
+    const uint32_t gap = (uint32_t)micros() - (uint32_t)last;
+    return gap > 600000UL;                       // quiet ≥600 ms → quiescent
+}
+
 } // namespace cdi::core::safety

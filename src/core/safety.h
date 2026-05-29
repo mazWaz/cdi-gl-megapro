@@ -68,4 +68,12 @@ void clearFlags();
 void setNoSignalEnabled(bool en);
 bool noSignalEnabled();
 
+// True when a blocking flash erase/write (NVS persist, LittleFS snapshot,
+// OTA) can run without risk of stranding the spark output. Flash ops
+// stall the spark core during sector erases; landing mid-dwell would hold
+// the coil primary energized for the erase duration. Safe iff the engine
+// is not actively firing: disarmed, or armed but not turning (no CH1 for
+// >600 ms). Callers must defer flash writes until this returns true.
+bool flashWriteSafe();
+
 } // namespace cdi::core::safety

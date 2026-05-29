@@ -6,6 +6,8 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 
+#include "core/safety.h"   // flashWriteSafe() — defer file write while engine fires
+
 namespace cdi::scope::snapshot {
 namespace {
 
@@ -96,13 +98,35 @@ void saverTaskFn(void*) {
         s_saving = true;
         const uint32_t t0 = millis();
 
-        // Snapshot the ring under its own mutex (brief), then write
-        // the file outside any lock so producers stay responsive.
+        // Snapshot the ring into RAM NOW (brief mutex) so the capture
+        // reflects the instant the user hit save, even if the file write
+        // below is deferred. Producers stay responsive (write outside).
         if (!snapshotRing(scratch)) {
             Serial.println("[snap] saver: ring mutex timeout");
             s_saving = false;
             continue;
         }
+
+        // Defer the LittleFS write until it is safe. A flash erase stalls
+        // the spark core for its full duration; landing mid-dwell would
+        // strand the coil primary HIGH. Wait for the engine to stop /
+        // disarm, bounded so a never-idling rider doesn't pin this task
+        // forever — the (already RAM-captured) snapshot is dropped then.
+        constexpr uint32_t SAFE_WAIT_TIMEOUT_MS = 30000;
+        uint32_t waited = 0;
+        bool safe = cdi::core::safety::flashWriteSafe();
+        while (!safe && waited < SAFE_WAIT_TIMEOUT_MS) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            waited += 100;
+            safe = cdi::core::safety::flashWriteSafe();
+        }
+        if (!safe) {
+            Serial.println("[snap] saver: engine still firing after 30s — "
+                           "capture dropped (flash write unsafe)");
+            s_saving = false;
+            continue;
+        }
+
         const bool ok = writeFile(name, scratch);
         Serial.printf("[snap] saver: %s '%s' (%u events, %u ms, core %d)\n",
                       ok ? "saved" : "FAIL",
@@ -186,6 +210,12 @@ String sanitize(const char* raw) {
 bool save(const String& name) {
     if (name.length() == 0) return false;
     if (s_count == 0)       return false;
+    // Synchronous flash write — refuse while the engine is firing (would
+    // stall the spark core mid-dwell). Prefer saveAsync(), which defers.
+    if (!cdi::core::safety::flashWriteSafe()) {
+        Serial.println("[snap] save refused — engine firing (use saveAsync)");
+        return false;
+    }
 
     File f = LittleFS.open(pathFor(name), "w");
     if (!f) {

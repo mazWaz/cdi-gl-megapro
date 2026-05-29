@@ -404,6 +404,17 @@ void saveNow() {
         return;
     }
 
+    // Defer the NVS write while the engine is actively firing. putString
+    // triggers flash erase/program cycles that stall the spark core; if
+    // one lands mid-dwell the coil primary is stranded HIGH for the erase
+    // duration (see safety::flashWriteSafe). The change already lives in
+    // RAM and is active — just keep it marked dirty and let tick() retry
+    // the persist once the engine stops or is disarmed.
+    if (!cdi::core::safety::flashWriteSafe()) {
+        s_dirty = true;
+        return;
+    }
+
     JsonDocument doc;
     buildJson(doc);
     String json;

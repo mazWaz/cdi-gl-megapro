@@ -72,6 +72,15 @@ constexpr uint32_t SAFETY_TICK_INTERVAL_MS = 100;
 // which de-energizes the coil independently of the loop. A stalled loop
 // therefore cannot strand the primary HIGH. 5 s still catches a genuine
 // firmware hang while tolerating transient network stalls.
+//
+// CAVEAT — flash writes: the fire-off timer ISR is NOT IRAM-allocated,
+// and a flash erase/program (NVS persist, LittleFS snapshot, OTA) stalls
+// the spark core entirely for the duration of each erase. If one lands
+// mid-dwell it CAN strand the primary HIGH for up to a sector-erase
+// (~tens of ms), independent of this WDT. Firmware mitigates by deferring
+// all flash writes while the engine is firing (safety::flashWriteSafe);
+// the ultimate backstop is a hardware max-dwell / current-limit on the
+// coil driver — see README wiring notes.
 constexpr uint32_t TASK_WDT_TIMEOUT_S    = 5;
 
 // Absolute RPM ceiling — above this we assume something is broken
