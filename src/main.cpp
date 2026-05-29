@@ -170,7 +170,8 @@ void setup() {
     if (cdi::core::spark::autoArm() &&
         cdi::core::mode::current() == cdi::OperatingMode::IGNITION) {
         cdi::core::spark::setArmed(true);
-        Serial.println("[spark] auto-armed from boot preference");
+        Serial.println("[spark] ⚠ AUTO-ARMED at boot — spark is LIVE. "
+                       "Disable 'auto-arm' on dashboard, or ground/remove busi if not ready.");
     }
 
     Serial.printf("[CDI] setup() complete · heap=%u · uptime=%lu ms\n",

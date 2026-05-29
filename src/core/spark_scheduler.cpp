@@ -16,7 +16,12 @@ hw_timer_t* s_fireOnTimer  = nullptr;
 hw_timer_t* s_fireOffTimer = nullptr;
 
 volatile bool     s_armed         = false;
-volatile bool     s_autoArm       = false;
+// Auto-arm default ON: arm should persist "always on" so a reset mid-use
+// (brownout during cranking, WDT) comes back armed without the rider
+// digging into the UI. ⚠ This means spark is LIVE at boot — keep busi
+// safe on the bench. Toggle off via dashboard if you want the manual-arm
+// gate back. (Overridden by the saved NVS value once config loads.)
+volatile bool     s_autoArm       = true;
 volatile bool     s_activeLow     = false;   // false=active-HIGH (default)
 // (s_inductive removed — hardware fixed TCI, inductive() returns true const)
 volatile uint32_t s_nextDelayUs   = 0;      // cached, updated by loop

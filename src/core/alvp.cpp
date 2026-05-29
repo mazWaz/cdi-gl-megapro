@@ -125,9 +125,12 @@ void tick() {
         Serial.printf("[alvp] state change %d → %d @ %.2fV\n",
                       (int)s_state, (int)target, vbat);
         s_state = target;
-        if (s_state == State::DISARM_LOW && cdi::core::spark::isArmed()) {
-            cdi::core::spark::setArmed(false);
-            Serial.println("[alvp] DISARM_LOW → spark disarmed");
+        if (s_state == State::DISARM_LOW) {
+            // Self-recovering: DON'T disarm. safety::tick turns DISARM_LOW
+            // into a full pulse-cut (shouldFire returns false) and firing
+            // resumes automatically once vbat recovers — the rider never
+            // has to re-arm via UI.
+            Serial.println("[alvp] DISARM_LOW → spark pulse-cut (auto-resume on vbat recovery)");
         }
     }
 }

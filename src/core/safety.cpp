@@ -25,6 +25,10 @@ volatile uint32_t s_overrevLimit = cdi::config::DEFAULT_REV_LIMIT_OVERREV_RPM;
 volatile bool s_revLimited        = false;
 volatile bool s_noSignal          = false;
 volatile bool s_overRevCut        = false;
+// ALVP under-voltage full cut — SELF-RECOVERING (pulse-cut while vbat is
+// below the disarm threshold; resumes automatically on recovery). Set by
+// tick(), read by the spark ISR via shouldFire(). Never touches `armed`.
+volatile bool s_alvpHardCut       = false;
 // No-signal failsafe is OFF by default. Rev limiter + absolute RPM
 // ceiling are still active. Enable explicitly via UI when riding.
 volatile bool s_noSignalEnabled   = false;
@@ -151,16 +155,30 @@ void tick() {
             s_validRpmStreak = 0;
         }
     }
+    // No-signal handling — SELF-RECOVERING, never a sticky disarm.
+    // Rationale: forcing the rider into the UI to re-arm mid-ride is the
+    // wrong trade. No CH1 already means no spark (the scheduler has no
+    // trigger), and when the signal returns the engine resumes firing on
+    // its own because `armed` is left untouched. We only raise/clear the
+    // s_noSignal flag for the UI/telemetry indicator.
     if (s_noSignalEnabled && cdi::core::spark::isArmed() && s_haveSeenValidRpm) {
         cdi::micros_t last = cdi::core::rpm::lastCh1Us();
-        if (last != 0 &&
-            (now_us - last) > (cdi::micros_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000ULL) {
-            cdi::core::spark::setArmed(false);
+        const bool silent = (last != 0 &&
+            (now_us - last) > (cdi::micros_t)cdi::config::NO_SIGNAL_TIMEOUT_MS * 1000ULL);
+        if (silent && !s_noSignal) {
             s_noSignal = true;
-            Serial.println("[safety] NO-SIGNAL failsafe → auto disarm "
-                           "(valid RPM lost after being seen)");
+            Serial.println("[safety] NO-SIGNAL — spark paused (auto-resume on signal; NOT disarmed)");
+        } else if (!silent && s_noSignal) {
+            s_noSignal = false;
+            Serial.println("[safety] signal restored — spark resumes");
         }
     }
+
+    // ALVP under-voltage full cut (self-recovering, NOT a disarm). While
+    // vbat sits in DISARM_LOW we pulse-cut every spark via shouldFire();
+    // firing resumes automatically once alvp leaves DISARM_LOW (hysteresis).
+    s_alvpHardCut = cdi::core::alvp::isEnabled() &&
+                    (cdi::core::alvp::state() == cdi::core::alvp::State::DISARM_LOW);
 
     // ─── Rev limiter ───
     // Use INSTANTANEOUS RPM (from latest period), not EMA-smoothed.
@@ -401,6 +419,11 @@ uint8_t patternSkipN() { return s_patternSkipN; }
 float currentRetardDeg() { return s_activeRetardDeg; }
 
 bool IRAM_ATTR shouldFire() {
+    // ALVP under-voltage: true 100% pulse-cut while below disarm voltage
+    // (self-recovering — `armed` is untouched, firing resumes when vbat
+    // recovers). Highest priority.
+    if (s_alvpHardCut) return false;
+
     // Idle rumble skip-fire pattern (cuma aktif kalau engine sustained
     // di idle band + mode AGGRESSIVE/DRAG_BURBLE). Cek dulu sebelum
     // cut-mode logic supaya tidak kompound dengan rev-limit cut.

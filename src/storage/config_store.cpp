@@ -237,7 +237,7 @@ void applyJson(const JsonDocument& doc) {
         if (!sp.isNull()) {
             cdi::core::spark::setDwellUs(sp["dwell_us"] | 2500);
             cdi::core::spark::setAdvanceOffsetDeg(sp["advance_offset"] | 0.0f);
-            cdi::core::spark::setAutoArm(sp["auto_arm"] | false);
+            cdi::core::spark::setAutoArm(sp["auto_arm"] | true);   // default ON (arm selalu on)
             cdi::core::spark::setActiveLow(sp["active_low"] | false);
             cdi::core::spark::setInductive(sp["inductive"]  | true);
             cdi::core::spark::setCrankAssist(sp["crank_assist"] | false);
