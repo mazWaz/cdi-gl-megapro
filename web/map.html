@@ -177,9 +177,29 @@
     .pad { grid-template-columns: repeat(2, 1fr); }
     .slots { grid-template-columns: repeat(4, 1fr); }
   }
+  /* ─────── Force landscape: gerbang orientasi (map editor butuh lebar) ─────── */
+  #rotateGate { display: none; }
+  @media (orientation: portrait) {
+    #rotateGate {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 14px; text-align: center; padding: 28px;
+      position: fixed; inset: 0; z-index: 9999; background: #0a0d12;
+    }
+    #rotateGate .ico { font-size: 60px; color: var(--amber);
+      animation: rotGate 2.2s ease-in-out infinite; transform-origin: 50% 50%; }
+    #rotateGate b { font-size: 17px; color: var(--amber); letter-spacing: 0.04em; }
+    #rotateGate span { font-size: 12px; color: var(--text-dim); max-width: 300px; line-height: 1.5; }
+  }
+  @keyframes rotGate { 0%,50%,100% { transform: rotate(0); } 72%,90% { transform: rotate(90deg); } }
 </style>
 </head>
 <body>
+
+<div id="rotateGate">
+  <div class="ico">⟲</div>
+  <b>Putar ke Landscape</b>
+  <span>Map editor butuh layar lebar. Putar HP ke posisi mendatar untuk mengedit kurva advance &amp; rev-limit.</span>
+</div>
 
 <div class="topbar">
   <span class="brand">CDI//MGPRO<span class="ver">—</span></span>
