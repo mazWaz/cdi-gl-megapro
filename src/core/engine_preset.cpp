@@ -277,6 +277,22 @@ const Preset PRESETS[] = {
   12500, 12900, 5000,
   "⚠ MX ported + race CDI — JANGAN di stock engine" },
 
+// ─── Kawasaki (wide-magnet pickup, ~43°) ───
+// KLX150 / D-Tracker 150 — single-cyl SOHC 2-valve, peak ~10.3 HP @ 8000 rpm.
+// magnet_width 43° = HASIL KALIBRASI user (bukan Megapro 18°). max_advance 40°
+// adalah ESTIMASI: aftermarket race-CDI menembak sampai 39° → leading-edge
+// pickup pasti ≥39° BTDC, jadi maxAdvanceRef ≈ 40°. ⚠ WAJIB di-strobe sebelum
+// dipakai jalan — kalau leading-edge asli >40° timing jadi over-advance →
+// kickback. Trim: rasa kickback → NAIKKAN max_advance (meretard); strobe untuk
+// angka pasti. Crank-assist CH2 HARUS OFF (trailing edge ATDC di geometri ini).
+{ "kawasaki_klx150", "Kawasaki 4T", "Kawasaki KLX150 / D-Tracker 150", 1, 43.0f, 40.0f,
+  { {300,4}, {500,6}, {800,9}, {1000,12}, {1300,14}, {1500,16}, {1800,18},
+    {2000,20}, {2500,24}, {3000,28}, {3500,31}, {4000,33}, {4500,34},
+    {5000,35}, {6000,35}, {7000,35}, {8000,34}, {9000,33}, {9500,32} }, 19,
+  9000, 9500, 5000,
+  "⚠ max_advance 40° ESTIMASI — WAJIB strobe. magnet 43° dari kalibrasi. "
+  "Crank-assist OFF (CH2 trailing ATDC). Kickback? naikkan max_advance." },
+
 // ─── Custom ───
 { "custom", "Other", "Custom · manual config", 1, 18.0f, 32.0f,
   { {300,5}, {800,10}, {1500,15}, {2500,20}, {3500,25}, {4500,29}, {6000,32},
