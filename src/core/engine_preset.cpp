@@ -33,6 +33,24 @@ const Preset PRESETS[] = {
 // curve philosophy). Each preset describes: cranking 3-5° → idle (~1500
 // rpm) at motor-specific value → linear ramp to peak around 5000-6000 rpm
 // → plateau → very-high RPM slight retard (detonation protection).
+// ════════════════════════════════════════════════════════════════════
+// DATA PROVENANCE & SAFETY (web research 2026-05 + adversarial sanity pass)
+//   * Factory ignition CURVES for these Indonesian-market bikes are NOT
+//     published (service manuals proprietary). The advance maps below are
+//     ENGINEERING ESTIMATES following the confirmed pattern: idle ~8-12°
+//     BTDC, full advance ~28-35° BTDC plateauing ~4000-5000 rpm.
+//   * rev_main/rev_overrev were set from researched PEAK-POWER rpm
+//     (rev_main ≈ peak + ~1000, overrev ≈ +500) so the limiter is reachable.
+//   * Confirmed factory idle timing found in research (for reference):
+//     Mio 5°@1500 · Jupiter-MX 10°@1400 · Vixion 10°@1400 · Scorpio 5°@1450 ·
+//     Thunder125 13°@1400 (full ~32°) · Supra125 ~15° · Satria-FU ~4°.
+//   * ⚠ magnet_width_deg AND max_advance_deg are PHYSICAL pickup geometry —
+//     NOT publishable, vary per unit. Treat preset values as a STARTING
+//     POINT: run pickup auto-cal (width) + STROBE the absolute timing
+//     (max_advance) before riding. A wrong max_advance over-advances the
+//     spark → kickback. (KLX150 is the proof: real magnet 43°, not 18°.)
+// ════════════════════════════════════════════════════════════════════
+//
 // Megapro/Tiger — calibrated to factory marks:
 //   T = 0° (TDC), F = 10° BTDC at 1400 rpm idle, PL = 32° BTDC at 5000+ rpm.
 // Cranking (≤300 rpm) very conservative 2-3° to eliminate kickback at slow
@@ -44,8 +62,8 @@ const Preset PRESETS[] = {
     {4800,28}, {5000,29}, {5300,30}, {5500,31}, {5800,31}, {6000,32},
     {6500,32}, {7000,32}, {7500,32}, {8000,32}, {9000,32}, {10500,31},
     {12000,30} }, 32,
-  10500, 11500, 5000,
-  "Stok megapro/tiger 160-200cc, F=10° idle, PL=32° peak (factory)" },
+  9500, 10000, 5000,
+  "Stok megapro/tiger 160-200cc, F=10° idle, PL=32° peak (factory). Redline ~9000-9500 (peak 8500). Geometri estimasi — strobe." },
 
 // GL Pro/Max/Win — derived from same engine family as Megapro but
 // vintage 125 cc — idle slightly leaner advance, lower redline.
@@ -56,8 +74,8 @@ const Preset PRESETS[] = {
     {4800,27}, {5000,28}, {5300,29}, {5500,30}, {5800,31}, {6000,32},
     {6500,32}, {7000,32}, {7500,32}, {8000,32}, {8500,31}, {9000,31},
     {10000,30} }, 32,
-  10000, 11000, 5000,
-  "GL series vintage, idle 10° BTDC, peak 32° BTDC factory" },
+  9000, 9500, 5000,
+  "GL Pro/Max/Win vintage 125-160cc (peak 8500). Redline ~9000. Timing estimasi — strobe." },
 
 { "honda_cb150r", "Honda 4T", "Honda CB150R Streetfire", 1, 16.0f, 35.0f,
   { {300,5}, {800,12}, {1000,13}, {1200,14}, {1500,16}, {1800,18}, {2000,19},
@@ -66,8 +84,8 @@ const Preset PRESETS[] = {
     {5300,33}, {5500,33}, {5800,34}, {6000,34}, {6500,34}, {7000,35},
     {7500,35}, {8000,35}, {8500,35}, {9000,35}, {9500,35}, {10500,34},
     {11500,33} }, 32,
-  11000, 12000, 5000,
-  "Sport 150cc DOHC, high-rev, advance lebih agresif" },
+  10500, 11000, 5000,
+  "Sport 150cc DOHC PGM-FI high-rev (redline ~11000, peak 9000). Advance estimasi — strobe." },
 
 { "honda_verza", "Honda 4T", "Honda Verza 150", 1, 16.0f, 33.0f,
   { {300,5}, {800,10}, {1000,11}, {1200,12}, {1500,14}, {1800,16}, {2000,17},
@@ -76,8 +94,8 @@ const Preset PRESETS[] = {
     {5300,31}, {5500,31}, {5800,32}, {6000,32}, {6500,32}, {7000,33},
     {7500,33}, {8000,33}, {8500,33}, {9000,33}, {9500,33}, {10500,32},
     {11500,31} }, 32,
-  10500, 11500, 5000,
-  "Commuter 150cc, advance moderate" },
+  9000, 9500, 5000,
+  "Commuter 150cc SOHC PGM-FI (peak 8500, redline ~9000). Timing estimasi — strobe." },
 
 { "honda_supra_125", "Honda 4T", "Honda Supra X 125 karbu", 1, 14.0f, 28.0f,
   { {300,5}, {800,8}, {1000,9}, {1200,10}, {1500,12}, {1800,14}, {2000,15},
@@ -86,8 +104,8 @@ const Preset PRESETS[] = {
     {5300,26}, {5500,27}, {5800,27}, {6000,27}, {6300,28}, {6500,28},
     {7000,28}, {7500,28}, {8000,28}, {8500,28}, {9000,28}, {9500,27},
     {10500,27} }, 32,
-  9500, 10500, 5000,
-  "Bebek 125cc karbu, range advance kecil" },
+  9000, 9500, 5000,
+  "Bebek 125cc karbu (peak 8000, idle ~15° riset). Redline ~9000. Strobe." },
 
 { "honda_revo_karbu", "Honda 4T", "Honda Revo / Blade 110 karbu", 1, 14.0f, 27.0f,
   { {300,5}, {800,8}, {1000,9}, {1200,10}, {1500,12}, {1800,13}, {2000,14},
@@ -96,8 +114,8 @@ const Preset PRESETS[] = {
     {5300,25}, {5500,26}, {5800,26}, {6000,26}, {6300,27}, {6500,27},
     {7000,27}, {7500,27}, {8000,27}, {8500,27}, {9000,26}, {9500,26},
     {10000,26} }, 32,
-  9000, 10000, 5000,
-  "Bebek 110cc karbu, idle commute" },
+  8500, 9000, 5000,
+  "Bebek 110cc karbu (peak 7500). Redline ~8500. Timing estimasi — strobe." },
 
 { "honda_beat_karbu", "Honda 4T", "Honda Beat / Vario / Scoopy karbu", 1, 15.0f, 28.0f,
   { {300,5}, {800,8}, {1000,10}, {1200,11}, {1500,13}, {1800,15}, {2000,16},
@@ -106,8 +124,8 @@ const Preset PRESETS[] = {
     {5300,26}, {5500,27}, {5800,27}, {6000,27}, {6300,28}, {6500,28},
     {7000,28}, {7500,28}, {8000,28}, {8500,28}, {9000,28}, {9500,27},
     {10500,27} }, 32,
-  9500, 10500, 5000,
-  "Matic 110cc karbu, advance halus untuk idle smooth" },
+  8500, 9000, 5000,
+  "Matic 110cc karbu (peak 7500). Redline ~8500. Timing estimasi — strobe." },
 
 { "honda_vario_125", "Honda 4T", "Honda Vario / Vario 125 karbu", 1, 15.0f, 30.0f,
   { {300,5}, {800,10}, {1000,11}, {1200,12}, {1500,15}, {1800,17}, {2000,18},
@@ -116,8 +134,8 @@ const Preset PRESETS[] = {
     {5300,29}, {5500,29}, {5800,30}, {6000,30}, {6500,30}, {7000,30},
     {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
     {11500,28} }, 32,
-  10000, 11000, 5000,
-  "Matic 125cc, advance moderate" },
+  9000, 9500, 5000,
+  "Matic 125cc PGM-FI/TCI (peak 8500). Redline ~9000. Timing estimasi — strobe." },
 
 { "honda_win_100", "Honda 4T", "Honda Win 100 / Astrea", 1, 18.0f, 30.0f,
   { {300,5}, {500,8}, {800,9}, {1000,10}, {1200,11}, {1500,13}, {1800,15},
@@ -126,8 +144,8 @@ const Preset PRESETS[] = {
     {5000,27}, {5300,28}, {5500,28}, {5800,29}, {6000,29}, {6500,30},
     {7000,30}, {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,29},
     {10000,29} }, 32,
-  9000, 10000, 5000,
-  "Vintage 100cc, advance lebar untuk efisiensi" },
+  8500, 9000, 5000,
+  "Vintage 100cc cub (peak ~8000). Redline ~8500. Timing estimasi — strobe." },
 
 // ─── Yamaha 4-stroke ───
 { "yamaha_mio_karbu", "Yamaha 4T", "Yamaha Mio / Vega / Jupiter Z karbu", 1, 22.0f, 32.0f,
@@ -137,8 +155,8 @@ const Preset PRESETS[] = {
     {5300,29}, {5500,30}, {5800,30}, {6000,30}, {6500,31}, {7000,31},
     {7500,32}, {8000,32}, {8500,32}, {9000,32}, {9500,32}, {10500,32},
     {11500,31} }, 32,
-  10500, 11500, 5000,
-  "Matic/bebek 113-115cc karbu, magnet lebar 22°" },
+  9500, 10000, 5000,
+  "Matic/bebek 113-115cc karbu, idle 5°@1500 (riset). Magnet 22° estimasi. Redline ~9500. Strobe." },
 
 { "yamaha_jupiter_mx", "Yamaha 4T", "Yamaha Jupiter MX 135", 1, 20.0f, 33.0f,
   { {300,5}, {800,10}, {1000,11}, {1200,13}, {1500,16}, {1800,18}, {2000,19},
@@ -147,8 +165,8 @@ const Preset PRESETS[] = {
     {5300,31}, {5500,31}, {5800,32}, {6000,32}, {6500,32}, {7000,33},
     {7500,33}, {8000,33}, {8500,33}, {9000,33}, {9500,33}, {10500,32},
     {11500,31} }, 32,
-  11000, 12000, 5000,
-  "Bebek sport 135cc DOHC, advance agresif" },
+  9500, 10000, 5000,
+  "Bebek sport 135cc, idle 10°@1400 (riset), peak 8500. Redline ~9500. Strobe." },
 
 { "yamaha_vixion_carb", "Yamaha 4T", "Yamaha Vixion karbu (lama)", 1, 20.0f, 30.0f,
   { {300,5}, {800,10}, {1000,11}, {1200,12}, {1500,15}, {1800,17}, {2000,18},
@@ -157,8 +175,8 @@ const Preset PRESETS[] = {
     {5300,29}, {5500,29}, {5800,30}, {6000,30}, {6500,30}, {7000,30},
     {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
     {11500,28} }, 32,
-  10500, 11500, 5000,
-  "Sport 150cc karbu, model lama sebelum injection" },
+  10000, 10500, 5000,
+  "Sport 150cc karbu, idle 10°@1400 (riset), peak 8500, revs ~10500. Strobe." },
 
 { "yamaha_scorpio", "Yamaha 4T", "Yamaha Scorpio Z 225", 1, 18.0f, 32.0f,
   { {300,5}, {800,10}, {1000,11}, {1200,13}, {1500,15}, {1800,17}, {2000,18},
@@ -167,8 +185,8 @@ const Preset PRESETS[] = {
     {5300,30}, {5500,31}, {5800,31}, {6000,32}, {6500,32}, {7000,32},
     {7500,32}, {8000,32}, {8500,32}, {9000,32}, {9500,32}, {10500,31},
     {11500,30} }, 32,
-  10000, 11000, 5000,
-  "Sport tourer 225cc, advance lebih konservatif" },
+  9000, 9500, 5000,
+  "Sport tourer 223cc, idle 5°@1450 (riset), peak 8000. Redline ~9000-9500 (bukan 11000). Strobe." },
 
 // ─── Suzuki 4-stroke ───
 { "suzuki_shogun_125", "Suzuki 4T", "Suzuki Shogun 125", 1, 20.0f, 30.0f,
@@ -178,8 +196,8 @@ const Preset PRESETS[] = {
     {5300,28}, {5500,29}, {5800,29}, {6000,30}, {6500,30}, {7000,30},
     {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
     {11500,28} }, 32,
-  10000, 11000, 5000,
-  "Bebek 125cc DOHC karbu" },
+  9000, 9500, 5000,
+  "Bebek 125cc DC-CDI (peak 8000). Redline ~9000. Timing estimasi — strobe." },
 
 { "suzuki_smash", "Suzuki 4T", "Suzuki Smash / Smash Titan", 1, 18.0f, 28.0f,
   { {300,5}, {800,8}, {1000,9}, {1200,10}, {1500,13}, {1800,14}, {2000,15},
@@ -188,8 +206,8 @@ const Preset PRESETS[] = {
     {5300,26}, {5500,27}, {5800,27}, {6000,28}, {6500,28}, {7000,28},
     {7500,28}, {8000,28}, {8500,28}, {9000,28}, {9500,28}, {10000,27},
     {10500,27} }, 32,
-  9500, 10500, 5000,
-  "Bebek 110cc commuter" },
+  8000, 8500, 5000,
+  "Bebek 110cc commuter (peak 7000). Redline ~8000. Timing estimasi — strobe." },
 
 { "suzuki_satria_fu_new", "Suzuki 4T", "Suzuki Satria FU 150 NEW", 1, 18.0f, 35.0f,
   { {300,5}, {800,12}, {1000,13}, {1200,14}, {1500,16}, {1800,18}, {2000,19},
@@ -198,8 +216,8 @@ const Preset PRESETS[] = {
     {5300,33}, {5500,33}, {5800,34}, {6000,34}, {6500,34}, {7000,34},
     {7500,35}, {8000,35}, {8500,35}, {9000,35}, {9500,35}, {10500,34},
     {11500,33} }, 32,
-  11500, 12500, 5000,
-  "FU New, advance lebih agresif untuk RPM tinggi" },
+  11000, 11500, 5000,
+  "Satria FU150 DOHC, idle ~4° (riset), peak 10000, redline ~11000. Strobe." },
 
 { "suzuki_thunder_125", "Suzuki 4T", "Suzuki Thunder 125", 1, 18.0f, 30.0f,
   { {300,5}, {800,10}, {1000,11}, {1200,12}, {1500,15}, {1800,16}, {2000,17},
@@ -208,8 +226,8 @@ const Preset PRESETS[] = {
     {5300,28}, {5500,29}, {5800,29}, {6000,30}, {6500,30}, {7000,30},
     {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
     {11500,28} }, 32,
-  10500, 11500, 5000,
-  "Sport touring 125cc" },
+  9500, 10000, 5000,
+  "Sport touring 125cc TCI, idle 13°@1400 + full ~32° (riset). Redline ~9500-10000 (bukan 13500). Strobe." },
 
 { "suzuki_spin_skywave", "Suzuki 4T", "Suzuki Spin / Skywave 125", 1, 20.0f, 30.0f,
   { {300,5}, {800,8}, {1000,9}, {1200,11}, {1500,14}, {1800,16}, {2000,17},
@@ -218,19 +236,21 @@ const Preset PRESETS[] = {
     {5300,28}, {5500,29}, {5800,29}, {6000,30}, {6500,30}, {7000,30},
     {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
     {11500,28} }, 32,
-  10000, 11000, 5000,
-  "Matic 125cc" },
+  8500, 9000, 5000,
+  "Matic 125cc CDI (peak 7500-8000). Redline ~8500. Timing estimasi — strobe." },
 
 // ─── Kawasaki ───
-{ "kawasaki_klx150", "Kawasaki 4T", "Kawasaki KLX 150 / D-Tracker", 1, 18.0f, 30.0f,
-  { {300,5}, {800,10}, {1000,11}, {1200,12}, {1500,15}, {1800,17}, {2000,18},
-    {2200,19}, {2500,20}, {2800,22}, {3000,23}, {3300,24}, {3500,25},
-    {3800,26}, {4000,27}, {4300,27}, {4500,28}, {4800,28}, {5000,29},
-    {5300,29}, {5500,29}, {5800,30}, {6000,30}, {6500,30}, {7000,30},
-    {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
-    {11500,28} }, 32,
-  10500, 11500, 5000,
-  "Trail 150cc SOHC karbu" },
+// KLX150 / D-Tracker 150 — magnet 43° = HASIL KALIBRASI user (bukan 18°).
+// max_advance 40° = ESTIMASI (aftermarket race-CDI ceiling 39° → leading-edge
+// pickup ≥39° BTDC). ⚠ WAJIB di-strobe; crank-assist CH2 OFF (trailing edge
+// ATDC pada geometri 43° ini → baseAdvanceRef negatif).
+{ "kawasaki_klx150", "Kawasaki 4T", "Kawasaki KLX150 / D-Tracker 150", 1, 43.0f, 40.0f,
+  { {300,4}, {500,6}, {800,9}, {1000,12}, {1300,14}, {1500,16}, {1800,18},
+    {2000,20}, {2500,24}, {3000,28}, {3500,31}, {4000,33}, {4500,34},
+    {5000,35}, {6000,35}, {7000,35}, {8000,34}, {9000,33}, {9500,32} }, 19,
+  9000, 9500, 5000,
+  "magnet 43° (kalibrasi). max_adv 40° ESTIMASI — WAJIB strobe. Crank-assist OFF "
+  "(CH2 ATDC). Kickback? NAIKKAN max_advance. Peak power 8000 rpm." },
 
 { "kawasaki_athlete", "Kawasaki 4T", "Kawasaki Athlete 125", 1, 18.0f, 30.0f,
   { {300,5}, {800,9}, {1000,10}, {1200,12}, {1500,14}, {1800,16}, {2000,17},
@@ -239,8 +259,8 @@ const Preset PRESETS[] = {
     {5300,28}, {5500,29}, {5800,29}, {6000,30}, {6500,30}, {7000,30},
     {7500,30}, {8000,30}, {8500,30}, {9000,30}, {9500,30}, {10500,29},
     {11500,28} }, 32,
-  10000, 11000, 5000,
-  "Bebek sport 125cc" },
+  9000, 9500, 5000,
+  "Bebek sport 125cc CDI (peak 8000). Redline ~9000. Timing estimasi — strobe." },
 
 { "kawasaki_kaze", "Kawasaki 4T", "Kawasaki Kaze / Blitz / ZX", 1, 18.0f, 28.0f,
   { {300,5}, {800,8}, {1000,9}, {1200,10}, {1500,13}, {1800,14}, {2000,15},
@@ -249,8 +269,8 @@ const Preset PRESETS[] = {
     {5300,26}, {5500,27}, {5800,27}, {6000,28}, {6500,28}, {7000,28},
     {7500,28}, {8000,28}, {8500,28}, {9000,28}, {9500,28}, {10000,27},
     {10500,27} }, 32,
-  9500, 10500, 5000,
-  "Bebek 110-125cc" },
+  8500, 9000, 5000,
+  "Bebek 110-125cc DC-CDI (peak 7500). Redline ~8500. Timing estimasi — strobe." },
 
 // ─── Racing / Custom ───
 // WARNING: racing presets assume engine modifications (bore-up,
@@ -276,22 +296,6 @@ const Preset PRESETS[] = {
     {12000,37} }, 32,
   12500, 12900, 5000,
   "⚠ MX ported + race CDI — JANGAN di stock engine" },
-
-// ─── Kawasaki (wide-magnet pickup, ~43°) ───
-// KLX150 / D-Tracker 150 — single-cyl SOHC 2-valve, peak ~10.3 HP @ 8000 rpm.
-// magnet_width 43° = HASIL KALIBRASI user (bukan Megapro 18°). max_advance 40°
-// adalah ESTIMASI: aftermarket race-CDI menembak sampai 39° → leading-edge
-// pickup pasti ≥39° BTDC, jadi maxAdvanceRef ≈ 40°. ⚠ WAJIB di-strobe sebelum
-// dipakai jalan — kalau leading-edge asli >40° timing jadi over-advance →
-// kickback. Trim: rasa kickback → NAIKKAN max_advance (meretard); strobe untuk
-// angka pasti. Crank-assist CH2 HARUS OFF (trailing edge ATDC di geometri ini).
-{ "kawasaki_klx150", "Kawasaki 4T", "Kawasaki KLX150 / D-Tracker 150", 1, 43.0f, 40.0f,
-  { {300,4}, {500,6}, {800,9}, {1000,12}, {1300,14}, {1500,16}, {1800,18},
-    {2000,20}, {2500,24}, {3000,28}, {3500,31}, {4000,33}, {4500,34},
-    {5000,35}, {6000,35}, {7000,35}, {8000,34}, {9000,33}, {9500,32} }, 19,
-  9000, 9500, 5000,
-  "⚠ max_advance 40° ESTIMASI — WAJIB strobe. magnet 43° dari kalibrasi. "
-  "Crank-assist OFF (CH2 trailing ATDC). Kickback? naikkan max_advance." },
 
 // ─── Custom ───
 { "custom", "Other", "Custom · manual config", 1, 18.0f, 32.0f,
