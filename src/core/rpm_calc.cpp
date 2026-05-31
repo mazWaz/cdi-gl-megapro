@@ -18,6 +18,9 @@ volatile cdi::micros_t s_lastCh1     = 0;
 volatile cdi::micros_t s_lastPeriod  = 0;
 volatile cdi::rpm_t    s_raw         = 0;
 volatile cdi::rpm_t    s_smooth      = 0;
+// Internal to onPulseCh1 (core-1 loop only) — counts consecutive high-outlier
+// rejects so a genuine fast change can't lock us out. Not read cross-core.
+uint8_t                s_outlierRun  = 0;
 
 } // anonymous
 
@@ -59,18 +62,38 @@ void onPulseCh1(cdi::micros_t ts) {
         s_lastPeriod = 0;
         s_raw        = 0;
         s_smooth     = 0;
+        s_outlierRun = 0;
         return;
     }
-    s_lastCh1 = ts;
-    s_lastPeriod = period;
 
     uint32_t inst = (uint32_t)(60000000ULL / period);
     if (inst > 65535) inst = 65535;
-    s_raw = (cdi::rpm_t)inst;
 
-    // EMA: smooth = (7*smooth + new) / 8
-    uint32_t blended = (uint32_t)s_smooth * 7 + inst;
-    s_smooth = (cdi::rpm_t)(blended >> 3);
+    // ── Outlier reject (cranking RPM-ngaco fix) ──────────────────────
+    // EMI / starter-commutator phantom edges during cranking arrive with a
+    // period far shorter than the real one → an implausibly high inst RPM
+    // (log showed isolated 4500-7600 rpm spikes mid-300-rpm crank). Drop the
+    // phantom WITHOUT advancing the anchor, so the next real edge still
+    // measures a clean period and s_lastPeriod (spark basis) stays valid.
+    // Only HIGH spikes (>4x the smoothed value) are dropped — a real cranking
+    // swing is 2-3x at most. Bail after a few consecutive drops so a genuine
+    // fast change (engine catching) can re-sync rather than lock out.
+    if (s_smooth > 200 && inst > (uint32_t)s_smooth * 4u && s_outlierRun < 3) {
+        s_outlierRun++;
+        return;
+    }
+    s_outlierRun = 0;
+
+    s_lastCh1    = ts;
+    s_lastPeriod = period;
+    s_raw        = (cdi::rpm_t)inst;
+
+    // EMA: smooth = (7*smooth + new) / 8. SEED to inst on the first valid
+    // sample after a reset (s_smooth==0) instead of ramping from 0 — kills the
+    // multi-rev lag/flicker after every cranking pause (the EMA used to crawl
+    // 0→raw over ~10 revs, so short cranks never settled).
+    if (s_smooth == 0) s_smooth = (cdi::rpm_t)inst;
+    else s_smooth = (cdi::rpm_t)(((uint32_t)s_smooth * 7 + inst) >> 3);
 }
 
 void tick(cdi::micros_t now_us) {
@@ -115,6 +138,7 @@ void reset() {
     s_lastPeriod = 0;
     s_raw        = 0;
     s_smooth     = 0;
+    s_outlierRun = 0;
 }
 
 } // namespace cdi::core::rpm
